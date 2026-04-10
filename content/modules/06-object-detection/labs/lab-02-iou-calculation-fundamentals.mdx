@@ -1,0 +1,487 @@
+---
+title: "IoU Calculation Fundamentals"
+module: 6
+labNumber: 2
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# IoU Calculation Fundamentals
+
+## Objectives
+- Understand Intersection over Union (IoU) concept
+- Implement IoU calculation from scratch using TensorFlow
+- Visualize bounding box overlaps
+- Apply IoU for object detection evaluation
+
+## Prerequisites
+- TensorFlow 2.x installed
+- Basic understanding of bounding box coordinates
+- Familiarity with tensor operations
+
+## Theory: Intersection over Union
+
+IoU measures the overlap between two bounding boxes:
+```
+IoU = Area of Intersection / Area of Union
+```
+
+- IoU = 1.0: Perfect overlap
+- IoU = 0.0: No overlap
+- Typically, IoU > 0.5 is considered a positive match
+
+## Complete Implementation
+
+```python
+"""
+Lab 6.1: IoU Calculation Fundamentals
+Object Detection Systems - Module 6
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+from typing import Tuple, Union
+
+# =============================================================================
+# Section 1: Basic IoU Implementation
+# =============================================================================
+
+def calculate_iou_boxes(box1: tf.Tensor, box2: tf.Tensor) -> tf.Tensor:
+    """
+    Calculate IoU between two bounding boxes.
+    
+    Box format: [x_min, y_min, x_max, y_max] (normalized coordinates 0-1)
+    
+    Args:
+        box1: First bounding box [4] or [batch, 4]
+        box2: Second bounding box [4] or [batch, 4]
+    
+    Returns:
+        IoU value(s) between 0 and 1
+    """
+    # Unpack coordinates
+    x1_min, y1_min, x1_max, y1_max = tf.unstack(box1, axis=-1)
+    x2_min, y2_min, x2_max, y2_max = tf.unstack(box2, axis=-1)
+    
+    # Calculate intersection coordinates
+    intersect_xmin = tf.maximum(x1_min, x2_min)
+    intersect_ymin = tf.maximum(y1_min, y2_min)
+    intersect_xmax = tf.minimum(x1_max, x2_max)
+    intersect_ymax = tf.minimum(y1_max, y2_max)
+    
+    # Calculate intersection area
+    intersect_width = tf.maximum(0.0, intersect_xmax - intersect_xmin)
+    intersect_height = tf.maximum(0.0, intersect_ymax - intersect_ymin)
+    intersection_area = intersect_width * intersect_height
+    
+    # Calculate areas of both boxes
+    box1_area = (x1_max - x1_min) * (y1_max - y1_min)
+    box2_area = (x2_max - x2_min) * (y2_max - y2_min)
+    
+    # Calculate union area
+    union_area = box1_area + box2_area - intersection_area
+    
+    # Add small epsilon to avoid division by zero
+    epsilon = 1e-7
+    iou = intersection_area / (union_area + epsilon)
+    
+    return iou
+
+
+def calculate_iou_batch(boxes1: tf.Tensor, boxes2: tf.Tensor) -> tf.Tensor:
+    """
+    Calculate pairwise IoU between two sets of boxes.
+    
+    Args:
+        boxes1: Tensor of shape [N, 4] - N boxes
+        boxes2: Tensor of shape [M, 4] - M boxes
+    
+    Returns:
+        IoU matrix of shape [N, M]
+    """
+    # Expand dimensions for broadcasting: [N, 1, 4] and [1, M, 4]
+    boxes1 = tf.expand_dims(boxes1, 1)  # [N, 1, 4]
+    boxes2 = tf.expand_dims(boxes2, 0)  # [1, M, 4]
+    
+    # Unpack coordinates
+    x1_min, y1_min, x1_max, y1_max = tf.unstack(boxes1, axis=-1)
+    x2_min, y2_min, x2_max, y2_max = tf.unstack(boxes2, axis=-1)
+    
+    # Calculate intersection
+    intersect_xmin = tf.maximum(x1_min, x2_min)
+    intersect_ymin = tf.maximum(y1_min, y2_min)
+    intersect_xmax = tf.minimum(x1_max, x2_max)
+    intersect_ymax = tf.minimum(y1_max, y2_max)
+    
+    intersect_width = tf.maximum(0.0, intersect_xmax - intersect_xmin)
+    intersect_height = tf.maximum(0.0, intersect_ymax - intersect_ymin)
+    intersection_area = intersect_width * intersect_height
+    
+    # Calculate areas
+    box1_area = (x1_max - x1_min) * (y1_max - y1_min)
+    box2_area = (x2_max - x2_min) * (y2_max - y2_min)
+    
+    # Calculate union
+    union_area = box1_area + box2_area - intersection_area
+    
+    epsilon = 1e-7
+    iou = intersection_area / (union_area + epsilon)
+    
+    return iou
+
+
+# =============================================================================
+# Section 2: Different Bounding Box Formats
+# =============================================================================
+
+def convert_xywh_to_xyxy(boxes: tf.Tensor) -> tf.Tensor:
+    """
+    Convert boxes from [x_center, y_center, width, height] to [x_min, y_min, x_max, y_max]
+    """
+    x_center, y_center, width, height = tf.unstack(boxes, axis=-1)
+    
+    x_min = x_center - width / 2
+    y_min = y_center - height / 2
+    x_max = x_center + width / 2
+    y_max = y_center + height / 2
+    
+    return tf.stack([x_min, y_min, x_max, y_max], axis=-1)
+
+
+def convert_xyxy_to_xywh(boxes: tf.Tensor) -> tf.Tensor:
+    """
+    Convert boxes from [x_min, y_min, x_max, y_max] to [x_center, y_center, width, height]
+    """
+    x_min, y_min, x_max, y_max = tf.unstack(boxes, axis=-1)
+    
+    x_center = (x_min + x_max) / 2
+    y_center = (y_min + y_max) / 2
+    width = x_max - x_min
+    height = y_max - y_min
+    
+    return tf.stack([x_center, y_center, width, height], axis=-1)
+
+
+# =============================================================================
+# Section 3: Visualization Functions
+# =============================================================================
+
+def visualize_boxes_iou(boxes: list, labels: list = None, title: str = "Bounding Boxes"):
+    """
+    Visualize bounding boxes with IoU scores.
+    
+    Args:
+        boxes: List of boxes in [x_min, y_min, x_max, y_max] format
+        labels: Optional list of labels for each box
+        title: Plot title
+    """
+    fig, ax = plt.subplots(1, 1, figsize=(10, 10))
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.set_aspect('equal')
+    ax.invert_yaxis()
+    
+    colors = plt.cm.rainbow(np.linspace(0, 1, len(boxes)))
+    
+    for i, (box, color) in enumerate(zip(boxes, colors)):
+        x_min, y_min, x_max, y_max = box
+        width = x_max - x_min
+        height = y_max - y_min
+        
+        rect = patches.Rectangle(
+            (x_min, y_min), width, height,
+            linewidth=2, edgecolor=color, facecolor='none', label=f'Box {i}'
+        )
+        ax.add_patch(rect)
+        
+        # Add label
+        label = labels[i] if labels else f'Box {i}'
+        ax.text(x_min, y_min - 0.02, label, color=color, fontsize=10, fontweight='bold')
+    
+    ax.set_title(title)
+    ax.legend(loc='upper right')
+    plt.grid(True, alpha=0.3)
+    plt.show()
+
+
+def visualize_iou_matrix(boxes: tf.Tensor, box_labels: list = None):
+    """
+    Visualize the IoU matrix as a heatmap.
+    """
+    iou_matrix = calculate_iou_batch(boxes, boxes)
+    iou_np = iou_matrix.numpy()
+    
+    fig, ax = plt.subplots(figsize=(8, 6))
+    im = ax.imshow(iou_np, cmap='YlOrRd', vmin=0, vmax=1)
+    
+    # Add colorbar
+    plt.colorbar(im, ax=ax, label='IoU Score')
+    
+    # Add text annotations
+    for i in range(len(boxes)):
+        for j in range(len(boxes)):
+            text = ax.text(j, i, f'{iou_np[i, j]:.2f}',
+                          ha="center", va="center", color="black", fontsize=10)
+    
+    labels = box_labels if box_labels else [f'Box {i}' for i in range(len(boxes))]
+    ax.set_xticks(np.arange(len(boxes)))
+    ax.set_yticks(np.arange(len(boxes)))
+    ax.set_xticklabels(labels)
+    ax.set_yticklabels(labels)
+    ax.set_title('IoU Matrix Heatmap')
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
+    
+    plt.tight_layout()
+    plt.show()
+
+
+# =============================================================================
+# Section 4: Practical Examples and Tests
+# =============================================================================
+
+def run_iou_tests():
+    """Run comprehensive IoU calculation tests."""
+    
+    print("=" * 60)
+    print("IoU Calculation Tests")
+    print("=" * 60)
+    
+    # Test 1: Perfect overlap
+    box1 = tf.constant([0.2, 0.2, 0.8, 0.8])
+    box2 = tf.constant([0.2, 0.2, 0.8, 0.8])
+    iou = calculate_iou_boxes(box1, box2)
+    print(f"\nTest 1 - Perfect Overlap:")
+    print(f"  Box 1: {box1.numpy()}")
+    print(f"  Box 2: {box2.numpy()}")
+    print(f"  IoU: {iou.numpy():.4f} (Expected: 1.0)")
+    assert abs(iou.numpy() - 1.0) < 1e-6, "Perfect overlap should give IoU = 1.0"
+    
+    # Test 2: Partial overlap
+    box1 = tf.constant([0.1, 0.1, 0.5, 0.5])
+    box2 = tf.constant([0.3, 0.3, 0.7, 0.7])
+    iou = calculate_iou_boxes(box1, box2)
+    print(f"\nTest 2 - Partial Overlap:")
+    print(f"  Box 1: {box1.numpy()}")
+    print(f"  Box 2: {box2.numpy()}")
+    print(f"  IoU: {iou.numpy():.4f}")
+    # Expected: intersection = 0.2*0.2 = 0.04, union = 0.16+0.16-0.04 = 0.28, iou = 0.04/0.28 = 0.1429
+    expected = 0.04 / 0.28
+    assert abs(iou.numpy() - expected) < 1e-6, f"Expected {expected}, got {iou.numpy()}"
+    
+    # Test 3: No overlap
+    box1 = tf.constant([0.1, 0.1, 0.3, 0.3])
+    box2 = tf.constant([0.5, 0.5, 0.7, 0.7])
+    iou = calculate_iou_boxes(box1, box2)
+    print(f"\nTest 3 - No Overlap:")
+    print(f"  Box 1: {box1.numpy()}")
+    print(f"  Box 2: {box2.numpy()}")
+    print(f"  IoU: {iou.numpy():.4f} (Expected: 0.0)")
+    assert abs(iou.numpy() - 0.0) < 1e-6, "No overlap should give IoU = 0.0"
+    
+    # Test 4: One box inside another
+    box1 = tf.constant([0.2, 0.2, 0.8, 0.8])
+    box2 = tf.constant([0.3, 0.3, 0.7, 0.7])
+    iou = calculate_iou_boxes(box1, box2)
+    print(f"\nTest 4 - Box Inside Another:")
+    print(f"  Box 1 (outer): {box1.numpy()}")
+    print(f"  Box 2 (inner): {box2.numpy()}")
+    print(f"  IoU: {iou.numpy():.4f}")
+    # Expected: intersection = 0.4*0.4 = 0.16, union = 0.36+0.16-0.16 = 0.36, iou = 0.16/0.36 = 0.4444
+    expected = 0.16 / 0.36
+    assert abs(iou.numpy() - expected) < 1e-6, f"Expected {expected}, got {iou.numpy()}"
+    
+    # Test 5: Batch IoU calculation
+    print(f"\nTest 5 - Batch IoU Matrix:")
+    boxes = tf.constant([
+        [0.1, 0.1, 0.4, 0.4],
+        [0.2, 0.2, 0.5, 0.5],
+        [0.6, 0.6, 0.9, 0.9]
+    ])
+    iou_matrix = calculate_iou_batch(boxes, boxes)
+    print(f"  Boxes shape: {boxes.shape}")
+    print(f"  IoU Matrix shape: {iou_matrix.shape}")
+    print(f"  IoU Matrix:\n{iou_matrix.numpy()}")
+    
+    print("\n" + "=" * 60)
+    print("All IoU tests passed!")
+    print("=" * 60)
+    
+    return boxes, iou_matrix
+
+
+def demonstrate_iou_visualization():
+    """Demonstrate IoU visualization."""
+    
+    # Create example boxes with different overlap scenarios
+    boxes = [
+        [0.1, 0.1, 0.4, 0.4],   # Box 0
+        [0.2, 0.2, 0.5, 0.5],   # Box 1 - overlaps with Box 0
+        [0.6, 0.6, 0.9, 0.9],   # Box 2 - separate
+        [0.15, 0.15, 0.35, 0.35],  # Box 3 - inside Box 0
+    ]
+    
+    boxes_tf = tf.constant(boxes, dtype=tf.float32)
+    
+    # Visualize boxes
+    labels = ['Box 0', 'Box 1 (overlap)', 'Box 2 (separate)', 'Box 3 (inside)']
+    visualize_boxes_iou(boxes, labels, "Bounding Box Visualization")
+    
+    # Visualize IoU matrix
+    visualize_iou_matrix(boxes_tf, ['Box 0', 'Box 1', 'Box 2', 'Box 3'])
+    
+    return boxes_tf
+
+
+# =============================================================================
+# Section 5: IoU for Object Detection Evaluation
+# =============================================================================
+
+def evaluate_detections(pred_boxes: tf.Tensor, pred_scores: tf.Tensor,
+                        gt_boxes: tf.Tensor, iou_threshold: float = 0.5) -> dict:
+    """
+    Evaluate object detection predictions against ground truth.
+    
+    Args:
+        pred_boxes: Predicted boxes [N, 4]
+        pred_scores: Confidence scores for predictions [N]
+        gt_boxes: Ground truth boxes [M, 4]
+        iou_threshold: Minimum IoU for a match
+    
+    Returns:
+        Dictionary with evaluation metrics
+    """
+    # Calculate IoU matrix
+    iou_matrix = calculate_iou_batch(pred_boxes, gt_boxes)
+    
+    # For each prediction, find best matching ground truth
+    best_gt_iou = tf.reduce_max(iou_matrix, axis=1)
+    best_gt_idx = tf.argmax(iou_matrix, axis=1)
+    
+    # Determine matches
+    matches = best_gt_iou >= iou_threshold
+    
+    # Calculate metrics
+    true_positives = tf.reduce_sum(tf.cast(matches, tf.int32))
+    false_positives = tf.shape(pred_boxes)[0] - true_positives
+    false_negatives = tf.shape(gt_boxes)[0] - true_positives
+    
+    # Precision and Recall
+    precision = tf.cast(true_positives, tf.float32) / (tf.cast(true_positives + false_positives, tf.float32) + 1e-7)
+    recall = tf.cast(true_positives, tf.float32) / (tf.cast(true_positives + false_negatives, tf.float32) + 1e-7)
+    
+    return {
+        'true_positives': true_positives.numpy(),
+        'false_positives': false_positives.numpy(),
+        'false_negatives': false_negatives.numpy(),
+        'precision': precision.numpy(),
+        'recall': recall.numpy(),
+        'best_gt_iou': best_gt_iou.numpy(),
+        'best_gt_idx': best_gt_idx.numpy(),
+        'matches': matches.numpy()
+    }
+
+
+# =============================================================================
+# Main Execution
+# =============================================================================
+
+if __name__ == "__main__":
+    print("\n" + "=" * 70)
+    print("Lab 6.1: IoU Calculation Fundamentals")
+    print("=" * 70)
+    
+    # Run tests
+    boxes, iou_matrix = run_iou_tests()
+    
+    # Demonstrate visualization
+    print("\nGenerating visualizations...")
+    boxes_tf = demonstrate_iou_visualization()
+    
+    # Demonstrate evaluation
+    print("\n" + "-" * 60)
+    print("Detection Evaluation Example:")
+    print("-" * 60)
+    
+    pred_boxes = tf.constant([
+        [0.12, 0.12, 0.38, 0.38],  # Good match to GT 0
+        [0.22, 0.22, 0.52, 0.52],  # Good match to GT 1
+        [0.7, 0.7, 0.95, 0.95],    # Poor match (no corresponding GT)
+    ])
+    pred_scores = tf.constant([0.9, 0.85, 0.7])
+    gt_boxes = tf.constant([
+        [0.1, 0.1, 0.4, 0.4],
+        [0.2, 0.2, 0.5, 0.5],
+    ])
+    
+    results = evaluate_detections(pred_boxes, pred_scores, gt_boxes, iou_threshold=0.5)
+    
+    print(f"Predictions: {len(pred_boxes)}")
+    print(f"Ground Truth: {len(gt_boxes)}")
+    print(f"True Positives: {results['true_positives']}")
+    print(f"False Positives: {results['false_positives']}")
+    print(f"False Negatives: {results['false_negatives']}")
+    print(f"Precision: {results['precision']:.4f}")
+    print(f"Recall: {results['recall']:.4f}")
+    
+    print("\n" + "=" * 70)
+    print("Lab 6.1 Complete!")
+    print("=" * 70)
+```
+
+## Expected Output
+
+```
+======================================================================
+Lab 6.1: IoU Calculation Fundamentals
+======================================================================
+============================================================
+IoU Calculation Tests
+============================================================
+
+Test 1 - Perfect Overlap:
+  Box 1: [0.2 0.2 0.8 0.8]
+  Box 2: [0.2 0.2 0.8 0.8]
+  IoU: 1.0000 (Expected: 1.0)
+
+Test 2 - Partial Overlap:
+  Box 1: [0.1 0.1 0.5 0.5]
+  Box 2: [0.3 0.3 0.7 0.7]
+  IoU: 0.1429
+
+Test 3 - No Overlap:
+  Box 1: [0.1 0.1 0.3 0.3]
+  Box 2: [0.5 0.5 0.7 0.7]
+  IoU: 0.0000 (Expected: 0.0)
+
+Test 4 - Box Inside Another:
+  Box 1 (outer): [0.2 0.2 0.8 0.8]
+  Box 2 (inner): [0.3 0.3 0.7 0.7]
+  IoU: 0.4444
+
+Test 5 - Batch IoU Matrix:
+  Boxes shape: (3, 4)
+  IoU Matrix shape: (3, 3)
+  IoU Matrix:
+[[1.         0.39130434 0.        ]
+ [0.39130434 1.         0.        ]
+ [0.         0.         1.        ]]
+
+============================================================
+All IoU tests passed!
+============================================================
+```
+
+## Challenge Exercises
+
+### Exercise 1: IoU with Different Aspect Ratios
+Implement IoU calculation for boxes with extreme aspect ratios (very wide or very tall).
+
+### Exercise 2: Weighted IoU
+Create a weighted IoU function that considers confidence scores.
+
+### Exercise 3: IoU for Rotated Boxes
+Extend the implementation to handle rotated bounding boxes.
+
+---

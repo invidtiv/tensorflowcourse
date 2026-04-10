@@ -1,0 +1,172 @@
+---
+title: "Layer Normalization vs Group Normalization"
+module: 4
+labNumber: 18
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Layer Normalization vs Group Normalization
+
+```python
+"""
+Lab 5.2: Layer and Group Normalization
+=======================================
+Compare different normalization techniques.
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+
+tf.random.set_seed(42)
+
+class CustomLayerNorm(tf.keras.layers.Layer):
+    """Custom layer normalization implementation."""
+    
+    def __init__(self, epsilon=1e-5, **kwargs):
+        super().__init__(**kwargs)
+        self.epsilon = epsilon
+    
+    def build(self, input_shape):
+        self.gamma = self.add_weight(name='gamma', shape=input_shape[-1:],
+                                     initializer='ones', trainable=True)
+        self.beta = self.add_weight(name='beta', shape=input_shape[-1:],
+                                    initializer='zeros', trainable=True)
+        super().build(input_shape)
+    
+    def call(self, inputs):
+        mean = tf.reduce_mean(inputs, axis=-1, keepdims=True)
+        var = tf.reduce_variance(inputs, axis=-1, keepdims=True)
+        normalized = (inputs - mean) / tf.sqrt(var + self.epsilon)
+        return self.gamma * normalized + self.beta
+    
+    def get_config(self):
+        config = super().get_config()
+        config.update({'epsilon': self.epsilon})
+        return config
+
+class CustomGroupNorm(tf.keras.layers.Layer):
+    """Custom group normalization implementation."""
+    
+    def __init__(self, groups=32, epsilon=1e-5, **kwargs):
+        super().__init__(**kwargs)
+        self.groups = groups
+        self.epsilon = epsilon
+    
+    def build(self, input_shape):
+        channels = input_shape[-1]
+        if channels % self.groups != 0:
+            raise ValueError(f"Channels ({channels}) must be divisible by groups ({self.groups})")
+        
+        self.gamma = self.add_weight(name='gamma', shape=(channels,), initializer='ones', trainable=True)
+        self.beta = self.add_weight(name='beta', shape=(channels,), initializer='zeros', trainable=True)
+        super().build(input_shape)
+    
+    def call(self, inputs):
+        batch_size = tf.shape(inputs)[0]
+        height = tf.shape(inputs)[1]
+        width = tf.shape(inputs)[2]
+        channels = inputs.shape[-1]
+        
+        x = tf.reshape(inputs, [batch_size, height, width, self.groups, channels // self.groups])
+        
+        mean = tf.reduce_mean(x, axis=[1, 2, 4], keepdims=True)
+        var = tf.reduce_variance(x, axis=[1, 2, 4], keepdims=True)
+        
+        x = (x - mean) / tf.sqrt(var + self.epsilon)
+        x = tf.reshape(x, [batch_size, height, width, channels])
+        
+        return self.gamma * x + self.beta
+    
+    def get_config(self):
+        config = super().get_config()
+        config.update({'groups': self.groups, 'epsilon': self.epsilon})
+        return config
+
+def compare_normalization_methods():
+    (x_train, y_train), (x_test, y_test) = tf.keras.datasets.cifar10.load_data()
+    x_train, x_test = x_train / 255.0, x_test / 255.0
+    y_train = tf.keras.utils.to_categorical(y_train, 10)
+    y_test = tf.keras.utils.to_categorical(y_test, 10)
+    
+    def create_model_with_norm(norm_layer):
+        inputs = tf.keras.layers.Input(shape=(32, 32, 3))
+        
+        x = tf.keras.layers.Conv2D(32, 3, padding='same')(inputs)
+        x = norm_layer()(x) if norm_layer else x
+        x = tf.keras.layers.Activation('relu')(x)
+        x = tf.keras.layers.MaxPooling2D()(x)
+        
+        x = tf.keras.layers.Conv2D(64, 3, padding='same')(x)
+        x = norm_layer()(x) if norm_layer else x
+        x = tf.keras.layers.Activation('relu')(x)
+        x = tf.keras.layers.MaxPooling2D()(x)
+        
+        x = tf.keras.layers.Conv2D(128, 3, padding='same')(x)
+        x = norm_layer()(x) if norm_layer else x
+        x = tf.keras.layers.Activation('relu')(x)
+        x = tf.keras.layers.MaxPooling2D()(x)
+        
+        x = tf.keras.layers.Flatten()(x)
+        x = tf.keras.layers.Dense(128)(x)
+        x = norm_layer()(x) if norm_layer else x
+        x = tf.keras.layers.Activation('relu')(x)
+        x = tf.keras.layers.Dense(10, activation='softmax')(x)
+        
+        return tf.keras.Model(inputs, x)
+    
+    norm_methods = {
+        'No Normalization': None,
+        'Batch Norm': tf.keras.layers.BatchNormalization,
+        'Layer Norm': tf.keras.layers.LayerNormalization,
+        'Group Norm (G=8)': lambda: tf.keras.layers.GroupNormalization(groups=8),
+        'Group Norm (G=32)': lambda: tf.keras.layers.GroupNormalization(groups=32),
+    }
+    
+    results = {}
+    
+    for name, norm_layer in norm_methods.items():
+        print(f"\nTraining with: {name}")
+        
+        try:
+            model = create_model_with_norm(norm_layer)
+            model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+                          loss='categorical_crossentropy', metrics=['accuracy'])
+            
+            history = model.fit(x_train, y_train, batch_size=64, epochs=20,
+                               validation_data=(x_test, y_test), verbose=0)
+            
+            test_loss, test_acc = model.evaluate(x_test, y_test, verbose=0)
+            results[name] = {'history': history.history, 'test_accuracy': test_acc}
+            print(f"  Test Accuracy: {test_acc:.4f}")
+        except Exception as e:
+            print(f"  Error: {e}")
+            results[name] = None
+    
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    
+    for name, data in results.items():
+        if data:
+            axes[0].plot(data['history']['val_accuracy'], label=name, linewidth=2)
+    axes[0].set_title('Validation Accuracy', fontweight='bold')
+    axes[0].set_xlabel('Epoch'); axes[0].set_ylabel('Accuracy')
+    axes[0].legend(); axes[0].grid(True, alpha=0.3)
+    
+    names = [n for n, d in results.items() if d]
+    accs = [results[n]['test_accuracy'] for n in names]
+    axes[1].bar(names, accs, color='lightblue', edgecolor='black')
+    axes[1].set_title('Final Test Accuracy', fontweight='bold')
+    axes[1].set_ylabel('Accuracy')
+    axes[1].tick_params(axis='x', rotation=45)
+    
+    plt.tight_layout()
+    plt.savefig('normalization_comparison.png', dpi=150)
+    plt.show()
+    
+    return results
+
+results = compare_normalization_methods()
+```
+
+---

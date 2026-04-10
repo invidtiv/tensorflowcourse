@@ -1,0 +1,136 @@
+{
+  "version": 1,
+  "passingScore": 80,
+  "questions": [
+    {
+      "id": "m6-q1",
+      "type": "multiple-choice",
+      "difficulty": "easy",
+      "topic": "IoU",
+      "question": "Intersection over Union (IoU) between two bounding boxes is computed as:",
+      "options": [
+        {
+          "text": "Area of intersection divided by area of union",
+          "correct": true
+        },
+        {
+          "text": "Area of union divided by area of intersection",
+          "correct": false
+        },
+        {
+          "text": "Sum of areas minus intersection",
+          "correct": false
+        },
+        {
+          "text": "Intersection area divided by image area",
+          "correct": false
+        }
+      ],
+      "explanation": "IoU = |A \u2229 B| / |A \u222a B|, ranging from 0 (no overlap) to 1 (perfect)."
+    },
+    {
+      "id": "m6-q2",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Anchor Boxes",
+      "question": "What problem do anchor boxes help solve in object detectors?",
+      "options": [
+        {
+          "text": "They remove the need for a classification head",
+          "correct": false
+        },
+        {
+          "text": "They provide reference shapes for predicting objects of varying sizes and aspect ratios",
+          "correct": true
+        },
+        {
+          "text": "They replace non-max suppression",
+          "correct": false
+        },
+        {
+          "text": "They eliminate the need for training data",
+          "correct": false
+        }
+      ],
+      "explanation": "Anchors provide a set of prior box shapes at each spatial location, so the network predicts offsets relative to them."
+    },
+    {
+      "id": "m6-q3",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "NMS",
+      "question": "What is the purpose of non-maximum suppression (NMS) in detection?",
+      "options": [
+        {
+          "text": "To increase recall by keeping all predictions",
+          "correct": false
+        },
+        {
+          "text": "To remove redundant overlapping boxes, keeping the highest-scoring one",
+          "correct": true
+        },
+        {
+          "text": "To normalize bounding box coordinates",
+          "correct": false
+        },
+        {
+          "text": "To compute the loss function",
+          "correct": false
+        }
+      ],
+      "explanation": "NMS removes duplicate detections of the same object by suppressing lower-scoring boxes that overlap a higher-scoring one above an IoU threshold."
+    },
+    {
+      "id": "m6-q4",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "Focal Loss",
+      "question": "Focal Loss modifies cross-entropy to address what problem?",
+      "options": [
+        {
+          "text": "Vanishing gradients",
+          "correct": false
+        },
+        {
+          "text": "The extreme foreground/background class imbalance in dense detectors",
+          "correct": true
+        },
+        {
+          "text": "Overfitting small models",
+          "correct": false
+        },
+        {
+          "text": "Learning rate decay",
+          "correct": false
+        }
+      ],
+      "explanation": "Focal loss down-weights easy examples so that training focuses on hard, misclassified examples \u2014 critical for one-stage detectors like RetinaNet."
+    },
+    {
+      "id": "m6-q5",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "FPN",
+      "question": "What does a Feature Pyramid Network (FPN) provide?",
+      "options": [
+        {
+          "text": "A smaller model for embedded devices",
+          "correct": false
+        },
+        {
+          "text": "Multi-scale feature maps enabling detection of objects at various sizes",
+          "correct": true
+        },
+        {
+          "text": "Quantized inference",
+          "correct": false
+        },
+        {
+          "text": "A replacement for the backbone network",
+          "correct": false
+        }
+      ],
+      "explanation": "FPN builds a top-down pathway with lateral connections, producing feature maps at multiple scales with rich semantics at each."
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "id": "05-semantic-segmentation",
+  "number": 5,
+  "title": "Semantic Segmentation",
+  "shortTitle": "Segmentation",
+  "description": "Pixel-level prediction with FCN, U-Net, DeepLab architectures. Atrous convolution, loss functions, and post-processing.",
+  "duration": "1 week",
+  "difficulty": "intermediate",
+  "prerequisites": [
+    3
+  ],
+  "objectives": [
+    "Understand encoder-decoder architectures",
+    "Implement FCN, U-Net, and DeepLab",
+    "Master atrous/dilated convolutions",
+    "Apply segmentation loss functions",
+    "Post-process predictions with CRFs"
+  ],
+  "icon": "palette",
+  "color": "#10b981"
+}

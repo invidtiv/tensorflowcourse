@@ -1,0 +1,402 @@
+---
+title: "TensorFlow Serving Setup"
+module: 10
+labNumber: 8
+difficulty: "hard"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# TensorFlow Serving Setup
+
+## Objectives
+- Set up TensorFlow Serving locally
+- Export models in SavedModel format
+- Configure model versioning
+- Test model serving
+
+## Complete Implementation
+
+```python
+"""
+Lab 10.7: TensorFlow Serving Setup
+==================================
+Complete guide to setting up TensorFlow Serving for model deployment.
+"""
+
+import tensorflow as tf
+import numpy as np
+import os
+import subprocess
+import json
+
+print("=" * 60)
+print("Lab 10.7: TensorFlow Serving Setup")
+print("=" * 60)
+
+# ============================================================
+# PART 1: Create and Export a Model
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 1: Creating and Exporting a Model")
+print("=" * 60)
+
+# Create a simple model
+def create_servable_model():
+    """Create a model for serving."""
+    model = tf.keras.Sequential([
+        tf.keras.layers.Dense(128, activation='relu', input_shape=(10,)),
+        tf.keras.layers.Dropout(0.2),
+        tf.keras.layers.Dense(64, activation='relu'),
+        tf.keras.layers.Dense(5, activation='softmax', name='predictions')
+    ])
+    return model
+
+model = create_servable_model()
+model.compile(optimizer='adam',
+              loss='categorical_crossentropy',
+              metrics=['accuracy'])
+
+# Train briefly
+x_dummy = np.random.random((1000, 10))
+y_dummy = tf.keras.utils.to_categorical(np.random.randint(0, 5, 1000), 5)
+
+print("Training model...")
+model.fit(x_dummy, y_dummy, epochs=5, verbose=0)
+
+# ============================================================
+# PART 2: Export Model for Serving
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 2: Exporting Model for Serving")
+print("=" * 60)
+
+"""
+TensorFlow Serving requires models in SavedModel format with specific structure:
+
+models/
+└── <model_name>/
+    └── <version>/
+        ├── saved_model.pb
+        └── variables/
+            ├── variables.data-00000-of-00001
+            └── variables.index
+"""
+
+# Create model directory structure
+MODEL_NAME = "my_model"
+VERSION = "1"
+
+model_base_path = f"models/{MODEL_NAME}"
+version_path = f"{model_base_path}/{VERSION}"
+
+# Create directories
+os.makedirs(version_path, exist_ok=True)
+
+# Save model in SavedModel format
+tf.saved_model.save(model, version_path)
+
+print(f"Model exported to: {version_path}")
+print(f"Directory structure:")
+for root, dirs, files in os.walk(model_base_path):
+    level = root.replace(model_base_path, '').count(os.sep)
+    indent = ' ' * 2 * level
+    print(f'{indent}{os.path.basename(root)}/')
+    subindent = ' ' * 2 * (level + 1)
+    for file in files:
+        print(f'{subindent}{file}')
+
+# ============================================================
+# PART 3: Model Configuration
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 3: Model Configuration")
+print("=" * 60)
+
+# Create model configuration file
+model_config = {
+    "model_config_list": [
+        {
+            "name": "my_model",
+            "base_path": "/models/my_model",
+            "model_platform": "tensorflow",
+            "model_version_policy": {
+                "all": {}
+            }
+        }
+    ]
+}
+
+# Save configuration
+config_path = "models/models.config"
+with open(config_path, 'w') as f:
+    json.dump(model_config, f, indent=2)
+
+print(f"Model config saved to: {config_path}")
+print("\nConfiguration content:")
+print(json.dumps(model_config, indent=2))
+
+# ============================================================
+# PART 4: TensorFlow Serving Startup Commands
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 4: TensorFlow Serving Startup")
+print("=" * 60)
+
+print("""
+# Option 1: Using Docker (Recommended)
+# ====================================
+
+docker run -p 8501:8501 \
+  --mount type=bind,source=$(pwd)/models,target=/models \
+  --mount type=bind,source=$(pwd)/models/models.config,target=/models/models.config \
+  -e MODEL_NAME=my_model \
+  -t tensorflow/serving
+
+# With model configuration file:
+docker run -p 8501:8501 \
+  --mount type=bind,source=$(pwd)/models,target=/models \
+  -t tensorflow/serving \
+  --model_config_file=/models/models.config
+
+# Option 2: Local Installation
+# =============================
+
+# Install TensorFlow Serving
+# (Ubuntu/Debian)
+echo "deb [arch=amd64] http://storage.googleapis.com/tensorflow-serving-apt stable tensorflow-model-server tensorflow-model-server-universal" | sudo tee /etc/apt/sources.list.d/tensorflow-serving.list
+curl https://storage.googleapis.com/tensorflow-serving-apt/tensorflow-serving.release.pub.gpg | sudo apt-key add -
+sudo apt-get update
+sudo apt-get install tensorflow-model-server
+
+# Start TensorFlow Serving
+tensorflow_model_server \
+  --model_name=my_model \
+  --model_base_path=$(pwd)/models/my_model \
+  --rest_api_port=8501
+
+# Option 3: Using Docker Compose
+# ===============================
+""")
+
+# Create docker-compose.yml
+docker_compose = """version: '3'
+services:
+  tensorflow-serving:
+    image: tensorflow/serving
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./models:/models
+    environment:
+      - MODEL_NAME=my_model
+    command: tensorflow_model_server --model_name=my_model --model_base_path=/models/my_model --rest_api_port=8501
+"""
+
+with open('docker-compose.yml', 'w') as f:
+    f.write(docker_compose)
+
+print("Docker Compose file created: docker-compose.yml")
+
+# ============================================================
+# PART 5: Model Versioning
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 5: Model Versioning")
+print("=" * 60)
+
+# Export version 2 (simulated improvement)
+print("\nCreating version 2 of the model...")
+
+# Create slightly different model
+model_v2 = create_servable_model()
+model_v2.compile(optimizer='adam',
+                 loss='categorical_crossentropy',
+                 metrics=['accuracy'])
+
+# Train with different data
+x_dummy_v2 = np.random.random((1000, 10))
+y_dummy_v2 = tf.keras.utils.to_categorical(np.random.randint(0, 5, 1000), 5)
+model_v2.fit(x_dummy_v2, y_dummy_v2, epochs=5, verbose=0)
+
+# Export version 2
+version_2_path = f"{model_base_path}/2"
+os.makedirs(version_2_path, exist_ok=True)
+tf.saved_model.save(model_v2, version_2_path)
+
+print(f"Version 2 exported to: {version_2_path}")
+
+# Show all versions
+print("\nAvailable model versions:")
+versions = sorted([d for d in os.listdir(model_base_path) 
+                   if os.path.isdir(os.path.join(model_base_path, d))])
+for v in versions:
+    print(f"  - Version {v}")
+
+# ============================================================
+# PART 6: Model Signature Inspection
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 6: Model Signature Inspection")
+print("=" * 60)
+
+# Load and inspect SavedModel
+loaded = tf.saved_model.load(version_path)
+
+print("\nModel signatures:")
+print(loaded.signatures.keys())
+
+# Get serving signature
+infer = loaded.signatures['serving_default']
+print("\nServing signature:")
+print(infer)
+
+print("\nInput specifications:")
+for input_name, input_spec in infer.structured_input_signature[1].items():
+    print(f"  {input_name}: {input_spec}")
+
+print("\nOutput specifications:")
+for output_name, output_spec in infer.structured_outputs.items():
+    print(f"  {output_name}: {output_spec}")
+
+# ============================================================
+# PART 7: Testing Model Serving (Simulated)
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 7: Testing Model Serving")
+print("=" * 60)
+
+# Simulate REST API call
+def simulate_rest_request():
+    """Simulate what a REST API request would look like."""
+    
+    # Prepare input data
+    input_data = np.random.random((1, 10)).tolist()
+    
+    # REST API request format
+    request = {
+        "signature_name": "serving_default",
+        "instances": input_data
+    }
+    
+    print("\nREST API Request:")
+    print(json.dumps(request, indent=2))
+    
+    # Simulate response
+    prediction = model.predict(np.array(input_data), verbose=0)
+    
+    response = {
+        "predictions": prediction.tolist()
+    }
+    
+    print("\nREST API Response:")
+    print(json.dumps(response, indent=2))
+
+simulate_rest_request()
+
+# ============================================================
+# PART 8: Monitoring and Health Checks
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 8: Monitoring and Health Checks")
+print("=" * 60)
+
+print("""
+# Health Check Endpoint
+# =====================
+GET http://localhost:8501/v1/models/my_model
+
+# Expected Response:
+{
+  "model_version_status": [
+    {
+      "version": "1",
+      "state": "AVAILABLE",
+      "status": {
+        "error_code": "OK",
+        "error_message": ""
+      }
+    }
+  ]
+}
+
+# Model Metadata
+# ==============
+GET http://localhost:8501/v1/models/my_model/metadata
+
+# Monitoring Metrics
+# ==================
+TensorFlow Serving exposes Prometheus metrics at:
+http://localhost:8501/monitoring/prometheus/metrics
+
+Key metrics:
+- tensorflow:cc:serving:requests: Count of requests
+- tensorflow:cc:serving:latency: Request latency
+- tensorflow:cc:serving:errors: Error count
+""")
+
+# ============================================================
+# PART 9: Summary
+# ============================================================
+
+print("\n" + "=" * 60)
+print("SUMMARY: TensorFlow Serving Setup")
+print("=" * 60)
+
+print("""
+Setup Checklist:
+================
+
+1. Export Model:
+   [ ] Save in SavedModel format
+   [ ] Organize in versioned directories
+   [ ] Verify model signatures
+
+2. Configure Serving:
+   [ ] Create model config file
+   [ ] Set up model paths
+   [ ] Configure version policy
+
+3. Start Server:
+   [ ] Use Docker for simplicity
+   [ ] Or install locally for production
+   [ ] Verify server starts without errors
+
+4. Test Deployment:
+   [ ] Check health endpoint
+   [ ] Send test requests
+   [ ] Verify responses
+
+5. Monitor:
+   [ ] Set up health checks
+   [ ] Monitor metrics
+   [ ] Configure alerts
+
+Best Practices:
+===============
+- Use versioned model directories
+- Test models before deployment
+- Monitor serving metrics
+- Implement proper error handling
+- Use load balancing for multiple instances
+""")
+
+# Cleanup
+import shutil
+for d in ['models', '__pycache__']:
+    if os.path.exists(d):
+        shutil.rmtree(d)
+for f in ['docker-compose.yml']:
+    if os.path.exists(f):
+        os.remove(f)
+print("\nCleanup completed!")
+```
+
+---

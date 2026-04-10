@@ -1,0 +1,427 @@
+---
+title: "Attention Visualization"
+module: 8
+labNumber: 14
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Attention Visualization
+
+### Objectives
+- Visualize attention weights
+- Understand what model attends to
+- Create interactive visualizations
+
+### Complete Implementation
+
+```python
+"""
+Lab 8.13: Attention Visualization
+=================================
+Visualize attention weights to understand model behavior.
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
+
+# ============================================================
+# PART 1: Attention Heatmap Visualization
+# ============================================================
+
+print("=" * 60)
+print("ATTENTION VISUALIZATION")
+print("=" * 60)
+
+def plot_attention_heatmap(attention_weights, input_words, output_words=None,
+                           title="Attention Weights", figsize=(12, 10), save_path=None):
+    """
+    Plot attention weights as a heatmap.
+    
+    Args:
+        attention_weights: (output_len, input_len) array
+        input_words: List of input words
+        output_words: List of output words (optional)
+        title: Plot title
+        figsize: Figure size
+        save_path: Path to save figure
+    """
+    if output_words is None:
+        output_words = input_words
+    
+    fig, ax = plt.subplots(figsize=figsize)
+    
+    # Create heatmap
+    im = ax.imshow(attention_weights, cmap='viridis', aspect='auto')
+    
+    # Set ticks
+    ax.set_xticks(np.arange(len(input_words)))
+    ax.set_yticks(np.arange(len(output_words)))
+    
+    # Set labels
+    ax.set_xticklabels(input_words, rotation=45, ha='right', fontsize=10)
+    ax.set_yticklabels(output_words, fontsize=10)
+    
+    # Add colorbar
+    cbar = plt.colorbar(im, ax=ax)
+    cbar.set_label('Attention Weight', rotation=270, labelpad=20)
+    
+    # Add grid
+    ax.set_xticks(np.arange(-0.5, len(input_words), 1), minor=True)
+    ax.set_yticks(np.arange(-0.5, len(output_words), 1), minor=True)
+    ax.grid(which='minor', color='w', linestyle='-', linewidth=1)
+    
+    ax.set_xlabel('Input Sequence', fontsize=12)
+    ax.set_ylabel('Output Sequence', fontsize=12)
+    ax.set_title(title, fontsize=14, fontweight='bold')
+    
+    plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        print(f"Saved to {save_path}")
+    
+    plt.show()
+
+
+# ============================================================
+# PART 2: Multi-Head Attention Visualization
+# ============================================================
+
+def plot_multi_head_attention(attention_weights, input_words, num_heads,
+                              figsize=(16, 12), save_path=None):
+    """
+    Visualize attention for all heads in multi-head attention.
+    
+    Args:
+        attention_weights: (num_heads, seq_len, seq_len) array
+        input_words: List of input words
+        num_heads: Number of attention heads
+        figsize: Figure size
+        save_path: Path to save figure
+    """
+    n_cols = 4
+    n_rows = (num_heads + n_cols - 1) // n_cols
+    
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize)
+    axes = axes.flatten()
+    
+    for head in range(num_heads):
+        ax = axes[head]
+        
+        # Get attention for this head
+        head_attention = attention_weights[head]
+        
+        # Plot
+        im = ax.imshow(head_attention, cmap='viridis', aspect='auto')
+        
+        # Labels
+        if head >= num_heads - n_cols:  # Bottom row
+            ax.set_xticks(np.arange(len(input_words)))
+            ax.set_xticklabels(input_words, rotation=45, ha='right', fontsize=6)
+        else:
+            ax.set_xticks([])
+        
+        if head % n_cols == 0:  # Left column
+            ax.set_yticks(np.arange(len(input_words)))
+            ax.set_yticklabels(input_words, fontsize=6)
+        else:
+            ax.set_yticks([])
+        
+        ax.set_title(f'Head {head+1}', fontsize=10, fontweight='bold')
+        
+        # Add colorbar for each subplot
+        plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    
+    # Hide unused subplots
+    for idx in range(num_heads, len(axes)):
+        axes[idx].axis('off')
+    
+    plt.suptitle('Multi-Head Attention Visualization', fontsize=16, fontweight='bold')
+    plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        print(f"Saved to {save_path}")
+    
+    plt.show()
+
+
+# ============================================================
+# PART 3: Attention Flow Visualization
+# ============================================================
+
+def plot_attention_flow(attention_weights, words, threshold=0.1, 
+                        figsize=(14, 6), save_path=None):
+    """
+    Visualize attention as a flow diagram.
+    
+    Args:
+        attention_weights: (seq_len, seq_len) array
+        words: List of words
+        threshold: Minimum attention weight to show
+        figsize: Figure size
+        save_path: Path to save figure
+    """
+    fig, ax = plt.subplots(figsize=figsize)
+    
+    n = len(words)
+    
+    # Plot words as nodes
+    y_positions = np.zeros(n)
+    x_positions = np.arange(n)
+    
+    # Draw words
+    for i, word in enumerate(words):
+        ax.scatter(x_positions[i], y_positions[i], s=500, c='lightblue', 
+                  edgecolors='navy', linewidths=2, zorder=3)
+        ax.text(x_positions[i], y_positions[i], word, ha='center', va='center',
+               fontsize=9, fontweight='bold', zorder=4)
+    
+    # Draw attention connections
+    for i in range(n):
+        for j in range(n):
+            weight = attention_weights[i, j]
+            if weight > threshold and i != j:
+                # Line width proportional to attention weight
+                linewidth = weight * 5
+                alpha = min(weight * 2, 1.0)
+                
+                ax.annotate('', xy=(x_positions[j], y_positions[j]),
+                           xytext=(x_positions[i], y_positions[i]),
+                           arrowprops=dict(arrowstyle='->', color='red',
+                                         lw=linewidth, alpha=alpha))
+    
+    ax.set_xlim(-0.5, n - 0.5)
+    ax.set_ylim(-0.5, 0.5)
+    ax.axis('off')
+    ax.set_title('Attention Flow Visualization', fontsize=14, fontweight='bold')
+    
+    plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        print(f"Saved to {save_path}")
+    
+    plt.show()
+
+
+# ============================================================
+# PART 4: Layer-wise Attention Visualization
+# ============================================================
+
+def plot_layer_attention(attention_by_layer, words, figsize=(16, 10), save_path=None):
+    """
+    Visualize attention across multiple layers.
+    
+    Args:
+        attention_by_layer: Dict of {layer_name: attention_weights}
+        words: List of words
+        figsize: Figure size
+        save_path: Path to save figure
+    """
+    num_layers = len(attention_by_layer)
+    
+    fig, axes = plt.subplots(1, num_layers, figsize=figsize)
+    
+    if num_layers == 1:
+        axes = [axes]
+    
+    for idx, (layer_name, attention) in enumerate(attention_by_layer.items()):
+        ax = axes[idx]
+        
+        # Average across heads if multi-head
+        if len(attention.shape) == 3:
+            attention = attention.mean(axis=0)
+        
+        im = ax.imshow(attention, cmap='viridis', aspect='auto')
+        
+        ax.set_xticks(np.arange(len(words)))
+        ax.set_yticks(np.arange(len(words)))
+        ax.set_xticklabels(words, rotation=45, ha='right', fontsize=8)
+        ax.set_yticklabels(words, fontsize=8)
+        ax.set_title(layer_name, fontsize=12, fontweight='bold')
+        
+        plt.colorbar(im, ax=ax, fraction=0.046)
+    
+    plt.suptitle('Layer-wise Attention Visualization', fontsize=16, fontweight='bold')
+    plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        print(f"Saved to {save_path}")
+    
+    plt.show()
+
+
+# ============================================================
+# PART 5: Demonstration with Synthetic Data
+# ============================================================
+
+print("\n" + "=" * 60)
+print("DEMONSTRATION")
+print("=" * 60)
+
+# Sample sentence
+sentence = "The cat sat on the mat and looked at the mouse"
+words = sentence.lower().split()
+
+# Create synthetic attention weights
+np.random.seed(42)
+seq_len = len(words)
+
+# Self-attention (symmetric-ish)
+self_attention = np.random.rand(seq_len, seq_len)
+self_attention = (self_attention + self_attention.T) / 2  # Make symmetric
+self_attention = self_attention / self_attention.sum(axis=1, keepdims=True)
+
+# Add some structure (words attend to related words)
+for i in range(seq_len):
+    self_attention[i, i] = 0.3  # Self-attention
+    if i > 0:
+        self_attention[i, i-1] += 0.2  # Previous word
+    if i < seq_len - 1:
+        self_attention[i, i+1] += 0.2  # Next word
+
+self_attention = self_attention / self_attention.sum(axis=1, keepdims=True)
+
+print("\n1. Attention Heatmap:")
+plot_attention_heatmap(self_attention, words, 
+                       title="Self-Attention Visualization",
+                       save_path="attention_heatmap_demo.png")
+
+print("\n2. Attention Flow:")
+plot_attention_flow(self_attention, words, threshold=0.08,
+                   save_path="attention_flow_demo.png")
+
+# Multi-head attention demo
+print("\n3. Multi-Head Attention:")
+num_heads = 8
+multi_head_attention = np.random.rand(num_heads, seq_len, seq_len)
+
+# Make each head have different patterns
+for h in range(num_heads):
+    # Different heads focus on different aspects
+    if h < 2:
+        # Local attention
+        for i in range(seq_len):
+            for j in range(max(0, i-2), min(seq_len, i+3)):
+                multi_head_attention[h, i, j] += 0.5
+    elif h < 4:
+        # Global attention
+        multi_head_attention[h, :, :] += 0.3
+    else:
+        # Random specialized attention
+        focus_word = h % seq_len
+        multi_head_attention[h, :, focus_word] += 0.4
+    
+    # Normalize
+    multi_head_attention[h] = multi_head_attention[h] / multi_head_attention[h].sum(axis=1, keepdims=True)
+
+plot_multi_head_attention(multi_head_attention, words, num_heads,
+                         save_path="multi_head_attention_demo.png")
+
+
+# ============================================================
+# PART 6: Attention Analysis Functions
+# ============================================================
+
+def analyze_attention_patterns(attention_weights, words):
+    """
+    Analyze attention patterns and print statistics.
+    
+    Args:
+        attention_weights: (seq_len, seq_len) array
+        words: List of words
+    """
+    seq_len = len(words)
+    
+    print("\n" + "=" * 60)
+    print("ATTENTION PATTERN ANALYSIS")
+    print("=" * 60)
+    
+    # Self-attention (diagonal)
+    self_attn = np.diag(attention_weights).mean()
+    print(f"\nAverage self-attention: {self_attn:.4f}")
+    
+    # Local vs global attention
+    local_attn = 0
+    global_attn = 0
+    
+    for i in range(seq_len):
+        for j in range(seq_len):
+            if abs(i - j) <= 2:
+                local_attn += attention_weights[i, j]
+            else:
+                global_attn += attention_weights[i, j]
+    
+    local_attn /= seq_len
+    global_attn /= seq_len
+    
+    print(f"Average local attention (within 2 positions): {local_attn:.4f}")
+    print(f"Average global attention (beyond 2 positions): {global_attn:.4f}")
+    
+    # Most attended words
+    total_attention = attention_weights.sum(axis=0)
+    top_indices = np.argsort(total_attention)[-5:][::-1]
+    
+    print("\nMost attended-to words:")
+    for idx in top_indices:
+        print(f"  {words[idx]}: {total_attention[idx]:.4f}")
+    
+    # Entropy (attention spread)
+    entropy = -np.sum(attention_weights * np.log(attention_weights + 1e-10), axis=1).mean()
+    print(f"\nAverage attention entropy: {entropy:.4f}")
+    print(f"  (Higher = more spread out, Lower = more focused)")
+
+
+# Analyze our synthetic attention
+analyze_attention_patterns(self_attention, words)
+
+
+# ============================================================
+# EXERCISES
+# ============================================================
+
+print("\n" + "=" * 60)
+print("EXERCISES")
+print("=" * 60)
+
+exercises = """
+Exercise 1: Interactive Visualization
+-------------------------------------
+Create interactive attention visualization:
+- Use plotly or bokeh
+- Hover to see attention values
+- Click to highlight connections
+
+Exercise 2: Attention Rollout
+-----------------------------
+Implement attention rollout:
+- Combine attention across layers
+- Account for residual connections
+- Visualize full attention path
+
+Exercise 3: Attention Head Specialization
+-----------------------------------------
+Analyze attention head patterns:
+- Identify position-focused heads
+- Identify content-focused heads
+- Measure head redundancy
+
+Exercise 4: Attention Pruning
+-----------------------------
+Implement attention head pruning:
+- Remove less important heads
+- Measure impact on performance
+- Analyze speed vs accuracy trade-off
+"""
+
+print(exercises)
+```
+
+---
+
+# Pretrained Embeddings Labs

@@ -1,0 +1,21 @@
+{
+  "id": "03-cnns",
+  "number": 3,
+  "title": "Convolutional Neural Networks",
+  "shortTitle": "CNNs",
+  "description": "Learn convolution mathematics, receptive fields, classic architectures (LeNet to Vision Transformers), and transfer learning.",
+  "duration": "2 weeks",
+  "difficulty": "beginner",
+  "prerequisites": [
+    2
+  ],
+  "objectives": [
+    "Understand convolution operations and receptive fields",
+    "Implement CNNs from scratch and with Keras",
+    "Master architecture evolution: LeNet to ResNet to ViT",
+    "Apply feature visualization and transfer learning",
+    "Build image classifiers on real datasets"
+  ],
+  "icon": "eye",
+  "color": "#ec4899"
+}

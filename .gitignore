@@ -1,0 +1,24 @@
+# dependencies
+node_modules/
+
+# build output
+.next/
+.next-old/
+out/
+dist/
+*.tsbuildinfo
+
+# env / secrets
+.env
+.env.*
+.env.local
+.env*.local
+
+# os / editor junk
+.DS_Store
+Thumbs.db
+*.log
+.fuse_hidden*
+.vscode/
+.idea/
+*.swp

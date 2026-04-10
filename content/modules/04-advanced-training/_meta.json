@@ -1,0 +1,21 @@
+{
+  "id": "04-advanced-training",
+  "number": 4,
+  "title": "Advanced Training Methodologies",
+  "shortTitle": "Advanced Training",
+  "description": "Master optimizers, learning rate scheduling, normalization, regularization, data pipelines, mixed precision, and distributed training.",
+  "duration": "1 week",
+  "difficulty": "intermediate",
+  "prerequisites": [
+    3
+  ],
+  "objectives": [
+    "Compare and select optimizers (SGD, Adam, AdamW)",
+    "Implement learning rate scheduling strategies",
+    "Apply batch/layer/group normalization",
+    "Build efficient tf.data pipelines",
+    "Use mixed precision and distributed training"
+  ],
+  "icon": "zap",
+  "color": "#f59e0b"
+}

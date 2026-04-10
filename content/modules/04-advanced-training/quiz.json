@@ -1,0 +1,136 @@
+{
+  "version": 1,
+  "passingScore": 80,
+  "questions": [
+    {
+      "id": "m4-q1",
+      "type": "multiple-choice",
+      "difficulty": "easy",
+      "topic": "Adam Optimizer",
+      "question": "The Adam optimizer combines which two ideas?",
+      "options": [
+        {
+          "text": "Momentum and adaptive per-parameter learning rates",
+          "correct": true
+        },
+        {
+          "text": "Second-order Newton updates and line search",
+          "correct": false
+        },
+        {
+          "text": "Dropout and batch normalization",
+          "correct": false
+        },
+        {
+          "text": "Weight decay and gradient clipping",
+          "correct": false
+        }
+      ],
+      "explanation": "Adam uses exponentially decaying moving averages of gradients (momentum) and squared gradients (RMSProp-style adaptive rates)."
+    },
+    {
+      "id": "m4-q2",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "LR Scheduling",
+      "question": "What is the main goal of a learning-rate warm-up schedule?",
+      "options": [
+        {
+          "text": "To start with a small LR and gradually increase it, stabilizing early training",
+          "correct": true
+        },
+        {
+          "text": "To reduce the LR at each step until convergence",
+          "correct": false
+        },
+        {
+          "text": "To avoid needing an optimizer at all",
+          "correct": false
+        },
+        {
+          "text": "To train with a constant LR throughout",
+          "correct": false
+        }
+      ],
+      "explanation": "Warm-up avoids divergent updates early in training when gradient statistics are unstable, especially for large-batch or transformer training."
+    },
+    {
+      "id": "m4-q3",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Batch Normalization",
+      "question": "Batch Normalization primarily addresses which problem?",
+      "options": [
+        {
+          "text": "Overfitting",
+          "correct": false
+        },
+        {
+          "text": "Internal covariate shift and gradient scale instability",
+          "correct": true
+        },
+        {
+          "text": "Computation cost of activations",
+          "correct": false
+        },
+        {
+          "text": "Label noise",
+          "correct": false
+        }
+      ],
+      "explanation": "BN stabilizes the distribution of layer inputs across training, accelerating convergence and enabling higher learning rates."
+    },
+    {
+      "id": "m4-q4",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "Second-Order Methods",
+      "question": "Why are exact second-order methods (e.g. full Newton) rarely used in deep learning?",
+      "options": [
+        {
+          "text": "They don't converge in theory",
+          "correct": false
+        },
+        {
+          "text": "The Hessian is too large to compute and invert for modern networks",
+          "correct": true
+        },
+        {
+          "text": "They require reinforcement learning",
+          "correct": false
+        },
+        {
+          "text": "TensorFlow doesn't support them",
+          "correct": false
+        }
+      ],
+      "explanation": "For N parameters the Hessian is N\u00d7N \u2014 prohibitive for millions of parameters. Approximations like K-FAC or Hessian-vector products are used instead."
+    },
+    {
+      "id": "m4-q5",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Regularization",
+      "question": "Which statement about weight decay (L2 regularization) is TRUE?",
+      "options": [
+        {
+          "text": "It penalizes large weights to reduce overfitting",
+          "correct": true
+        },
+        {
+          "text": "It forces all weights to zero",
+          "correct": false
+        },
+        {
+          "text": "It is mathematically equivalent to dropout",
+          "correct": false
+        },
+        {
+          "text": "It replaces the need for a validation set",
+          "correct": false
+        }
+      ],
+      "explanation": "L2 weight decay adds \u03bb\u00b7||w||\u00b2 to the loss, discouraging large weights and improving generalization."
+    }
+  ]
+}

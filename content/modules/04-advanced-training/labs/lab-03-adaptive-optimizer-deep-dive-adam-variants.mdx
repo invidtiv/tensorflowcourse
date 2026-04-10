@@ -1,0 +1,109 @@
+---
+title: "Adaptive Optimizer Deep Dive - Adam Variants"
+module: 4
+labNumber: 3
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Adaptive Optimizer Deep Dive - Adam Variants
+
+```python
+"""
+Lab 1.2: Adam Optimizer Variants Comparison
+============================================
+Deep dive into Adam variants and their characteristics.
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+
+tf.random.set_seed(42)
+np.random.seed(42)
+
+(x_train, y_train), (x_test, y_test) = tf.keras.datasets.cifar10.load_data()
+x_train, x_test = x_train / 255.0, x_test / 255.0
+y_train = tf.keras.utils.to_categorical(y_train, 10)
+y_test = tf.keras.utils.to_categorical(y_test, 10)
+
+def create_simple_model():
+    return tf.keras.Sequential([
+        tf.keras.layers.Conv2D(32, 3, activation='relu', input_shape=(32, 32, 3)),
+        tf.keras.layers.MaxPooling2D(),
+        tf.keras.layers.Conv2D(64, 3, activation='relu'),
+        tf.keras.layers.MaxPooling2D(),
+        tf.keras.layers.Conv2D(64, 3, activation='relu'),
+        tf.keras.layers.Flatten(),
+        tf.keras.layers.Dense(64, activation='relu'),
+        tf.keras.layers.Dense(10, activation='softmax')
+    ])
+
+def get_adam_variants():
+    return {
+        'Adam': {
+            'optimizer': tf.keras.optimizers.Adam(learning_rate=0.001),
+            'description': 'Standard Adam with adaptive learning rates'
+        },
+        'AdamW': {
+            'optimizer': tf.keras.optimizers.AdamW(learning_rate=0.001, weight_decay=0.004),
+            'description': 'Adam with decoupled weight decay'
+        },
+        'Adamax': {
+            'optimizer': tf.keras.optimizers.Adamax(learning_rate=0.002),
+            'description': 'Adam with infinity norm (more stable)'
+        },
+        'Nadam': {
+            'optimizer': tf.keras.optimizers.Nadam(learning_rate=0.001),
+            'description': 'Adam with Nesterov momentum'
+        },
+        'AMSGrad': {
+            'optimizer': tf.keras.optimizers.AMSGrad(learning_rate=0.001),
+            'description': 'Adam with monotonic improvement guarantee'
+        }
+    }
+
+def train_and_compare_adam_variants(epochs=20):
+    variants = get_adam_variants()
+    results = {}
+    
+    for name, config in variants.items():
+        print(f"\nTraining with {name}: {config['description']}")
+        
+        model = create_simple_model()
+        model.compile(optimizer=config['optimizer'],
+                      loss='categorical_crossentropy', metrics=['accuracy'])
+        
+        history = model.fit(x_train, y_train, batch_size=128, epochs=epochs,
+                           validation_data=(x_test, y_test), verbose=0)
+        
+        test_loss, test_acc = model.evaluate(x_test, y_test, verbose=0)
+        results[name] = {'history': history.history, 'test_accuracy': test_acc}
+        print(f"  Test Accuracy: {test_acc:.4f}")
+    
+    return results
+
+def visualize_adam_comparison(results):
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    
+    for name, data in results.items():
+        axes[0].plot(data['history']['val_accuracy'], label=name, linewidth=2)
+    axes[0].set_title('Adam Variants - Validation Accuracy', fontweight='bold')
+    axes[0].set_xlabel('Epoch'); axes[0].set_ylabel('Accuracy')
+    axes[0].legend(); axes[0].grid(True, alpha=0.3)
+    
+    for name, data in results.items():
+        axes[1].plot(data['history']['val_loss'], label=name, linewidth=2)
+    axes[1].set_title('Adam Variants - Validation Loss', fontweight='bold')
+    axes[1].set_xlabel('Epoch'); axes[1].set_ylabel('Loss')
+    axes[1].legend(); axes[1].grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig('adam_variants_comparison.png', dpi=150)
+    plt.show()
+
+results = train_and_compare_adam_variants(epochs=20)
+visualize_adam_comparison(results)
+```
+
+---

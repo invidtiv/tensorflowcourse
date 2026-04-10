@@ -1,0 +1,193 @@
+---
+title: "Recursive Multi-step Forecasting"
+module: 9
+labNumber: 14
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Recursive Multi-step Forecasting
+
+### Complete Implementation
+
+```python
+"""
+Lab 5.2: Recursive Multi-step Forecasting
+Topic: Iterative One-step Predictions
+"""
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics import mean_squared_error, mean_absolute_error
+
+np.random.seed(42)
+tf.random.set_seed(42)
+
+# Generate and Prepare Data
+print("=" * 60)
+print("STEP 1: Generating Data")
+print("=" * 60)
+
+def generate_data(n_points=1000):
+    t = np.arange(n_points)
+    trend = 0.01 * t
+    seasonal = 10 * np.sin(2 * np.pi * t / 50)
+    noise = np.random.normal(0, 2, n_points)
+    return 100 + trend + seasonal + noise
+
+data = generate_data(1000)
+scaler = MinMaxScaler()
+scaled_data = scaler.fit_transform(data.reshape(-1, 1)).flatten()
+
+# Create Single-step Windows
+print("\n" + "=" * 60)
+print("STEP 2: Creating Single-step Windows")
+print("=" * 60)
+
+def create_windows(data, window_size, horizon=1):
+    X, y = [], []
+    for i in range(len(data) - window_size - horizon + 1):
+        X.append(data[i:(i + window_size)])
+        y.append(data[i + window_size])
+    return np.array(X), np.array(y)
+
+window_size = 60
+X, y = create_windows(scaled_data, window_size, horizon=1)
+X = X.reshape(X.shape[0], X.shape[1], 1)
+
+train_size = int(0.7 * len(X))
+X_train, y_train = X[:train_size], y[:train_size]
+X_val, y_val = X[train_size:int(0.85*len(X))], y[train_size:int(0.85*len(X))]
+X_test, y_test = X[int(0.85*len(X)):], y[int(0.85*len(X)):]
+
+# Build Single-step Model
+print("\n" + "=" * 60)
+print("STEP 3: Building Single-step Model")
+print("=" * 60)
+
+def build_single_step_model(window_size, n_features=1):
+    model = keras.Sequential([
+        layers.LSTM(50, return_sequences=True, input_shape=(window_size, n_features)),
+        layers.Dropout(0.2),
+        layers.LSTM(50, return_sequences=False),
+        layers.Dropout(0.2),
+        layers.Dense(25, activation='relu'),
+        layers.Dense(1)
+    ])
+    model.compile(optimizer='adam', loss='mse', metrics=['mae'])
+    return model
+
+model_recursive = build_single_step_model(window_size)
+model_recursive.summary()
+
+# Train Model
+print("\n" + "=" * 60)
+print("STEP 4: Training Single-step Model")
+print("=" * 60)
+
+early_stop = keras.callbacks.EarlyStopping(
+    monitor='val_loss', patience=10, restore_best_weights=True
+)
+
+history = model_recursive.fit(
+    X_train, y_train,
+    validation_data=(X_val, y_val),
+    epochs=50,
+    batch_size=32,
+    callbacks=[early_stop],
+    verbose=1
+)
+
+# Recursive Multi-step Prediction
+print("\n" + "=" * 60)
+print("STEP 5: Recursive Multi-step Prediction")
+print("=" * 60)
+
+def recursive_predict(model, initial_window, horizon, scaler):
+    predictions = []
+    current_window = initial_window.copy()
+    for _ in range(horizon):
+        pred = model.predict(current_window.reshape(1, -1, 1), verbose=0)
+        predictions.append(pred[0, 0])
+        current_window = np.roll(current_window, -1)
+        current_window[-1] = pred[0, 0]
+    return np.array(predictions)
+
+# Test recursive prediction
+horizon = 7
+sample_idx = 0
+initial_window = X_test[sample_idx].flatten()
+recursive_preds = recursive_predict(model_recursive, initial_window, horizon, scaler)
+actual_future = y_test[sample_idx:sample_idx + horizon]
+recursive_preds_inv = scaler.inverse_transform(recursive_preds.reshape(-1, 1)).flatten()
+actual_future_inv = scaler.inverse_transform(actual_future.reshape(-1, 1)).flatten()
+
+print("Recursive Predictions vs Actual:")
+for i in range(horizon):
+    print(f"Step {i+1}: Predicted={recursive_preds_inv[i]:.2f}, Actual={actual_future_inv[i]:.2f}")
+
+# Evaluate Recursive Predictions on Test Set
+print("\n" + "=" * 60)
+print("STEP 6: Evaluating Recursive Predictions")
+print("=" * 60)
+
+n_test_samples = min(100, len(X_test) - horizon)
+all_recursive_preds = []
+all_actuals = []
+
+for i in range(n_test_samples):
+    initial_window = X_test[i].flatten()
+    preds = recursive_predict(model_recursive, initial_window, horizon, scaler)
+    all_recursive_preds.append(preds)
+    all_actuals.append(y_test[i:i + horizon].flatten())
+
+all_recursive_preds = np.array(all_recursive_preds)
+all_actuals = np.array(all_actuals)
+all_recursive_preds_inv = scaler.inverse_transform(all_recursive_preds)
+all_actuals_inv = scaler.inverse_transform(all_actuals)
+
+print("\nMetrics per horizon step:")
+for i in range(horizon):
+    mse = mean_squared_error(all_actuals_inv[:, i], all_recursive_preds_inv[:, i])
+    mae = mean_absolute_error(all_actuals_inv[:, i], all_recursive_preds_inv[:, i])
+    print(f"Step {i+1}: MSE={mse:.4f}, MAE={mae:.4f}")
+
+# Visualize
+fig, axes = plt.subplots(1, 2, figsize=(15, 5))
+axes[0].plot(range(horizon), all_actuals_inv[0], 'b-o', label='Actual', markersize=6)
+axes[0].plot(range(horizon), all_recursive_preds_inv[0], 'r-s', label='Recursive Predicted', markersize=6)
+axes[0].set_title('Sample Recursive Prediction')
+axes[0].set_xlabel('Horizon Step')
+axes[0].set_ylabel('Value')
+axes[0].legend()
+axes[0].grid(True, alpha=0.3)
+
+mse_per_step = []
+for i in range(horizon):
+    mse = mean_squared_error(all_actuals_inv[:, i], all_recursive_preds_inv[:, i])
+    mse_per_step.append(mse)
+
+axes[1].plot(range(1, horizon+1), mse_per_step, 'g-o', markersize=6)
+axes[1].set_title('MSE vs Horizon Step')
+axes[1].set_xlabel('Horizon Step')
+axes[1].set_ylabel('MSE')
+axes[1].grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.savefig('/mnt/okcomputer/output/lab5_2_recursive_predictions.png', dpi=150)
+plt.show()
+
+# Save model
+model_recursive.save('/mnt/okcomputer/output/lab5_2_recursive_model.h5')
+
+print("\n" + "=" * 60)
+print("Lab 5.2 Complete!")
+print("=" * 60)
+```
+
+---

@@ -1,0 +1,85 @@
+---
+title: "Cyclical Learning Rates"
+module: 4
+labNumber: 7
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Cyclical Learning Rates
+
+```python
+"""
+Lab 2.2: Cyclical Learning Rates
+=================================
+Implement cyclical learning rate schedules.
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+
+class CyclicalLearningRate(tf.keras.optimizers.schedules.LearningRateSchedule):
+    """
+    Cyclical learning rate with triangular or cosine pattern.
+    Based on "Cyclical Learning Rates for Training Neural Networks" by Leslie Smith.
+    """
+    
+    def __init__(self, base_lr=0.001, max_lr=0.01, step_size=2000, mode='triangular', gamma=1.0):
+        super().__init__()
+        self.base_lr = base_lr
+        self.max_lr = max_lr
+        self.step_size = step_size
+        self.mode = mode
+        self.gamma = gamma
+        
+    def __call__(self, step):
+        step = tf.cast(step, tf.float32)
+        step_size = tf.cast(self.step_size, tf.float32)
+        
+        cycle = tf.floor(1 + step / (2 * step_size))
+        x = tf.abs(step / step_size - 2 * cycle + 1)
+        
+        if self.mode == 'triangular':
+            lr = self.base_lr + (self.max_lr - self.base_lr) * tf.maximum(0.0, 1 - x)
+        elif self.mode == 'triangular2':
+            lr = self.base_lr + (self.max_lr - self.base_lr) * tf.maximum(0.0, 1 - x) / (2 ** (cycle - 1))
+        elif self.mode == 'exp_range':
+            lr = self.base_lr + (self.max_lr - self.base_lr) * tf.maximum(0.0, 1 - x) * (self.gamma ** step)
+        else:
+            raise ValueError(f"Unknown mode: {self.mode}")
+        
+        return lr
+    
+    def get_config(self):
+        return {'base_lr': self.base_lr, 'max_lr': self.max_lr,
+                'step_size': self.step_size, 'mode': self.mode, 'gamma': self.gamma}
+
+def visualize_cyclical_lr():
+    total_steps = 10000
+    step_size = 1000
+    
+    schedules = {
+        'Triangular': CyclicalLearningRate(base_lr=0.001, max_lr=0.01, step_size=step_size, mode='triangular'),
+        'Triangular2': CyclicalLearningRate(base_lr=0.001, max_lr=0.01, step_size=step_size, mode='triangular2'),
+        'Exp Range': CyclicalLearningRate(base_lr=0.001, max_lr=0.01, step_size=step_size, mode='exp_range', gamma=0.99994)
+    }
+    
+    steps = np.arange(total_steps)
+    
+    plt.figure(figsize=(12, 6))
+    for name, schedule in schedules.items():
+        lrs = [schedule(s).numpy() for s in steps]
+        plt.plot(steps, lrs, label=name, linewidth=2)
+    
+    plt.xlabel('Training Steps', fontsize=12)
+    plt.ylabel('Learning Rate', fontsize=12)
+    plt.title('Cyclical Learning Rate Schedules', fontsize=14, fontweight='bold')
+    plt.legend(); plt.grid(True, alpha=0.3)
+    plt.savefig('cyclical_lr.png', dpi=150)
+    plt.show()
+
+visualize_cyclical_lr()
+```
+
+---

@@ -1,0 +1,136 @@
+{
+  "version": 1,
+  "passingScore": 80,
+  "questions": [
+    {
+      "id": "m8-q1",
+      "type": "multiple-choice",
+      "difficulty": "easy",
+      "topic": "Word Embeddings",
+      "question": "Why are distributed word embeddings preferred over one-hot representations?",
+      "options": [
+        {
+          "text": "They are smaller AND capture semantic similarity between words",
+          "correct": true
+        },
+        {
+          "text": "They are easier to interpret by humans",
+          "correct": false
+        },
+        {
+          "text": "They don't require training data",
+          "correct": false
+        },
+        {
+          "text": "They are always sparse",
+          "correct": false
+        }
+      ],
+      "explanation": "Dense embeddings are low-dimensional and place semantically similar words near each other in vector space."
+    },
+    {
+      "id": "m8-q2",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Word2Vec",
+      "question": "The Word2Vec skip-gram objective predicts:",
+      "options": [
+        {
+          "text": "The current word from surrounding context",
+          "correct": false
+        },
+        {
+          "text": "Surrounding context words from the current word",
+          "correct": true
+        },
+        {
+          "text": "The next sentence given the current one",
+          "correct": false
+        },
+        {
+          "text": "Whether two documents are similar",
+          "correct": false
+        }
+      ],
+      "explanation": "Skip-gram inverts CBOW: given a center word, predict its context words within a window."
+    },
+    {
+      "id": "m8-q3",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Attention",
+      "question": "In scaled dot-product attention, why is the dot product divided by \u221ad\u2096?",
+      "options": [
+        {
+          "text": "To normalize the output to sum to 1",
+          "correct": false
+        },
+        {
+          "text": "To prevent the softmax from saturating when d\u2096 is large",
+          "correct": true
+        },
+        {
+          "text": "To enforce a positive-definite kernel",
+          "correct": false
+        },
+        {
+          "text": "To speed up computation on GPU",
+          "correct": false
+        }
+      ],
+      "explanation": "Large d\u2096 makes dot products grow in magnitude, pushing softmax into saturated regions with vanishing gradients. Scaling by \u221ad\u2096 counteracts this."
+    },
+    {
+      "id": "m8-q4",
+      "type": "multiple-choice",
+      "difficulty": "easy",
+      "topic": "Tokenization",
+      "question": "Subword tokenization (e.g. BPE) is useful because it:",
+      "options": [
+        {
+          "text": "Eliminates the need for embeddings",
+          "correct": false
+        },
+        {
+          "text": "Handles rare and out-of-vocabulary words by composing them from subword units",
+          "correct": true
+        },
+        {
+          "text": "Always produces fewer tokens than word tokenization",
+          "correct": false
+        },
+        {
+          "text": "Works only for English",
+          "correct": false
+        }
+      ],
+      "explanation": "BPE, WordPiece, and SentencePiece split rare words into known subunits, giving open-vocabulary coverage with a fixed vocabulary."
+    },
+    {
+      "id": "m8-q5",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "Transformers",
+      "question": "What role do positional encodings play in a transformer?",
+      "options": [
+        {
+          "text": "They inject information about token order into an otherwise permutation-invariant architecture",
+          "correct": true
+        },
+        {
+          "text": "They determine the learning rate",
+          "correct": false
+        },
+        {
+          "text": "They replace the embedding layer",
+          "correct": false
+        },
+        {
+          "text": "They are only used during inference",
+          "correct": false
+        }
+      ],
+      "explanation": "Self-attention is permutation-invariant, so positional encodings (sinusoidal or learned) are added to embeddings to preserve sequence order information."
+    }
+  ]
+}

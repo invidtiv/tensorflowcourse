@@ -1,0 +1,233 @@
+---
+title: "Custom Binary Classifier from Scratch"
+module: 2
+labNumber: 16
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-06-part6.md"
+---
+# Custom Binary Classifier from Scratch
+
+## Objectives
+- Build a binary classifier from scratch
+- Implement custom training loop
+- Understand decision boundaries
+- Visualize training process
+
+---
+
+```python
+"""
+Lab 2.9: Custom Binary Classifier from Scratch
+Building a binary classifier using only TensorFlow operations.
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.datasets import make_moons
+
+print("=" * 60)
+print("LAB 2.9: Custom Binary Classifier from Scratch")
+print("=" * 60)
+
+# ============================================================
+# STEP 1: Generate Synthetic Dataset
+# ============================================================
+print("\n[STEP 1] Generating synthetic dataset...")
+
+# Create moon-shaped dataset
+X, y = make_moons(n_samples=1000, noise=0.2, random_state=42)
+
+# Convert to tensors
+X = tf.cast(X, tf.float32)
+y = tf.cast(y, tf.float32)
+
+# Split data
+split = int(0.8 * len(X))
+X_train, X_test = X[:split], X[split:]
+y_train, y_test = y[:split], y[split:]
+
+print(f"Training samples: {len(X_train)}")
+print(f"Test samples: {len(X_test)}")
+
+# Visualize data
+fig, ax = plt.subplots(figsize=(8, 6))
+scatter = ax.scatter(X[:, 0], X[:, 1], c=y, cmap='RdYlBu', alpha=0.6, edgecolors='k')
+ax.set_xlabel('Feature 1')
+ax.set_ylabel('Feature 2')
+ax.set_title('Binary Classification Dataset', fontweight='bold')
+plt.colorbar(scatter, label='Class')
+plt.tight_layout()
+plt.savefig('/mnt/okcomputer/output/binary_dataset.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+# ============================================================
+# STEP 2: Define Custom Model Class
+# ============================================================
+print("\n[STEP 2] Defining custom model class...")
+
+class CustomBinaryClassifier(tf.Module):
+    """Custom binary classifier built from scratch."""
+    
+    def __init__(self, hidden_units=16):
+        super().__init__()
+        
+        # Initialize weights and biases
+        self.W1 = tf.Variable(tf.random.normal([2, hidden_units]) * 0.1, name='W1')
+        self.b1 = tf.Variable(tf.zeros([hidden_units]), name='b1')
+        
+        self.W2 = tf.Variable(tf.random.normal([hidden_units, hidden_units]) * 0.1, name='W2')
+        self.b2 = tf.Variable(tf.zeros([hidden_units]), name='b2')
+        
+        self.W3 = tf.Variable(tf.random.normal([hidden_units, 1]) * 0.1, name='W3')
+        self.b3 = tf.Variable(tf.zeros([1]), name='b3')
+    
+    def __call__(self, x):
+        """Forward pass."""
+        # Layer 1
+        z1 = tf.matmul(x, self.W1) + self.b1
+        a1 = tf.nn.relu(z1)
+        
+        # Layer 2
+        z2 = tf.matmul(a1, self.W2) + self.b2
+        a2 = tf.nn.relu(z2)
+        
+        # Output layer
+        z3 = tf.matmul(a2, self.W3) + self.b3
+        output = tf.nn.sigmoid(z3)
+        
+        return output
+    
+    def predict(self, x):
+        """Make predictions."""
+        probs = self(x)
+        return tf.cast(probs > 0.5, tf.float32)
+
+# ============================================================
+# STEP 3: Custom Training Loop
+# ============================================================
+print("\n[STEP 3] Training with custom loop...")
+
+def binary_cross_entropy(y_true, y_pred):
+    """Binary cross-entropy loss."""
+    epsilon = 1e-7
+    y_pred = tf.clip_by_value(y_pred, epsilon, 1 - epsilon)
+    return -tf.reduce_mean(y_true * tf.math.log(y_pred) + 
+                           (1 - y_true) * tf.math.log(1 - y_pred))
+
+# Create model
+model = CustomBinaryClassifier(hidden_units=16)
+
+# Optimizer
+optimizer = tf.optimizers.Adam(learning_rate=0.01)
+
+# Training loop
+epochs = 200
+batch_size = 32
+history = {'loss': [], 'accuracy': []}
+
+print("Training...")
+for epoch in range(epochs):
+    # Shuffle data
+    indices = tf.random.shuffle(tf.range(len(X_train)))
+    X_shuffled = tf.gather(X_train, indices)
+    y_shuffled = tf.gather(y_train, indices)
+    
+    epoch_loss = 0.0
+    num_batches = 0
+    
+    # Mini-batch training
+    for i in range(0, len(X_train), batch_size):
+        X_batch = X_shuffled[i:i+batch_size]
+        y_batch = y_shuffled[i:i+batch_size]
+        
+        with tf.GradientTape() as tape:
+            y_pred = model(X_batch)
+            loss = binary_cross_entropy(y_batch, y_pred)
+        
+        # Compute gradients
+        gradients = tape.gradient(loss, model.trainable_variables)
+        
+        # Apply gradients
+        optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+        
+        epoch_loss += loss.numpy()
+        num_batches += 1
+    
+    # Calculate accuracy
+    y_pred_train = model.predict(X_train)
+    accuracy = tf.reduce_mean(tf.cast(tf.equal(y_pred_train, y_train), tf.float32)).numpy()
+    
+    avg_loss = epoch_loss / num_batches
+    history['loss'].append(avg_loss)
+    history['accuracy'].append(accuracy)
+    
+    if epoch % 20 == 0:
+        print(f"Epoch {epoch}: Loss = {avg_loss:.4f}, Accuracy = {accuracy:.4f}")
+
+# ============================================================
+# STEP 4: Evaluate and Visualize
+# ============================================================
+print("\n[STEP 4] Evaluating model...")
+
+# Test accuracy
+y_pred_test = model.predict(X_test)
+test_accuracy = tf.reduce_mean(tf.cast(tf.equal(y_pred_test, y_test), tf.float32)).numpy()
+print(f"Test accuracy: {test_accuracy:.4f}")
+
+# Create decision boundary visualization
+def plot_decision_boundary(X, y, model):
+    """Plot decision boundary."""
+    x_min, x_max = X[:, 0].numpy().min() - 0.5, X[:, 0].numpy().max() + 0.5
+    y_min, y_max = X[:, 1].numpy().min() - 0.5, X[:, 1].numpy().max() + 0.5
+    
+    xx, yy = np.meshgrid(np.linspace(x_min, x_max, 200),
+                         np.linspace(y_min, y_max, 200))
+    
+    grid = tf.cast(np.c_[xx.ravel(), yy.ravel()], tf.float32)
+    Z = model.predict(grid).numpy().reshape(xx.shape)
+    
+    return xx, yy, Z
+
+fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+# Decision boundary
+ax1 = axes[0]
+xx, yy, Z = plot_decision_boundary(X, y, model)
+ax1.contourf(xx, yy, Z, alpha=0.3, cmap='RdYlBu')
+scatter = ax1.scatter(X[:, 0], X[:, 1], c=y, cmap='RdYlBu', edgecolors='k')
+ax1.set_xlabel('Feature 1')
+ax1.set_ylabel('Feature 2')
+ax1.set_title('Decision Boundary', fontweight='bold')
+
+# Training history
+ax2 = axes[1]
+ax2.plot(history['loss'], label='Loss', linewidth=2)
+ax2_twin = ax2.twinx()
+ax2_twin.plot(history['accuracy'], label='Accuracy', linewidth=2, color='orange')
+ax2.set_xlabel('Epoch')
+ax2.set_ylabel('Loss', color='blue')
+ax2_twin.set_ylabel('Accuracy', color='orange')
+ax2.set_title('Training History', fontweight='bold')
+ax2.grid(True, alpha=0.3)
+
+lines1, labels1 = ax2.get_legend_handles_labels()
+lines2, labels2 = ax2_twin.get_legend_handles_labels()
+ax2.legend(lines1 + lines2, labels1 + labels2, loc='center right')
+
+plt.suptitle('Custom Binary Classifier Results', fontsize=14, fontweight='bold')
+plt.tight_layout()
+plt.savefig('/mnt/okcomputer/output/custom_classifier.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+print("\n" + "=" * 60)
+print("LAB 2.9 COMPLETED SUCCESSFULLY!")
+print("=" * 60)
+print("\nKEY TAKEAWAYS:")
+print("1. Custom models can be built using tf.Module")
+print("2. Manual gradient computation gives full control")
+print("3. Decision boundaries visualize model behavior")
+print("4. ReLU + sigmoid works well for binary classification")
+print("5. Custom training loops enable advanced techniques")
+```

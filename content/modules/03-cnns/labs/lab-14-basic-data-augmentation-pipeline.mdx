@@ -1,0 +1,551 @@
+---
+title: "Basic Data Augmentation Pipeline"
+module: 3
+labNumber: 14
+difficulty: "easy"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Basic Data Augmentation Pipeline
+
+## Objectives
+- Implement basic data augmentation techniques
+- Compare augmentation strategies
+- Visualize augmented images
+
+## Prerequisites
+- Understanding of image transformations
+- Knowledge of Keras ImageDataGenerator
+
+```python
+"""
+Lab 3.13: Basic Data Augmentation Pipeline
+Essential augmentation techniques for CNN training
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers, models
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.datasets import cifar10
+from tensorflow.keras.utils import to_categorical
+import cv2
+
+# =============================================================================
+# Section 1: Data Augmentation Theory
+# =============================================================================
+
+print("=" * 60)
+print("DATA AUGMENTATION PIPELINE")
+print("=" * 60)
+
+print("""
+Data Augmentation:
+==================
+
+Purpose:
+- Increase effective dataset size
+- Reduce overfitting
+- Improve model generalization
+- Make model invariant to transformations
+
+Types of Augmentation:
+
+1. Geometric Transformations:
+   - Rotation
+   - Translation (shift)
+   - Scaling (zoom)
+   - Flipping (horizontal/vertical)
+   - Shearing
+
+2. Color/Intensity Transformations:
+   - Brightness adjustment
+   - Contrast adjustment
+   - Color jittering
+   - Gaussian noise
+
+3. Advanced Techniques:
+   - Cutout/GridMask
+   - Mixup
+   - CutMix
+   - AutoAugment
+
+Best Practices:
+- Don't augment validation/test data
+- Choose augmentations relevant to your problem
+- Start simple, add complexity gradually
+""")
+
+
+# =============================================================================
+# Section 2: Load Sample Data
+# =============================================================================
+
+def load_sample_data():
+    """Load CIFAR-10 sample for augmentation demonstration."""
+    
+    print("\n" + "=" * 60)
+    print("LOADING SAMPLE DATA")
+    print("=" * 60)
+    
+    (X_train, y_train), (_, _) = cifar10.load_data()
+    
+    # Select one image per class
+    class_names = ['airplane', 'automobile', 'bird', 'cat', 'deer',
+                   'dog', 'frog', 'horse', 'ship', 'truck']
+    
+    sample_images = []
+    for class_idx in range(10):
+        idx = np.where(y_train == class_idx)[0][0]
+        sample_images.append(X_train[idx])
+    
+    sample_images = np.array(sample_images)
+    
+    print(f"Loaded {len(sample_images)} sample images")
+    print(f"Image shape: {sample_images[0].shape}")
+    
+    return sample_images, class_names
+
+
+sample_images, class_names = load_sample_data()
+
+
+# =============================================================================
+# Section 3: Visualize Basic Augmentations
+# =============================================================================
+
+def visualize_augmentations(image, augmentations, num_variations=5):
+    """
+    Visualize different augmentations on a single image.
+    
+    Args:
+        image: Input image
+        augmentations: Dictionary of augmentation functions
+        num_variations: Number of variations to show
+    """
+    
+    n_augs = len(augmentations)
+    fig, axes = plt.subplots(n_augs, num_variations + 1, 
+                            figsize=(3*(num_variations+1), 3*n_augs))
+    
+    for row_idx, (aug_name, aug_func) in enumerate(augmentations.items()):
+        # Show original
+        axes[row_idx, 0].imshow(image)
+        axes[row_idx, 0].set_title('Original')
+        axes[row_idx, 0].axis('off')
+        
+        # Show augmented versions
+        for col_idx in range(num_variations):
+            augmented = aug_func(image)
+            axes[row_idx, col_idx + 1].imshow(augmented)
+            axes[row_idx, col_idx + 1].set_title(f'{aug_name} {col_idx+1}')
+            axes[row_idx, col_idx + 1].axis('off')
+    
+    plt.tight_layout()
+    plt.savefig('/mnt/okcomputer/output/lab313_basic_augmentations.png', dpi=150)
+    plt.show()
+    print("\nBasic augmentations saved to: /mnt/okcomputer/output/lab313_basic_augmentations.png")
+
+
+# Define augmentation functions
+def random_rotation(img, max_angle=30):
+    """Random rotation."""
+    angle = np.random.uniform(-max_angle, max_angle)
+    h, w = img.shape[:2]
+    center = (w // 2, h // 2)
+    M = cv2.getRotationMatrix2D(center, angle, 1.0)
+    return cv2.warpAffine(img, M, (w, h))
+
+
+def random_shift(img, max_shift=0.2):
+    """Random horizontal and vertical shift."""
+    h, w = img.shape[:2]
+    tx = int(np.random.uniform(-max_shift, max_shift) * w)
+    ty = int(np.random.uniform(-max_shift, max_shift) * h)
+    M = np.float32([[1, 0, tx], [0, 1, ty]])
+    return cv2.warpAffine(img, M, (w, h))
+
+
+def random_zoom(img, zoom_range=(0.8, 1.2)):
+    """Random zoom."""
+    h, w = img.shape[:2]
+    zoom = np.random.uniform(*zoom_range)
+    new_h, new_w = int(h * zoom), int(w * zoom)
+    
+    resized = cv2.resize(img, (new_w, new_h))
+    
+    # Crop or pad to original size
+    if zoom > 1:  # Zoom in - crop
+        start_h = (new_h - h) // 2
+        start_w = (new_w - w) // 2
+        return resized[start_h:start_h+h, start_w:start_w+w]
+    else:  # Zoom out - pad
+        pad_h = (h - new_h) // 2
+        pad_w = (w - new_w) // 2
+        result = np.zeros_like(img)
+        result[pad_h:pad_h+new_h, pad_w:pad_w+new_w] = resized
+        return result
+
+
+def random_flip(img):
+    """Random horizontal flip."""
+    if np.random.random() > 0.5:
+        return cv2.flip(img, 1)
+    return img
+
+
+def random_brightness(img, max_delta=30):
+    """Random brightness adjustment."""
+    delta = np.random.randint(-max_delta, max_delta)
+    return np.clip(img.astype(np.int16) + delta, 0, 255).astype(np.uint8)
+
+
+# Create augmentation dictionary
+augmentations = {
+    'Rotation': lambda img: random_rotation(img, 30),
+    'Shift': lambda img: random_shift(img, 0.2),
+    'Zoom': lambda img: random_zoom(img, (0.8, 1.2)),
+    'Flip': random_flip,
+    'Brightness': lambda img: random_brightness(img, 30)
+}
+
+# Visualize on first sample
+visualize_augmentations(sample_images[0], augmentations)
+
+
+# =============================================================================
+# Section 4: Keras ImageDataGenerator
+# =============================================================================
+
+def demonstrate_keras_generator():
+    """Demonstrate Keras ImageDataGenerator."""
+    
+    print("\n" + "=" * 60)
+    print("KERAS IMAGEDATAGENERATOR")
+    print("=" * 60)
+    
+    # Create generator with multiple augmentations
+    datagen = ImageDataGenerator(
+        rotation_range=20,
+        width_shift_range=0.2,
+        height_shift_range=0.2,
+        horizontal_flip=True,
+        zoom_range=0.2,
+        brightness_range=[0.8, 1.2],
+        fill_mode='nearest'
+    )
+    
+    print("\nAugmentation parameters:")
+    print("  rotation_range: 20 degrees")
+    print("  width_shift_range: 0.2")
+    print("  height_shift_range: 0.2")
+    print("  horizontal_flip: True")
+    print("  zoom_range: 0.2")
+    print("  brightness_range: [0.8, 1.2]")
+    
+    # Generate augmented images
+    image = sample_images[0]
+    image_batch = np.expand_dims(image, axis=0)
+    
+    fig, axes = plt.subplots(2, 5, figsize=(15, 6))
+    axes = axes.flatten()
+    
+    # Show original
+    axes[0].imshow(image)
+    axes[0].set_title('Original')
+    axes[0].axis('off')
+    
+    # Show augmented versions
+    aug_iter = datagen.flow(image_batch, batch_size=1)
+    for i in range(1, 10):
+        aug_image = next(aug_iter)[0].astype(np.uint8)
+        axes[i].imshow(aug_image)
+        axes[i].set_title(f'Augmented {i}')
+        axes[i].axis('off')
+    
+    plt.tight_layout()
+    plt.savefig('/mnt/okcomputer/output/lab313_keras_generator.png', dpi=150)
+    plt.show()
+    print("\nKeras generator output saved to: /mnt/okcomputer/output/lab313_keras_generator.png")
+    
+    return datagen
+
+
+datagen = demonstrate_keras_generator()
+
+
+# =============================================================================
+# Section 5: Training with Augmentation
+# =============================================================================
+
+def train_with_augmentation(use_augmentation=True, epochs=10):
+    """Train CNN with and without augmentation."""
+    
+    print("\n" + "=" * 60)
+    print(f"TRAINING {'WITH' if use_augmentation else 'WITHOUT'} AUGMENTATION")
+    print("=" * 60)
+    
+    # Load data
+    (X_train, y_train), (X_test, y_test) = cifar10.load_data()
+    X_train = X_train.astype('float32') / 255.0
+    X_test = X_test.astype('float32') / 255.0
+    y_train = to_categorical(y_train, 10)
+    y_test = to_categorical(y_test, 10)
+    
+    # Use subset for speed
+    X_train = X_train[:10000]
+    y_train = y_train[:10000]
+    
+    # Build simple model
+    model = models.Sequential([
+        layers.Conv2D(32, 3, activation='relu', input_shape=(32, 32, 3)),
+        layers.MaxPooling2D(2),
+        layers.Conv2D(64, 3, activation='relu'),
+        layers.MaxPooling2D(2),
+        layers.Conv2D(128, 3, activation='relu'),
+        layers.GlobalAveragePooling2D(),
+        layers.Dense(128, activation='relu'),
+        layers.Dropout(0.5),
+        layers.Dense(10, activation='softmax')
+    ])
+    
+    model.compile(optimizer='adam',
+                  loss='categorical_crossentropy',
+                  metrics=['accuracy'])
+    
+    if use_augmentation:
+        # Create generator
+        train_datagen = ImageDataGenerator(
+            rotation_range=15,
+            width_shift_range=0.1,
+            height_shift_range=0.1,
+            horizontal_flip=True
+        )
+        
+        # Fit generator
+        train_datagen.fit(X_train)
+        
+        # Train with augmentation
+        history = model.fit(
+            train_datagen.flow(X_train, y_train, batch_size=64),
+            steps_per_epoch=len(X_train) // 64,
+            epochs=epochs,
+            validation_data=(X_test[:2000], y_test[:2000]),
+            verbose=1
+        )
+    else:
+        # Train without augmentation
+        history = model.fit(X_train, y_train,
+                           batch_size=64,
+                           epochs=epochs,
+                           validation_data=(X_test[:2000], y_test[:2000]),
+                           verbose=1)
+    
+    # Evaluate
+    test_loss, test_acc = model.evaluate(X_test, y_test, verbose=0)
+    print(f"\nTest accuracy: {test_acc:.4f}")
+    
+    return history, test_acc
+
+
+# Train without augmentation
+history_no_aug, acc_no_aug = train_with_augmentation(use_augmentation=False, epochs=10)
+
+# Train with augmentation
+history_aug, acc_aug = train_with_augmentation(use_augmentation=True, epochs=10)
+
+
+# =============================================================================
+# Section 6: Compare Results
+# =============================================================================
+
+def compare_augmentation_results(history_no_aug, history_aug):
+    """Compare training with and without augmentation."""
+    
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    
+    # Accuracy
+    axes[0].plot(history_no_aug.history['val_accuracy'], 
+                label='Without Augmentation', marker='o')
+    axes[0].plot(history_aug.history['val_accuracy'], 
+                label='With Augmentation', marker='s')
+    axes[0].set_title('Validation Accuracy')
+    axes[0].set_xlabel('Epoch')
+    axes[0].set_ylabel('Accuracy')
+    axes[0].legend()
+    axes[0].grid(True)
+    
+    # Loss
+    axes[1].plot(history_no_aug.history['val_loss'], 
+                label='Without Augmentation', marker='o')
+    axes[1].plot(history_aug.history['val_loss'], 
+                label='With Augmentation', marker='s')
+    axes[1].set_title('Validation Loss')
+    axes[1].set_xlabel('Epoch')
+    axes[1].set_ylabel('Loss')
+    axes[1].legend()
+    axes[1].grid(True)
+    
+    plt.tight_layout()
+    plt.savefig('/mnt/okcomputer/output/lab313_augmentation_comparison.png', dpi=150)
+    plt.show()
+    print("\nComparison saved to: /mnt/okcomputer/output/lab313_augmentation_comparison.png")
+    
+    # Print summary
+    print("\n" + "-" * 40)
+    print("AUGMENTATION COMPARISON SUMMARY")
+    print("-" * 40)
+    print(f"Without Augmentation: {acc_no_aug:.4f}")
+    print(f"With Augmentation: {acc_aug:.4f}")
+    print(f"Improvement: {acc_aug - acc_no_aug:.4f}")
+    print("-" * 40)
+
+
+compare_augmentation_results(history_no_aug, history_aug)
+
+
+# =============================================================================
+# Section 7: Augmentation Intensity Analysis
+# =============================================================================
+
+def analyze_augmentation_intensity():
+    """Analyze effect of different augmentation intensities."""
+    
+    print("\n" + "=" * 60)
+    print("AUGMENTATION INTENSITY ANALYSIS")
+    print("=" * 60)
+    
+    intensities = {
+        'Light': {'rotation': 10, 'shift': 0.1, 'zoom': 0.1},
+        'Medium': {'rotation': 20, 'shift': 0.2, 'zoom': 0.2},
+        'Heavy': {'rotation': 40, 'shift': 0.3, 'zoom': 0.3}
+    }
+    
+    results = {}
+    
+    for name, params in intensities.items():
+        print(f"\n--- Testing {name} augmentation ---")
+        
+        # Load data
+        (X_train, y_train), (X_test, y_test) = cifar10.load_data()
+        X_train = X_train.astype('float32') / 255.0
+        X_test = X_test.astype('float32') / 255.0
+        y_train = to_categorical(y_train, 10)
+        y_test = to_categorical(y_test, 10)
+        
+        X_train = X_train[:5000]
+        y_train = y_train[:5000]
+        
+        # Create generator
+        datagen = ImageDataGenerator(
+            rotation_range=params['rotation'],
+            width_shift_range=params['shift'],
+            height_shift_range=params['shift'],
+            zoom_range=params['zoom'],
+            horizontal_flip=True
+        )
+        
+        # Build model
+        model = models.Sequential([
+            layers.Conv2D(32, 3, activation='relu', input_shape=(32, 32, 3)),
+            layers.MaxPooling2D(2),
+            layers.Conv2D(64, 3, activation='relu'),
+            layers.GlobalAveragePooling2D(),
+            layers.Dense(64, activation='relu'),
+            layers.Dense(10, activation='softmax')
+        ])
+        
+        model.compile(optimizer='adam', loss='categorical_crossentropy', 
+                     metrics=['accuracy'])
+        
+        # Train
+        history = model.fit(
+            datagen.flow(X_train, y_train, batch_size=64),
+            steps_per_epoch=len(X_train) // 64,
+            epochs=5,
+            validation_data=(X_test[:2000], y_test[:2000]),
+            verbose=0
+        )
+        
+        final_acc = history.history['val_accuracy'][-1]
+        results[name] = final_acc
+        print(f"  Final accuracy: {final_acc:.4f}")
+    
+    return results
+
+
+intensity_results = analyze_augmentation_intensity()
+
+
+# =============================================================================
+# Section 8: Visualize Intensity Results
+# =============================================================================
+
+def plot_intensity_results(results):
+    """Plot augmentation intensity results."""
+    
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    names = list(results.keys())
+    accs = list(results.values())
+    colors = ['#2ecc71', '#f39c12', '#e74c3c']
+    
+    bars = ax.bar(names, accs, color=colors, edgecolor='black', linewidth=2)
+    
+    # Add value labels
+    for bar, acc in zip(bars, accs):
+        height = bar.get_height()
+        ax.text(bar.get_x() + bar.get_width()/2., height,
+               f'{acc:.4f}', ha='center', va='bottom', fontsize=12, fontweight='bold')
+    
+    ax.set_title('Effect of Augmentation Intensity', fontsize=14, fontweight='bold')
+    ax.set_xlabel('Augmentation Intensity')
+    ax.set_ylabel('Validation Accuracy')
+    ax.set_ylim([0, 1])
+    ax.grid(True, alpha=0.3, axis='y')
+    
+    plt.tight_layout()
+    plt.savefig('/mnt/okcomputer/output/lab313_intensity_analysis.png', dpi=150)
+    plt.show()
+    print("\nIntensity analysis saved to: /mnt/okcomputer/output/lab313_intensity_analysis.png")
+
+
+plot_intensity_results(intensity_results)
+
+
+# =============================================================================
+# Section 9: Exercises
+# =============================================================================
+
+print("\n" + "=" * 60)
+print("EXERCISES")
+print("=" * 60)
+
+print("""
+Exercise 1: Custom Augmentation Pipeline
+- Implement your own augmentation functions
+- Compare with Keras generator
+
+Exercise 2: Test-Time Augmentation (TTA)
+- Apply augmentation during inference
+- Average predictions across augmented versions
+
+Exercise 3: Augmentation per Class
+- Use different augmentation for each class
+- Analyze effect on class imbalance
+
+Exercise 4: Geometric vs Photometric
+- Compare geometric augmentations (rotation, flip)
+- Compare photometric augmentations (brightness, contrast)
+""")
+
+print("\n" + "=" * 60)
+print("Lab 3.13 Complete!")
+print("=" * 60)
+```
+
+---
+
+<a name="lab-314"></a>

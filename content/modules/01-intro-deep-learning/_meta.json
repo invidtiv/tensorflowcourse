@@ -1,0 +1,19 @@
+{
+  "id": "01-intro-deep-learning",
+  "number": 1,
+  "title": "Introduction to Deep Learning and TensorFlow",
+  "shortTitle": "Intro to DL",
+  "description": "Understand the evolution of AI, master NumPy fundamentals, install TensorFlow, and implement gradient descent from scratch.",
+  "duration": "2 weeks",
+  "difficulty": "beginner",
+  "prerequisites": [],
+  "objectives": [
+    "Understand the historical evolution of AI and deep learning",
+    "Distinguish between AI, ML, and deep learning paradigms",
+    "Master NumPy for numerical computing",
+    "Install and configure TensorFlow environments",
+    "Implement gradient descent optimization from scratch"
+  ],
+  "icon": "brain",
+  "color": "#00d4ff"
+}

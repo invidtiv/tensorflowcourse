@@ -1,0 +1,542 @@
+---
+title: "DCGAN for MNIST Handwritten Digits"
+module: 7
+labNumber: 5
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# DCGAN for MNIST Handwritten Digits
+
+## Objectives
+- Implement Deep Convolutional GAN (DCGAN)
+- Generate realistic handwritten digits
+- Understand convolutional architecture for GANs
+- Visualize training progress
+
+## Prerequisites
+- TensorFlow 2.x with Keras
+- Understanding of CNNs
+- MNIST dataset
+
+## Theory Overview
+
+DCGAN replaces fully-connected layers with convolutional layers:
+- **Generator**: Transposed convolutions (Conv2DTranspose) to upsample
+- **Discriminator**: Strided convolutions to downsample
+
+Key architectural guidelines:
+1. Replace pooling layers with strided convolutions
+2. Use BatchNorm in both generator and discriminator
+3. Remove fully-connected hidden layers
+4. Use ReLU in generator (output uses tanh)
+5. Use LeakyReLU in discriminator
+
+## Complete Implementation
+
+```python
+"""
+Lab 7.4: DCGAN for MNIST Handwritten Digits
+=============================================
+Deep Convolutional GAN implementation for generating MNIST digits.
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+from tensorflow import keras
+from tensorflow.keras import layers
+import time
+import os
+
+# Set random seeds
+tf.random.set_seed(42)
+np.random.seed(42)
+
+# Create output directory
+os.makedirs('dcgan_output', exist_ok=True)
+
+# =============================================================================
+# Part 1: Load and Preprocess MNIST Data
+# =============================================================================
+
+def load_mnist_data():
+    """
+    Load and preprocess MNIST dataset.
+    
+    Returns:
+        Preprocessed training images
+    """
+    # Load MNIST
+    (train_images, train_labels), (_, _) = keras.datasets.mnist.load_data()
+    
+    # Add channel dimension and normalize to [-1, 1]
+    train_images = train_images.reshape(-1, 28, 28, 1).astype('float32')
+    train_images = (train_images - 127.5) / 127.5  # Normalize to [-1, 1]
+    
+    print(f"Training images shape: {train_images.shape}")
+    print(f"Value range: [{train_images.min():.2f}, {train_images.max():.2f}]")
+    
+    return train_images, train_labels
+
+# Load data
+train_images, train_labels = load_mnist_data()
+
+# Visualize sample real images
+plt.figure(figsize=(10, 4))
+for i in range(10):
+    plt.subplot(2, 5, i+1)
+    plt.imshow(train_images[i, :, :, 0] * 0.5 + 0.5, cmap='gray')
+    plt.title(f'Label: {train_labels[i]}')
+    plt.axis('off')
+plt.suptitle('Sample MNIST Images')
+plt.tight_layout()
+plt.savefig('dcgan_output/real_mnist_samples.png', dpi=150)
+plt.show()
+
+# =============================================================================
+# Part 2: Build the DCGAN Generator
+# =============================================================================
+
+def build_dcgan_generator(latent_dim=100):
+    """
+    Build DCGAN Generator using transposed convolutions.
+    
+    Architecture:
+    Input: latent_dim vector
+    -> Dense (7x7x256) -> Reshape
+    -> Conv2DTranspose (14x14x128)
+    -> Conv2DTranspose (28x28x64)
+    -> Conv2DTranspose (28x28x1)
+    
+    Args:
+        latent_dim: Dimension of input noise vector
+    
+    Returns:
+        Generator model
+    """
+    model = keras.Sequential(name='DCGAN_Generator')
+    
+    # Foundation for 7x7 image
+    model.add(layers.Dense(7 * 7 * 256, input_shape=(latent_dim,)))
+    model.add(layers.Reshape((7, 7, 256)))
+    model.add(layers.BatchNormalization())
+    model.add(layers.LeakyReLU(alpha=0.2))
+    # Output: 7x7x256
+    
+    # Upsample to 14x14
+    model.add(layers.Conv2DTranspose(
+        128, (5, 5), strides=(2, 2), padding='same', use_bias=False
+    ))
+    model.add(layers.BatchNormalization())
+    model.add(layers.LeakyReLU(alpha=0.2))
+    # Output: 14x14x128
+    
+    # Upsample to 28x28
+    model.add(layers.Conv2DTranspose(
+        64, (5, 5), strides=(2, 2), padding='same', use_bias=False
+    ))
+    model.add(layers.BatchNormalization())
+    model.add(layers.LeakyReLU(alpha=0.2))
+    # Output: 28x28x64
+    
+    # Final layer: 28x28x1
+    model.add(layers.Conv2DTranspose(
+        1, (5, 5), strides=(1, 1), padding='same', use_bias=False,
+        activation='tanh'
+    ))
+    # Output: 28x28x1
+    
+    return model
+
+# Create generator
+generator = build_dcgan_generator(latent_dim=100)
+print("\n=== DCGAN Generator Architecture ===")
+generator.summary()
+
+# Test generator
+noise = tf.random.normal([1, 100])
+generated_image = generator(noise, training=False)
+print(f"\nGenerated image shape: {generated_image.shape}")
+
+# Visualize untrained generator output
+plt.figure(figsize=(4, 4))
+plt.imshow(generated_image[0, :, :, 0] * 0.5 + 0.5, cmap='gray')
+plt.title('Untrained Generator Output')
+plt.axis('off')
+plt.savefig('dcgan_output/untrained_generator.png', dpi=150)
+plt.show()
+
+# =============================================================================
+# Part 3: Build the DCGAN Discriminator
+# =============================================================================
+
+def build_dcgan_discriminator():
+    """
+    Build DCGAN Discriminator using strided convolutions.
+    
+    Architecture:
+    Input: 28x28x1 image
+    -> Conv2D (14x14x64)
+    -> Conv2D (7x7x128)
+    -> Flatten -> Dense (1)
+    
+    Returns:
+        Discriminator model
+    """
+    model = keras.Sequential(name='DCGAN_Discriminator')
+    
+    # First conv layer: 28x28x1 -> 14x14x64
+    model.add(layers.Conv2D(
+        64, (5, 5), strides=(2, 2), padding='same', input_shape=(28, 28, 1)
+    ))
+    model.add(layers.LeakyReLU(alpha=0.2))
+    model.add(layers.Dropout(0.3))
+    
+    # Second conv layer: 14x14x64 -> 7x7x128
+    model.add(layers.Conv2D(
+        128, (5, 5), strides=(2, 2), padding='same', use_bias=False
+    ))
+    model.add(layers.BatchNormalization())
+    model.add(layers.LeakyReLU(alpha=0.2))
+    model.add(layers.Dropout(0.3))
+    
+    # Third conv layer: 7x7x128 -> 4x4x256
+    model.add(layers.Conv2D(
+        256, (5, 5), strides=(2, 2), padding='same', use_bias=False
+    ))
+    model.add(layers.BatchNormalization())
+    model.add(layers.LeakyReLU(alpha=0.2))
+    model.add(layers.Dropout(0.3))
+    
+    # Flatten and output
+    model.add(layers.Flatten())
+    model.add(layers.Dense(1, activation='sigmoid'))
+    
+    return model
+
+# Create discriminator
+discriminator = build_dcgan_discriminator()
+print("\n=== DCGAN Discriminator Architecture ===")
+discriminator.summary()
+
+# Test discriminator
+decision = discriminator(generated_image)
+print(f"\nDiscriminator output for fake image: {decision.numpy()}")
+
+# =============================================================================
+# Part 4: Define Loss Functions and Optimizers
+# =============================================================================
+
+# Binary cross-entropy loss
+cross_entropy = keras.losses.BinaryCrossentropy(from_logits=False)
+
+def discriminator_loss(real_output, fake_output):
+    """Discriminator loss with label smoothing."""
+    # Label smoothing: real labels = 0.9 instead of 1.0
+    real_loss = cross_entropy(tf.ones_like(real_output) * 0.9, real_output)
+    fake_loss = cross_entropy(tf.zeros_like(fake_output), fake_output)
+    return real_loss + fake_loss
+
+def generator_loss(fake_output):
+    """Generator loss."""
+    return cross_entropy(tf.ones_like(fake_output), fake_output)
+
+# Optimizers (using learning rate from DCGAN paper)
+generator_optimizer = keras.optimizers.Adam(learning_rate=0.0002, beta_1=0.5)
+discriminator_optimizer = keras.optimizers.Adam(learning_rate=0.0002, beta_1=0.5)
+
+# =============================================================================
+# Part 5: Training Loop
+# =============================================================================
+
+@tf.function
+def train_step_dcgan(images, latent_dim):
+    """
+    Single training step for DCGAN.
+    
+    Args:
+        images: Batch of real images
+        latent_dim: Dimension of noise vector
+    
+    Returns:
+        gen_loss, disc_loss
+    """
+    batch_size = tf.shape(images)[0]
+    noise = tf.random.normal([batch_size, latent_dim])
+    
+    # ======================================================================
+    # Train Discriminator
+    # ======================================================================
+    with tf.GradientTape() as disc_tape:
+        generated_images = generator(noise, training=True)
+        
+        real_output = discriminator(images, training=True)
+        fake_output = discriminator(generated_images, training=True)
+        
+        disc_loss = discriminator_loss(real_output, fake_output)
+    
+    gradients_of_discriminator = disc_tape.gradient(
+        disc_loss, discriminator.trainable_variables
+    )
+    discriminator_optimizer.apply_gradients(
+        zip(gradients_of_discriminator, discriminator.trainable_variables)
+    )
+    
+    # ======================================================================
+    # Train Generator
+    # ======================================================================
+    noise = tf.random.normal([batch_size, latent_dim])
+    
+    with tf.GradientTape() as gen_tape:
+        generated_images = generator(noise, training=True)
+        fake_output = discriminator(generated_images, training=True)
+        
+        gen_loss = generator_loss(fake_output)
+    
+    gradients_of_generator = gen_tape.gradient(
+        gen_loss, generator.trainable_variables
+    )
+    generator_optimizer.apply_gradients(
+        zip(gradients_of_generator, generator.trainable_variables)
+    )
+    
+    return gen_loss, disc_loss
+
+def generate_and_save_images(model, epoch, test_input, save_dir='dcgan_output'):
+    """Generate and save images during training."""
+    predictions = model(test_input, training=False)
+    
+    fig = plt.figure(figsize=(10, 10))
+    for i in range(25):
+        plt.subplot(5, 5, i+1)
+        plt.imshow(predictions[i, :, :, 0] * 0.5 + 0.5, cmap='gray')
+        plt.axis('off')
+    
+    plt.suptitle(f'Generated Images at Epoch {epoch}')
+    plt.tight_layout()
+    plt.savefig(f'{save_dir}/image_at_epoch_{epoch:04d}.png', dpi=150)
+    plt.close()
+
+def train_dcgan(dataset, epochs=50, latent_dim=100, save_interval=5):
+    """
+    Complete DCGAN training loop.
+    
+    Args:
+        dataset: Training dataset
+        epochs: Number of training epochs
+        latent_dim: Dimension of noise vector
+        save_interval: Interval for saving images
+    """
+    # Fixed seed for consistent visualization
+    seed = tf.random.normal([25, latent_dim])
+    
+    # Storage for losses
+    gen_losses = []
+    disc_losses = []
+    
+    print(f"\nStarting DCGAN training for {epochs} epochs...")
+    print("=" * 60)
+    
+    for epoch in range(epochs):
+        start_time = time.time()
+        
+        epoch_gen_loss = 0
+        epoch_disc_loss = 0
+        num_batches = 0
+        
+        for image_batch in dataset:
+            gen_loss, disc_loss = train_step_dcgan(image_batch, latent_dim)
+            epoch_gen_loss += gen_loss
+            epoch_disc_loss += disc_loss
+            num_batches += 1
+        
+        # Average losses
+        avg_gen_loss = epoch_gen_loss / num_batches
+        avg_disc_loss = epoch_disc_loss / num_batches
+        
+        gen_losses.append(float(avg_gen_loss))
+        disc_losses.append(float(avg_disc_loss))
+        
+        # Print progress
+        elapsed = time.time() - start_time
+        print(f"Epoch {epoch+1}/{epochs} - {elapsed:.2f}s - "
+              f"Gen Loss: {avg_gen_loss:.4f}, Disc Loss: {avg_disc_loss:.4f}")
+        
+        # Save generated images
+        if (epoch + 1) % save_interval == 0 or epoch == 0:
+            generate_and_save_images(generator, epoch + 1, seed)
+    
+    # Save final images
+    generate_and_save_images(generator, epochs, seed)
+    
+    print("\nTraining completed!")
+    return gen_losses, disc_losses
+
+# =============================================================================
+# Part 6: Prepare Dataset and Train
+# =============================================================================
+
+# Hyperparameters
+LATENT_DIM = 100
+BATCH_SIZE = 256
+EPOCHS = 50
+
+# Prepare dataset
+train_dataset = tf.data.Dataset.from_tensor_slices(train_images)
+train_dataset = train_dataset.shuffle(60000)
+train_dataset = train_dataset.batch(BATCH_SIZE, drop_remainder=True)
+
+# Train DCGAN
+gen_losses, disc_losses = train_dcgan(
+    train_dataset, 
+    epochs=EPOCHS, 
+    latent_dim=LATENT_DIM,
+    save_interval=5
+)
+
+# =============================================================================
+# Part 7: Visualize Results
+# =============================================================================
+
+# Plot training losses
+plt.figure(figsize=(12, 5))
+
+plt.subplot(1, 2, 1)
+plt.plot(gen_losses, label='Generator Loss', color='red', linewidth=2)
+plt.plot(disc_losses, label='Discriminator Loss', color='blue', linewidth=2)
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
+plt.title('DCGAN Training Losses')
+plt.legend()
+plt.grid(True, alpha=0.3)
+
+# Generate final samples
+plt.subplot(1, 2, 2)
+noise = tf.random.normal([100, LATENT_DIM])
+generated_images = generator(noise, training=False)
+
+# Create a grid of generated images
+fig, axes = plt.subplots(10, 10, figsize=(12, 12))
+for i, ax in enumerate(axes.flat):
+    ax.imshow(generated_images[i, :, :, 0] * 0.5 + 0.5, cmap='gray')
+    ax.axis('off')
+plt.suptitle('100 Generated MNIST Digits', fontsize=16)
+plt.tight_layout()
+plt.savefig('dcgan_output/final_generated_grid.png', dpi=150)
+plt.show()
+
+# Save models
+generator.save('dcgan_output/dcgan_generator.h5')
+discriminator.save('dcgan_output/dcgan_discriminator.h5')
+print("\nModels saved to dcgan_output/")
+
+# =============================================================================
+# Part 8: Interpolation in Latent Space
+# =============================================================================
+
+def interpolate_latent_space(generator, n_steps=10):
+    """
+    Interpolate between two random points in latent space.
+    Shows smooth transitions in generated images.
+    """
+    # Two random points in latent space
+    z1 = tf.random.normal([1, LATENT_DIM])
+    z2 = tf.random.normal([1, LATENT_DIM])
+    
+    # Interpolate
+    alphas = np.linspace(0, 1, n_steps)
+    interpolated = []
+    
+    for alpha in alphas:
+        z = (1 - alpha) * z1 + alpha * z2
+        img = generator(z, training=False)
+        interpolated.append(img[0])
+    
+    # Visualize
+    fig, axes = plt.subplots(1, n_steps, figsize=(20, 2))
+    for i, ax in enumerate(axes):
+        ax.imshow(interpolated[i][:, :, 0] * 0.5 + 0.5, cmap='gray')
+        ax.axis('off')
+        ax.set_title(f'{alphas[i]:.1f}')
+    
+    plt.suptitle('Latent Space Interpolation')
+    plt.tight_layout()
+    plt.savefig('dcgan_output/latent_interpolation.png', dpi=150)
+    plt.show()
+
+interpolate_latent_space(generator)
+
+print("\n=== DCGAN Training Summary ===")
+print(f"Final Generator Loss: {gen_losses[-1]:.4f}")
+print(f"Final Discriminator Loss: {disc_losses[-1]:.4f}")
+print(f"Total training epochs: {EPOCHS}")
+print(f"Batch size: {BATCH_SIZE}")
+print(f"Latent dimension: {LATENT_DIM}")
+```
+
+## Expected Output
+
+```
+Training images shape: (60000, 28, 28, 1)
+Value range: [-1.00, 1.00]
+
+=== DCGAN Generator Architecture ===
+Model: "DCGAN_Generator"
+_________________________________________________________________
+Layer (type)                Output Shape              Param #   
+=================================================================
+dense (Dense)               (None, 12544)             1,267,456 
+reshape (Reshape)           (None, 7, 7, 256)         0         
+...
+conv2d_transpose_2...       (None, 28, 28, 1)         1,600     
+=================================================================
+Total params: 2,363,969
+
+=== DCGAN Discriminator Architecture ===
+Model: "DCGAN_Discriminator"
+_________________________________________________________________
+Layer (type)                Output Shape              Param #   
+=================================================================
+conv2d (Conv2D)             (None, 14, 14, 64)        1,664     
+...
+flatten (Flatten)           (None, 4096)              0         
+dense (Dense)               (None, 1)                 4,097     
+=================================================================
+Total params: 387,585
+
+Starting DCGAN training for 50 epochs...
+============================================================
+Epoch 1/50 - 15.23s - Gen Loss: 1.8234, Disc Loss: 0.9234
+Epoch 5/50 - 12.45s - Gen Loss: 1.3456, Disc Loss: 0.7891
+...
+Epoch 50/50 - 12.12s - Gen Loss: 0.8923, Disc Loss: 0.6543
+
+Training completed!
+Models saved to dcgan_output/
+```
+
+## Key DCGAN Guidelines
+
+1. **All convolutional**: Replace pooling with strided convolutions
+2. **Batch normalization**: Stabilizes training
+3. **No fully connected layers**: Use convolutions throughout
+4. **ReLU in generator**: Use tanh only at output
+5. **LeakyReLU in discriminator**: Allows gradients for negative inputs
+6. **Adam optimizer**: beta_1=0.5 works better than default
+
+## Exercises
+
+### Exercise 1: Modify Architecture
+Try changing the number of filters in each layer. How does it affect:
+- Training speed?
+- Image quality?
+- Mode diversity?
+
+### Exercise 2: Different Dataset
+Apply DCGAN to Fashion-MNIST instead of MNIST. What changes are needed?
+
+### Exercise 3: Latent Space Analysis
+Generate images by varying only one dimension of the latent vector. Can you find interpretable directions?
+
+---

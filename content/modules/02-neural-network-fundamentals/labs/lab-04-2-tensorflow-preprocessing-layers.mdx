@@ -1,0 +1,295 @@
+---
+title: "2: TensorFlow Preprocessing Layers"
+module: 2
+labNumber: 4
+difficulty: "easy"
+estimatedTime: "45-60 minutes"
+source: "lab-01-part1.md"
+---
+# 2: TensorFlow Preprocessing Layers
+
+```python
+"""
+Lab 2.1.2: TensorFlow Preprocessing Layers
+Demonstrates using TensorFlow's built-in preprocessing layers for production-ready pipelines.
+"""
+
+import tensorflow as tf
+import numpy as np
+import pandas as pd
+
+print("=" * 60)
+print("LAB 2.1.2: TensorFlow Preprocessing Layers")
+print("=" * 60)
+
+# ============================================================
+# STEP 1: Create Sample Dataset
+# ============================================================
+print("\n[STEP 1] Creating sample dataset...")
+
+# Generate synthetic data with different characteristics
+np.random.seed(42)
+n_samples = 1000
+
+# Numerical features
+numerical_data = np.column_stack([
+    np.random.normal(100, 15, n_samples),      # Age-like (normal distribution)
+    np.random.exponential(50000, n_samples),   # Income-like (exponential)
+    np.random.uniform(0, 100, n_samples),      # Score-like (uniform)
+])
+
+# Categorical features
+categories = ['A', 'B', 'C', 'D']
+categorical_data = np.random.choice(categories, n_samples)
+
+# Target variable
+target = (numerical_data[:, 0] * 0.5 + 
+          numerical_data[:, 1] * 0.0001 + 
+          numerical_data[:, 2] * 0.3 + 
+          np.random.normal(0, 5, n_samples))
+
+# Create DataFrame
+df = pd.DataFrame({
+    'age': numerical_data[:, 0],
+    'income': numerical_data[:, 1],
+    'score': numerical_data[:, 2],
+    'category': categorical_data,
+    'target': target
+})
+
+print(f"Dataset shape: {df.shape}")
+print("\nFirst 5 rows:")
+print(df.head())
+print("\nData statistics:")
+print(df.describe())
+
+# Split data
+train_df = df.sample(frac=0.8, random_state=42)
+test_df = df.drop(train_df.index)
+
+print(f"\nTrain set: {len(train_df)} samples")
+print(f"Test set: {len(test_df)} samples")
+
+# ============================================================
+# STEP 2: Create Preprocessing Layers
+# ============================================================
+print("\n[STEP 2] Creating preprocessing layers...")
+
+# Method 1: Normalization Layer (learns from training data)
+normalization_layer = tf.keras.layers.Normalization()
+
+# Adapt (fit) the layer to training data
+numerical_features = train_df[['age', 'income', 'score']].values
+normalization_layer.adapt(numerical_features)
+
+print("\nNormalization layer adapted!")
+print(f"Mean: {normalization_layer.mean.numpy()}")
+print(f"Variance: {normalization_layer.variance.numpy()}")
+
+# Test normalization
+sample_input = tf.constant([[25, 30000, 50]], dtype=tf.float32)
+normalized = normalization_layer(sample_input)
+print(f"\nSample input: {sample_input.numpy()}")
+print(f"Normalized output: {normalized.numpy()}")
+
+# ============================================================
+# STEP 3: String Lookup for Categorical Features
+# ============================================================
+print("\n[STEP 3] Creating string lookup layer...")
+
+# Create string lookup layer
+string_lookup = tf.keras.layers.StringLookup()
+string_lookup.adapt(train_df['category'].values)
+
+print(f"Vocabulary: {string_lookup.get_vocabulary()}")
+print(f"Vocabulary size: {string_lookup.vocabulary_size()}")
+
+# Test string lookup
+sample_categories = tf.constant([['A'], ['B'], ['C'], ['D']])
+encoded = string_lookup(sample_categories)
+print(f"\nSample categories: {sample_categories.numpy()}")
+print(f"Encoded: {encoded.numpy()}")
+
+# ============================================================
+# STEP 4: Complete Preprocessing Pipeline
+# ============================================================
+print("\n[STEP 4] Building complete preprocessing pipeline...")
+
+# Define inputs
+age_input = tf.keras.Input(shape=(1,), name='age', dtype=tf.float32)
+income_input = tf.keras.Input(shape=(1,), name='income', dtype=tf.float32)
+score_input = tf.keras.Input(shape=(1,), name='score', dtype=tf.float32)
+category_input = tf.keras.Input(shape=(1,), name='category', dtype=tf.string)
+
+# Numerical preprocessing pipeline
+# Age: Standard normalization
+age_normalized = tf.keras.layers.Normalization(name='age_norm')(age_input)
+
+# Income: Log transform then normalize
+income_log = tf.keras.layers.Lambda(lambda x: tf.math.log1p(x), name='income_log')(income_input)
+income_normalized = tf.keras.layers.Normalization(name='income_norm')(income_log)
+
+# Score: Min-Max scaling to [0, 1]
+score_normalized = tf.keras.layers.Rescaling(scale=1./100, name='score_scaled')(score_input)
+
+# Categorical preprocessing
+category_encoded = tf.keras.layers.StringLookup(
+    output_mode='one_hot',
+    name='category_onehot'
+)(category_input)
+
+# Combine all features
+combined = tf.keras.layers.Concatenate(name='combined_features')([
+    age_normalized,
+    income_normalized,
+    score_normalized,
+    category_encoded
+])
+
+# Create preprocessing model
+preprocessing_model = tf.keras.Model(
+    inputs=[age_input, income_input, score_input, category_input],
+    outputs=combined,
+    name='preprocessing_pipeline'
+)
+
+# Adapt normalization layers
+preprocessing_model.get_layer('age_norm').adapt(train_df['age'].values.reshape(-1, 1))
+preprocessing_model.get_layer('income_norm').adapt(
+    np.log1p(train_df['income'].values.reshape(-1, 1))
+)
+
+print("\nPreprocessing model summary:")
+preprocessing_model.summary()
+
+# ============================================================
+# STEP 5: Test Preprocessing Pipeline
+# ============================================================
+print("\n[STEP 5] Testing preprocessing pipeline...")
+
+# Create sample inputs
+sample_data = {
+    'age': tf.constant([[25], [35], [45]], dtype=tf.float32),
+    'income': tf.constant([[30000], [50000], [80000]], dtype=tf.float32),
+    'score': tf.constant([[60], [75], [90]], dtype=tf.float32),
+    'category': tf.constant([['A'], ['B'], ['C']], dtype=tf.string)
+}
+
+preprocessed = preprocessing_model(sample_data)
+print(f"\nPreprocessed output shape: {preprocessed.shape}")
+print(f"Preprocessed output:\n{preprocessed.numpy()}")
+
+# ============================================================
+# STEP 6: Integration with Training Model
+# ============================================================
+print("\n[STEP 6] Integrating preprocessing with training model...")
+
+# Method 1: Preprocessing inside the model (recommended for production)
+def create_full_model():
+    # Inputs
+    inputs = {
+        'age': tf.keras.Input(shape=(1,), name='age', dtype=tf.float32),
+        'income': tf.keras.Input(shape=(1,), name='income', dtype=tf.float32),
+        'score': tf.keras.Input(shape=(1,), name='score', dtype=tf.float32),
+        'category': tf.keras.Input(shape=(1,), name='category', dtype=tf.string)
+    }
+    
+    # Preprocessing
+    x = preprocessing_model(inputs)
+    
+    # Neural network layers
+    x = tf.keras.layers.Dense(64, activation='relu')(x)
+    x = tf.keras.layers.Dropout(0.2)(x)
+    x = tf.keras.layers.Dense(32, activation='relu')(x)
+    x = tf.keras.layers.Dropout(0.2)(x)
+    output = tf.keras.layers.Dense(1, name='prediction')(x)
+    
+    model = tf.keras.Model(inputs=inputs, outputs=output, name='full_pipeline_model')
+    return model
+
+full_model = create_full_model()
+full_model.compile(optimizer='adam', loss='mse', metrics=['mae'])
+
+print("\nFull model summary:")
+full_model.summary()
+
+# ============================================================
+# STEP 7: Prepare Data for Training
+# ============================================================
+print("\n[STEP 7] Preparing data for training...")
+
+# Convert DataFrame to dictionary of tensors
+def df_to_inputs(df):
+    return {
+        'age': tf.constant(df['age'].values.reshape(-1, 1), dtype=tf.float32),
+        'income': tf.constant(df['income'].values.reshape(-1, 1), dtype=tf.float32),
+        'score': tf.constant(df['score'].values.reshape(-1, 1), dtype=tf.float32),
+        'category': tf.constant(df['category'].values.reshape(-1, 1), dtype=tf.string)
+    }
+
+train_inputs = df_to_inputs(train_df)
+test_inputs = df_to_inputs(test_df)
+
+train_targets = tf.constant(train_df['target'].values, dtype=tf.float32)
+test_targets = tf.constant(test_df['target'].values, dtype=tf.float32)
+
+print(f"Training inputs prepared")
+print(f"Targets shape: {train_targets.shape}")
+
+# ============================================================
+# STEP 8: Train the Model
+# ============================================================
+print("\n[STEP 8] Training the model...")
+
+history = full_model.fit(
+    train_inputs,
+    train_targets,
+    validation_split=0.2,
+    epochs=30,
+    batch_size=32,
+    verbose=1
+)
+
+# ============================================================
+# STEP 9: Evaluate and Make Predictions
+# ============================================================
+print("\n[STEP 9] Evaluating model performance...")
+
+# Evaluate on test set
+test_loss, test_mae = full_model.evaluate(test_inputs, test_targets, verbose=0)
+print(f"\nTest Loss (MSE): {test_loss:.4f}")
+print(f"Test MAE: {test_mae:.4f}")
+
+# Make predictions
+predictions = full_model.predict(test_inputs)
+print(f"\nSample predictions:")
+for i in range(5):
+    print(f"  Actual: {test_targets[i]:.2f}, Predicted: {predictions[i][0]:.2f}")
+
+# ============================================================
+# STEP 10: Save and Load with Preprocessing
+# ============================================================
+print("\n[STEP 10] Saving and loading the complete model...")
+
+# Save the model
+full_model.save('/mnt/okcomputer/output/preprocessing_model', save_format='tf')
+print("Model saved to: /mnt/okcomputer/output/preprocessing_model")
+
+# Load the model
+loaded_model = tf.keras.models.load_model('/mnt/okcomputer/output/preprocessing_model')
+print("Model loaded successfully!")
+
+# Verify loaded model works
+loaded_predictions = loaded_model.predict(test_inputs)
+print(f"\nLoaded model predictions match: {np.allclose(predictions, loaded_predictions)}")
+
+print("\n" + "=" * 60)
+print("LAB 2.1.2 COMPLETED SUCCESSFULLY!")
+print("=" * 60)
+print("\nKEY TAKEAWAYS:")
+print("1. TensorFlow preprocessing layers are part of the model graph")
+print("2. They adapt (learn) from training data automatically")
+print("3. Preprocessing is saved with the model for consistent inference")
+print("4. Different features can have different preprocessing strategies")
+print("5. StringLookup handles categorical encoding seamlessly")
+```

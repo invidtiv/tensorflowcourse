@@ -1,0 +1,414 @@
+---
+title: "Post-Training Quantization"
+module: 10
+labNumber: 2
+difficulty: "hard"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Post-Training Quantization
+
+## Objectives
+- Understand different post-training quantization techniques
+- Apply dynamic range quantization to a trained model
+- Apply full integer quantization for edge deployment
+- Compare model sizes and inference speeds
+
+## Prerequisites
+- TensorFlow 2.x installed
+- Basic understanding of neural networks
+- Familiarity with model saving/loading
+
+## Complete Implementation
+
+```python
+"""
+Lab 10.1: Post-Training Quantization
+====================================
+This lab demonstrates various post-training quantization techniques
+to optimize models for deployment while maintaining accuracy.
+"""
+
+import tensorflow as tf
+import numpy as np
+import time
+import os
+
+# ============================================================
+# PART 1: Create and Train a Baseline Model
+# ============================================================
+
+print("=" * 60)
+print("PART 1: Creating and Training Baseline Model")
+print("=" * 60)
+
+# Load and preprocess CIFAR-10 dataset
+(x_train, y_train), (x_test, y_test) = tf.keras.datasets.cifar10.load_data()
+
+# Normalize pixel values
+x_train = x_train.astype('float32') / 255.0
+x_test = x_test.astype('float32') / 255.0
+
+# Use subset for faster training
+train_size = 10000
+test_size = 2000
+x_train = x_train[:train_size]
+y_train = y_train[:train_size]
+x_test = x_test[:test_size]
+y_test = y_test[:test_size]
+
+# Convert labels to categorical
+num_classes = 10
+y_train = tf.keras.utils.to_categorical(y_train, num_classes)
+y_test = tf.keras.utils.to_categorical(y_test, num_classes)
+
+print(f"Training data shape: {x_train.shape}")
+print(f"Test data shape: {x_test.shape}")
+
+# Define a CNN model
+def create_cnn_model():
+    """Create a CNN model for CIFAR-10 classification."""
+    model = tf.keras.Sequential([
+        tf.keras.layers.Conv2D(32, (3, 3), activation='relu', 
+                               input_shape=(32, 32, 3)),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.MaxPooling2D((2, 2)),
+        
+        tf.keras.layers.Conv2D(64, (3, 3), activation='relu'),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.MaxPooling2D((2, 2)),
+        
+        tf.keras.layers.Conv2D(64, (3, 3), activation='relu'),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.MaxPooling2D((2, 2)),
+        
+        tf.keras.layers.Flatten(),
+        tf.keras.layers.Dense(64, activation='relu'),
+        tf.keras.layers.Dropout(0.5),
+        tf.keras.layers.Dense(num_classes, activation='softmax')
+    ])
+    return model
+
+# Create and compile the model
+model = create_cnn_model()
+model.compile(
+    optimizer='adam',
+    loss='categorical_crossentropy',
+    metrics=['accuracy']
+)
+
+model.summary()
+
+# Train the model (or use pre-trained weights if available)
+print("\nTraining baseline model...")
+history = model.fit(
+    x_train, y_train,
+    batch_size=64,
+    epochs=10,
+    validation_split=0.1,
+    verbose=1
+)
+
+# Evaluate baseline model
+baseline_loss, baseline_acc = model.evaluate(x_test, y_test, verbose=0)
+print(f"\nBaseline Model Accuracy: {baseline_acc:.4f}")
+print(f"Baseline Model Loss: {baseline_loss:.4f}")
+
+# Save the baseline model
+baseline_model_path = 'baseline_model.h5'
+model.save(baseline_model_path)
+baseline_size = os.path.getsize(baseline_model_path) / (1024 * 1024)
+print(f"Baseline Model Size: {baseline_size:.2f} MB")
+
+# ============================================================
+# PART 2: Dynamic Range Quantization
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 2: Dynamic Range Quantization")
+print("=" * 60)
+
+"""
+Dynamic Range Quantization:
+- Converts weights from float32 to int8
+- Activations are dynamically quantized during inference
+- Minimal accuracy loss with significant size reduction
+- Best for CPU inference
+"""
+
+# Convert to TensorFlow Lite with dynamic range quantization
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+
+tflite_dynamic_model = converter.convert()
+
+# Save the quantized model
+dynamic_model_path = 'dynamic_quantized_model.tflite'
+with open(dynamic_model_path, 'wb') as f:
+    f.write(tflite_dynamic_model)
+
+dynamic_size = os.path.getsize(dynamic_model_path) / (1024 * 1024)
+print(f"Dynamic Quantized Model Size: {dynamic_size:.2f} MB")
+print(f"Size Reduction: {(1 - dynamic_size/baseline_size)*100:.1f}%")
+
+# ============================================================
+# PART 3: Full Integer Quantization
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 3: Full Integer Quantization")
+print("=" * 60)
+
+"""
+Full Integer Quantization:
+- Converts both weights AND activations to int8
+- Requires representative dataset for calibration
+- Best for edge devices without floating-point support
+- Maximum size reduction and speedup
+"""
+
+# Create representative dataset generator
+def representative_dataset():
+    """Generate representative data for calibration."""
+    for i in range(100):
+        # Use a subset of training data
+        sample = x_train[i:i+1]
+        yield [sample.astype(np.float32)]
+
+# Convert with full integer quantization
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.representative_dataset = representative_dataset
+
+# For full integer quantization (optional - for devices without float support)
+# converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
+# converter.inference_input_type = tf.int8
+# converter.inference_output_type = tf.int8
+
+tflite_integer_model = converter.convert()
+
+# Save the integer quantized model
+integer_model_path = 'integer_quantized_model.tflite'
+with open(integer_model_path, 'wb') as f:
+    f.write(tflite_integer_model)
+
+integer_size = os.path.getsize(integer_model_path) / (1024 * 1024)
+print(f"Integer Quantized Model Size: {integer_size:.2f} MB")
+print(f"Size Reduction: {(1 - integer_size/baseline_size)*100:.1f}%")
+
+# ============================================================
+# PART 4: Float16 Quantization
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 4: Float16 Quantization")
+print("=" * 60)
+
+"""
+Float16 Quantization:
+- Converts weights from float32 to float16
+- Reduces model size by 50%
+- GPU acceleration on supported hardware
+- Minimal accuracy loss
+"""
+
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.target_spec.supported_types = [tf.float16]
+
+tflite_fp16_model = converter.convert()
+
+# Save the float16 model
+fp16_model_path = 'fp16_quantized_model.tflite'
+with open(fp16_model_path, 'wb') as f:
+    f.write(tflite_fp16_model)
+
+fp16_size = os.path.getsize(fp16_model_path) / (1024 * 1024)
+print(f"Float16 Model Size: {fp16_size:.2f} MB")
+print(f"Size Reduction: {(1 - fp16_size/baseline_size)*100:.1f}%")
+
+# ============================================================
+# PART 5: Benchmark Inference Speed
+# ============================================================
+
+def benchmark_tflite_model(model_path, test_data, num_runs=100):
+    """Benchmark TFLite model inference speed."""
+    interpreter = tf.lite.Interpreter(model_path=model_path)
+    interpreter.allocate_tensors()
+    
+    input_details = interpreter.get_input_details()
+    output_details = interpreter.get_output_details()
+    
+    # Warm-up runs
+    for _ in range(10):
+        interpreter.set_tensor(input_details[0]['index'], test_data)
+        interpreter.invoke()
+    
+    # Benchmark
+    start_time = time.time()
+    for _ in range(num_runs):
+        interpreter.set_tensor(input_details[0]['index'], test_data)
+        interpreter.invoke()
+    end_time = time.time()
+    
+    avg_time = (end_time - start_time) / num_runs * 1000  # ms
+    return avg_time
+
+def evaluate_tflite_model(model_path, x_test, y_test):
+    """Evaluate TFLite model accuracy."""
+    interpreter = tf.lite.Interpreter(model_path=model_path)
+    interpreter.allocate_tensors()
+    
+    input_details = interpreter.get_input_details()
+    output_details = interpreter.get_output_details()
+    
+    correct = 0
+    total = len(x_test)
+    
+    for i in range(total):
+        input_data = np.expand_dims(x_test[i], axis=0).astype(np.float32)
+        interpreter.set_tensor(input_details[0]['index'], input_data)
+        interpreter.invoke()
+        output = interpreter.get_tensor(output_details[0]['index'])
+        
+        predicted = np.argmax(output[0])
+        actual = np.argmax(y_test[i])
+        if predicted == actual:
+            correct += 1
+    
+    accuracy = correct / total
+    return accuracy
+
+print("\n" + "=" * 60)
+print("PART 5: Benchmarking Results")
+print("=" * 60)
+
+# Prepare test sample for benchmarking
+test_sample = np.expand_dims(x_test[0], axis=0).astype(np.float32)
+
+# Benchmark baseline (Keras model)
+start = time.time()
+for _ in range(100):
+    model.predict(test_sample, verbose=0)
+baseline_time = (time.time() - start) / 100 * 1000
+
+print(f"\n{'Model':<30} {'Size (MB)':<12} {'Inference (ms)':<15} {'Accuracy'}")
+print("-" * 75)
+print(f"{'Baseline (FP32)':<30} {baseline_size:<12.2f} {baseline_time:<15.2f} {baseline_acc:.4f}")
+
+# Benchmark quantized models
+models_to_test = [
+    ('Dynamic Range', dynamic_model_path),
+    ('Full Integer', integer_model_path),
+    ('Float16', fp16_model_path)
+]
+
+for name, path in models_to_test:
+    size = os.path.getsize(path) / (1024 * 1024)
+    inf_time = benchmark_tflite_model(path, test_sample)
+    accuracy = evaluate_tflite_model(path, x_test[:500], y_test[:500])
+    print(f"{name:<30} {size:<12.2f} {inf_time:<15.2f} {accuracy:.4f}")
+
+# ============================================================
+# PART 6: Summary and Comparison
+# ============================================================
+
+print("\n" + "=" * 60)
+print("SUMMARY: Post-Training Quantization")
+print("=" * 60)
+
+print("""
+Quantization Technique Comparison:
+==================================
+
+1. Dynamic Range Quantization:
+   - Weights: int8, Activations: float32 (dynamic)
+   - Best for: CPU inference
+   - Size reduction: ~4x
+   - Speedup: Moderate
+   - Accuracy: Minimal loss
+
+2. Full Integer Quantization:
+   - Weights: int8, Activations: int8
+   - Best for: Edge devices, microcontrollers
+   - Size reduction: ~4x
+   - Speedup: Significant
+   - Accuracy: Small loss possible
+
+3. Float16 Quantization:
+   - Weights: float16
+   - Best for: GPU acceleration
+   - Size reduction: ~2x
+   - Speedup: GPU-dependent
+   - Accuracy: Minimal loss
+
+Key Takeaways:
+- Quantization reduces model size and improves inference speed
+- Dynamic range is easiest to apply with good results
+- Full integer requires representative dataset but gives best edge performance
+- Always validate accuracy after quantization
+""")
+
+# Cleanup
+import glob
+for f in glob.glob('*.tflite') + glob.glob('*.h5'):
+    os.remove(f)
+print("\nCleanup completed!")
+```
+
+## Expected Output
+
+```
+============================================================
+PART 1: Creating and Training Baseline Model
+============================================================
+Training data shape: (10000, 32, 32, 3)
+Test data shape: (2000, 32, 32, 3)
+...
+Baseline Model Accuracy: 0.6235
+Baseline Model Size: 1.25 MB
+
+============================================================
+PART 2: Dynamic Range Quantization
+============================================================
+Dynamic Quantized Model Size: 0.32 MB
+Size Reduction: 74.4%
+
+============================================================
+PART 3: Full Integer Quantization
+============================================================
+Integer Quantized Model Size: 0.31 MB
+Size Reduction: 75.2%
+
+============================================================
+PART 4: Float16 Quantization
+============================================================
+Float16 Model Size: 0.63 MB
+Size Reduction: 49.6%
+
+============================================================
+PART 5: Benchmarking Results
+============================================================
+Model                          Size (MB)    Inference (ms)  Accuracy
+---------------------------------------------------------------------------
+Baseline (FP32)                1.25         12.50          0.6235
+Dynamic Range                  0.32         4.20           0.6198
+Full Integer                   0.31         3.80           0.6152
+Float16                        0.63         5.10           0.6221
+```
+
+## Additional Exercises
+
+1. **Exercise 1**: Apply quantization to a larger model (ResNet50) and compare results
+2. **Exercise 2**: Experiment with different representative dataset sizes for integer quantization
+3. **Exercise 3**: Implement selective layer quantization (quantize only specific layers)
+
+## Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| "Converter returned None" | Ensure model is in inference mode (no training ops) |
+| "Accuracy dropped significantly" | Increase representative dataset size for calibration |
+| "Model won't load on edge device" | Use full integer quantization with int8 input/output |
+
+---

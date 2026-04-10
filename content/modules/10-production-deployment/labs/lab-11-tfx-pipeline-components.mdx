@@ -1,0 +1,573 @@
+---
+title: "TFX Pipeline Components"
+module: 10
+labNumber: 11
+difficulty: "hard"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# TFX Pipeline Components
+
+## Objectives
+- Understand TFX pipeline architecture
+- Implement individual TFX components
+- Learn component interactions
+- Create a modular ML pipeline
+
+## Complete Implementation
+
+```python
+"""
+Lab 10.10: TFX Pipeline Components
+==================================
+Learn individual TFX components and how they work together
+in a production ML pipeline.
+"""
+
+import tensorflow as tf
+import tensorflow_transform as tft
+import tensorflow_data_validation as tfdv
+import tensorflow_model_analysis as tfma
+from tfx import v1 as tfx
+from tfx.orchestration.local.local_dag_runner import LocalDagRunner
+from tfx.orchestration.metadata import sqlite_metadata_connection_config
+import pandas as pd
+import numpy as np
+import os
+
+print("=" * 60)
+print("Lab 10.10: TFX Pipeline Components")
+print("=" * 60)
+
+# ============================================================
+# PART 1: Setup and Data Preparation
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 1: Setup and Data Preparation")
+print("=" * 60)
+
+# Create pipeline directories
+PIPELINE_NAME = "tfx_components_pipeline"
+PIPELINE_ROOT = os.path.join('pipelines', PIPELINE_NAME)
+METADATA_PATH = os.path.join(PIPELINE_ROOT, 'metadata.sqlite')
+
+for dir_name in ['data', 'schema', 'transform', 'models', 'serving']:
+    os.makedirs(os.path.join(PIPELINE_ROOT, dir_name), exist_ok=True)
+
+# Create sample dataset
+print("Creating sample dataset...")
+np.random.seed(42)
+n_samples = 1000
+
+data = pd.DataFrame({
+    'feature_1': np.random.randn(n_samples),
+    'feature_2': np.random.randn(n_samples),
+    'feature_3': np.random.randint(0, 5, n_samples),
+    'category': np.random.choice(['A', 'B', 'C'], n_samples),
+    'target': np.random.randint(0, 2, n_samples)
+})
+
+# Introduce some missing values
+data.loc[np.random.choice(n_samples, 50, replace=False), 'feature_1'] = np.nan
+
+# Save data
+data_path = os.path.join(PIPELINE_ROOT, 'data', 'data.csv')
+data.to_csv(data_path, index=False)
+print(f"Dataset saved to: {data_path}")
+print(f"Dataset shape: {data.shape}")
+print(f"\nFirst few rows:")
+print(data.head())
+
+# ============================================================
+# PART 2: ExampleGen Component
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 2: ExampleGen Component")
+print("=" * 60)
+
+"""
+ExampleGen:
+- Ingests data from various sources (CSV, TFRecord, BigQuery, etc.)
+- Splits data into train/eval sets
+- Outputs TF Examples for downstream components
+"""
+
+from tfx.components import CsvExampleGen
+from tfx.proto import example_gen_pb2
+
+# Configure output splits (train:eval = 8:2)
+output_config = example_gen_pb2.Output(
+    split_config=example_gen_pb2.SplitConfig(splits=[
+        example_gen_pb2.SplitConfig.Split(name='train', hash_buckets=8),
+        example_gen_pb2.SplitConfig.Split(name='eval', hash_buckets=2)
+    ])
+)
+
+# Create ExampleGen component
+example_gen = CsvExampleGen(
+    input_base=os.path.join(PIPELINE_ROOT, 'data'),
+    output_config=output_config
+)
+
+print("ExampleGen component created")
+print("- Input: CSV files from data directory")
+print("- Output: TF Examples with train/eval splits")
+
+# ============================================================
+# PART 3: StatisticsGen Component
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 3: StatisticsGen Component")
+print("=" * 60)
+
+"""
+StatisticsGen:
+- Computes descriptive statistics over the dataset
+- Generates data statistics for validation
+- Helps identify data quality issues
+"""
+
+from tfx.components import StatisticsGen
+
+# Create StatisticsGen component
+statistics_gen = StatisticsGen(
+    examples=example_gen.outputs['examples']
+)
+
+print("StatisticsGen component created")
+print("- Input: Examples from ExampleGen")
+print("- Output: Dataset statistics")
+
+# ============================================================
+# PART 4: SchemaGen Component
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 4: SchemaGen Component")
+print("=" * 60)
+
+"""
+SchemaGen:
+- Generates data schema from statistics
+- Defines expected data types, ranges, and categories
+- Used for data validation
+"""
+
+from tfx.components import SchemaGen
+
+# Create SchemaGen component
+schema_gen = SchemaGen(
+    statistics=statistics_gen.outputs['statistics'],
+    infer_feature_shape=True
+)
+
+print("SchemaGen component created")
+print("- Input: Statistics from StatisticsGen")
+print("- Output: Data schema")
+
+# ============================================================
+# PART 5: ExampleValidator Component
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 5: ExampleValidator Component")
+print("=" * 60)
+
+"""
+ExampleValidator:
+- Validates data against the schema
+- Detects anomalies (missing values, type mismatches, etc.)
+- Raises alerts for data quality issues
+"""
+
+from tfx.components import ExampleValidator
+
+# Create ExampleValidator component
+example_validator = ExampleValidator(
+    statistics=statistics_gen.outputs['statistics'],
+    schema=schema_gen.outputs['schema']
+)
+
+print("ExampleValidator component created")
+print("- Input: Statistics and Schema")
+print("- Output: Anomalies (if any)")
+
+# ============================================================
+# PART 6: Transform Component
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 6: Transform Component")
+print("=" * 60)
+
+"""
+Transform:
+- Performs feature engineering
+- Applies transformations consistently to train/eval data
+- Saves transformation graph for serving
+"""
+
+from tfx.components import Transform
+
+# Define preprocessing function
+_transform_module_file = os.path.join(PIPELINE_ROOT, 'transform_module.py')
+
+_transform_module_content = '''
+import tensorflow as tf
+import tensorflow_transform as tft
+
+# Feature constants
+NUMERIC_FEATURES = ['feature_1', 'feature_2']
+CATEGORICAL_FEATURES = ['feature_3', 'category']
+LABEL_KEY = 'target'
+
+def preprocessing_fn(inputs):
+    """Preprocess input features into transformed features."""
+    outputs = {}
+    
+    # Scale numeric features
+    for key in NUMERIC_FEATURES:
+        # Fill missing values with mean
+        filled = tft.sparse_tensor_to_dense_with_missing(inputs[key], default_value=0.0)
+        # Z-score normalization
+        outputs[key + '_scaled'] = tft.scale_to_z_score(filled)
+    
+    # Convert categorical features to integers
+    for key in CATEGORICAL_FEATURES:
+        outputs[key + '_integerized'] = tft.compute_and_apply_vocabulary(inputs[key])
+    
+    # Keep label as is
+    outputs[LABEL_KEY] = inputs[LABEL_KEY]
+    
+    return outputs
+'''
+
+with open(_transform_module_file, 'w') as f:
+    f.write(_transform_module_content)
+
+print(f"Transform module saved to: {_transform_module_file}")
+
+# Create Transform component
+transform = Transform(
+    examples=example_gen.outputs['examples'],
+    schema=schema_gen.outputs['schema'],
+    module_file=_transform_module_file
+)
+
+print("Transform component created")
+print("- Input: Examples, Schema, Transform module")
+print("- Output: Transformed examples, Transform graph")
+
+# ============================================================
+# PART 7: Trainer Component
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 7: Trainer Component")
+print("=" * 60)
+
+"""
+Trainer:
+- Trains the TensorFlow model
+- Uses transformed data from Transform component
+- Outputs trained model for evaluation
+"""
+
+from tfx.components import Trainer
+from tfx.proto import trainer_pb2
+
+# Define training module
+_trainer_module_file = os.path.join(PIPELINE_ROOT, 'trainer_module.py')
+
+_trainer_module_content = '''
+import tensorflow as tf
+from tfx import v1 as tfx
+from tfx_bsl.public import tfxio
+from tensorflow_transform import TFTransformOutput
+
+# Feature constants
+NUMERIC_FEATURES = ['feature_1_scaled', 'feature_2_scaled']
+CATEGORICAL_FEATURES = ['feature_3_integerized', 'category_integerized']
+LABEL_KEY = 'target'
+
+def _input_fn(file_pattern, data_accessor, tf_transform_output, batch_size=128):
+    """Generate features and labels for training."""
+    dataset = data_accessor.tf_dataset_factory(
+        file_pattern,
+        tfxio.TensorFlowDatasetOptions(batch_size=batch_size),
+        tf_transform_output.transformed_metadata.schema
+    )
+    
+    def parse_example(example):
+        features = {}
+        for key in NUMERIC_FEATURES + CATEGORICAL_FEATURES:
+            features[key] = example[key]
+        label = example[LABEL_KEY]
+        return features, label
+    
+    return dataset.map(parse_example)
+
+def _build_keras_model():
+    """Build a simple Keras model."""
+    inputs = {}
+    for key in NUMERIC_FEATURES:
+        inputs[key] = tf.keras.Input(shape=(1,), name=key)
+    for key in CATEGORICAL_FEATURES:
+        inputs[key] = tf.keras.Input(shape=(1,), name=key, dtype=tf.int64)
+    
+    # Concatenate all features
+    concatenated = tf.keras.layers.concatenate([
+        tf.keras.layers.Dense(8, activation='relu')(inputs[key])
+        for key in list(inputs.keys())
+    ])
+    
+    x = tf.keras.layers.Dense(32, activation='relu')(concatenated)
+    x = tf.keras.layers.Dropout(0.3)(x)
+    outputs = tf.keras.layers.Dense(1, activation='sigmoid')(x)
+    
+    model = tf.keras.Model(inputs=inputs, outputs=outputs)
+    
+    model.compile(
+        optimizer='adam',
+        loss='binary_crossentropy',
+        metrics=['accuracy']
+    )
+    
+    return model
+
+def run_fn(fn_args):
+    """Train the model."""
+    tf_transform_output = TFTransformOutput(fn_args.transform_output)
+    
+    train_dataset = _input_fn(
+        fn_args.train_files,
+        fn_args.data_accessor,
+        tf_transform_output,
+        batch_size=128
+    )
+    
+    eval_dataset = _input_fn(
+        fn_args.eval_files,
+        fn_args.data_accessor,
+        tf_transform_output,
+        batch_size=128
+    )
+    
+    model = _build_keras_model()
+    
+    model.fit(
+        train_dataset,
+        validation_data=eval_dataset,
+        epochs=5,
+        steps_per_epoch=100,
+        validation_steps=20
+    )
+    
+    # Save model
+    model.save(fn_args.serving_model_dir, save_format='tf')
+'''
+
+with open(_trainer_module_file, 'w') as f:
+    f.write(_trainer_module_content)
+
+print(f"Trainer module saved to: {_trainer_module_file}")
+
+# Create Trainer component
+trainer = Trainer(
+    module_file=_trainer_module_file,
+    examples=transform.outputs['transformed_examples'],
+    transform_graph=transform.outputs['transform_graph'],
+    schema=schema_gen.outputs['schema'],
+    train_args=trainer_pb2.TrainArgs(num_steps=100),
+    eval_args=trainer_pb2.EvalArgs(num_steps=20)
+)
+
+print("Trainer component created")
+print("- Input: Transformed examples, Transform graph, Schema")
+print("- Output: Trained model")
+
+# ============================================================
+# PART 8: Tuner Component (Optional)
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 8: Tuner Component (Optional)")
+print("=" * 60)
+
+"""
+Tuner:
+- Performs hyperparameter tuning
+- Uses algorithms like Bayesian Optimization
+- Finds optimal hyperparameters
+"""
+
+from tfx.components import Tuner
+
+# Tuner component would be added here
+# For simplicity, we'll skip the actual implementation
+print("Tuner component (optional)")
+print("- Performs hyperparameter optimization")
+print("- Outputs best hyperparameters for Trainer")
+
+# ============================================================
+# PART 9: Evaluator Component
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 9: Evaluator Component")
+print("=" * 60)
+
+"""
+Evaluator:
+- Evaluates trained model performance
+- Compares against baseline/previous model
+- Uses TensorFlow Model Analysis (TFMA)
+"""
+
+from tfx.components import Evaluator
+from tfx.proto import evaluator_pb2
+
+# Define evaluation configuration
+eval_config = tfma.EvalConfig(
+    model_specs=[
+        tfma.ModelSpec(label_key='target', prediction_key='output_0')
+    ],
+    slicing_specs=[
+        tfma.SlicingSpec(),  # Overall
+        tfma.SlicingSpec(feature_keys=['category_integerized'])  # By category
+    ],
+    metrics_specs=[
+        tfma.MetricsSpec(metrics=[
+            tfma.MetricConfig(class_name='AUC'),
+            tfma.MetricConfig(class_name='Accuracy'),
+            tfma.MetricConfig(class_name='Precision'),
+            tfma.MetricConfig(class_name='Recall')
+        ])
+    ]
+)
+
+# Create Evaluator component
+evaluator = Evaluator(
+    examples=example_gen.outputs['examples'],
+    model=trainer.outputs['model'],
+    baseline_model=None,  # No baseline for first run
+    eval_config=eval_config
+)
+
+print("Evaluator component created")
+print("- Input: Examples, Model")
+print("- Output: Evaluation results")
+
+# ============================================================
+# PART 10: Pusher Component
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 10: Pusher Component")
+print("=" * 60)
+
+"""
+Pusher:
+- Deploys model to serving infrastructure
+- Checks evaluation results before pushing
+- Can push to TensorFlow Serving, mobile, etc.
+"""
+
+from tfx.components import Pusher
+from tfx.proto import pusher_pb2
+
+# Create Pusher component
+pusher = Pusher(
+    model=trainer.outputs['model'],
+    model_blessing=evaluator.outputs['blessing'],
+    push_destination=pusher_pb2.PushDestination(
+        filesystem=pusher_pb2.PushDestination.Filesystem(
+            base_directory=os.path.join(PIPELINE_ROOT, 'serving')
+        )
+    )
+)
+
+print("Pusher component created")
+print("- Input: Model, Model blessing")
+print("- Output: Deployed model")
+
+# ============================================================
+# PART 11: Component Summary
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 11: Component Summary")
+print("=" * 60)
+
+print("""
+TFX Pipeline Components Summary:
+================================
+
+1. ExampleGen
+   - Purpose: Data ingestion
+   - Input: Raw data files
+   - Output: TF Examples (train/eval splits)
+
+2. StatisticsGen
+   - Purpose: Compute data statistics
+   - Input: Examples
+   - Output: Dataset statistics
+
+3. SchemaGen
+   - Purpose: Generate data schema
+   - Input: Statistics
+   - Output: Data schema
+
+4. ExampleValidator
+   - Purpose: Validate data quality
+   - Input: Statistics, Schema
+   - Output: Anomalies
+
+5. Transform
+   - Purpose: Feature engineering
+   - Input: Examples, Schema
+   - Output: Transformed examples, Transform graph
+
+6. Trainer
+   - Purpose: Train model
+   - Input: Transformed examples, Schema
+   - Output: Trained model
+
+7. Tuner (Optional)
+   - Purpose: Hyperparameter tuning
+   - Input: Examples, Transform graph
+   - Output: Best hyperparameters
+
+8. Evaluator
+   - Purpose: Model evaluation
+   - Input: Examples, Model
+   - Output: Evaluation results, Model blessing
+
+9. Pusher
+   - Purpose: Deploy model
+   - Input: Model, Model blessing
+   - Output: Deployed model
+
+Component Dependencies:
+=======================
+
+ExampleGen → StatisticsGen → SchemaGen
+    ↓              ↓            ↓
+    └────────→ ExampleValidator
+    ↓
+Transform → Trainer → Evaluator → Pusher
+    ↑           ↑
+    └───────────┘
+""")
+
+# Cleanup
+import shutil
+if os.path.exists('pipelines'):
+    shutil.rmtree('pipelines')
+print("\nCleanup completed!")
+```
+
+---

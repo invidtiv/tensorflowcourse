@@ -1,0 +1,1680 @@
+---
+title: "Time Series and Sequence Prediction"
+module: 9
+moduleId: "09-time-series"
+description: "Stationarity, ARIMA, windowing techniques, 1D CNNs, LSTMs for forecasting, multi-step prediction, and anomaly detection."
+shortTitle: "Time Series"
+duration: "1 week"
+difficulty: "intermediate"
+icon: "chart"
+color: "#14b8a6"
+prerequisites:
+  - "4"
+objectives:
+  - "Understand time series fundamentals and stationarity"
+  - "Implement windowing and data preparation"
+  - "Build 1D CNN and LSTM forecasting models"
+  - "Apply multi-step and multi-variate prediction"
+  - "Detect anomalies in time series data"
+source: "content/modules/09-time-series/theory.md"
+generatedBy: "scripts/convert-theory.mjs"
+lastConverted: "2026-04-10T18:28:37.047Z"
+---
+## Table of Contents
+1. [Introduction to Temporal Data](#1-introduction-to-temporal-data)
+2. [Stationarity: Theory and Tests](#2-stationarity-theory-and-tests)
+3. [Autocorrelation and Partial Autocorrelation](#3-autocorrelation-and-partial-autocorrelation)
+4. [ARIMA Models: The Statistical Baseline](#4-arima-models-the-statistical-baseline)
+5. [Seasonal Decomposition](#5-seasonal-decomposition)
+6. [Windowing Strategies: Mathematical Foundations](#6-windowing-strategies-mathematical-foundations)
+7. [Forecasting Strategies: Direct, Recursive, and Multi-Output](#7-forecasting-strategies-direct-recursive-and-multi-output)
+8. [Deep Learning Architectures for Time Series](#8-deep-learning-architectures-for-time-series)
+9. [Probabilistic Forecasting](#9-probabilistic-forecasting)
+10. [Anomaly Detection in Time Series](#10-anomaly-detection-in-time-series)
+11. [Multivariate Time Series](#11-multivariate-time-series)
+12. [Temporal Convolutional Networks (TCN)](#12-temporal-convolutional-networks-tcn)
+13. [Advanced Topics and Research Frontiers](#13-advanced-topics-and-research-frontiers)
+
+---
+
+## 1. Introduction to Temporal Data
+
+### 1.1 The Nature of Time Series Data
+
+Time series data represents observations collected sequentially over time, forming the backbone of countless real-world applications from financial markets to climate science, healthcare monitoring to industrial IoT.
+
+**Formal Definition:**
+A time series is a sequence of data points indexed in time order:
+
+$$X = \{x_t : t \in T\}$$
+
+where $T$ represents the time index set (discrete or continuous), and $x_t \in \mathbb{R}^d$ represents the observation at time $t$ (univariate when $d=1$, multivariate when $d>1$).
+
+### 1.2 Key Characteristics of Temporal Data
+
+| Characteristic | Description | Mathematical Representation |
+|----------------|-------------|----------------------------|
+| **Temporal Dependence** | Current values depend on past values | $P(x_t | x_{t-1}, x_{t-2}, ...)$ |
+| **Non-IID Nature** | Violates independence assumption | $\text{Cov}(x_t, x_{t-k}) \neq 0$ |
+| **Trend** | Long-term directional movement | $T(t) = \beta_0 + \beta_1 t + ...$ |
+| **Seasonality** | Periodic patterns | $S(t) = S(t + p)$ for period $p$ |
+| **Cyclical Patterns** | Non-periodic oscillations | Irregular wave-like fluctuations |
+| **Heteroscedasticity** | Changing variance over time | $\text{Var}(x_t) \neq \text{Var}(x_{t-k})$ |
+
+### 1.3 Types of Time Series
+
+**By Time Index:**
+- **Discrete-time series:** Observations at regular intervals ($t \in \mathbb{Z}$)
+- **Continuous-time series:** Observations at any time point ($t \in \mathbb{R}$)
+
+**By Dimensionality:**
+- **Univariate:** Single variable tracked over time $\{x_t\}$
+- **Multivariate:** Multiple variables $\{\mathbf{x}_t\}$ where $\mathbf{x}_t \in \mathbb{R}^d$
+
+**By Stationarity:**
+- **Stationary:** Statistical properties constant over time
+- **Non-stationary:** Statistical properties evolve over time
+
+### 1.4 Historical Context and Evolution
+
+The study of time series dates back to ancient astronomy, but formal statistical methods emerged in the 20th century:
+
+| Era | Key Developments | Pioneers |
+|-----|-----------------|----------|
+| 1920s-30s | Autoregressive models | Yule, Walker |
+| 1970s | ARIMA framework | Box & Jenkins |
+| 1980s-90s | ARCH/GARCH models | Engle, Bollerslev |
+| 1990s-2000s | State space models, Kalman filtering | Harvey, Durbin |
+| 2010s-present | Deep learning revolution | LSTM, TCN, Transformers |
+
+---
+
+## 2. Stationarity: Theory and Tests
+
+### 2.1 The Stationarity Concept
+
+Stationarity is a fundamental assumption in time series analysis. A stationary process has statistical properties that remain constant over time.
+
+**Strict Stationarity:**
+A time series $\{x_t\}$ is strictly stationary if for any $k$ and any set of time indices $t_1, t_2, ..., t_k$:
+
+$$F(x_{t_1}, x_{t_2}, ..., x_{t_k}) = F(x_{t_1+h}, x_{t_2+h}, ..., x_{t_k+h})$$
+
+for all time shifts $h$, where $F$ is the joint cumulative distribution function.
+
+**Weak (Second-Order) Stationarity:**
+A more practical definition requiring:
+1. Constant mean: $E[x_t] = \mu$ for all $t$
+2. Constant variance: $\text{Var}(x_t) = \sigma^2$ for all $t$
+3. Autocovariance depends only on lag: $\gamma(k) = \text{Cov}(x_t, x_{t-k})$
+
+### 2.2 Why Stationarity Matters
+
+<div class="my-6 rounded-xl border border-white/[0.08] bg-surface-1/30 px-4 py-3 callout callout-tip" data-callout-type="tip" data-callout-label="Key Insight">
+  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neon-cyan mb-1">Key Insight</div>
+  <div class="text-text-secondary leading-relaxed">Most statistical models and many machine learning algorithms assume or benefit from stationarity: - Model parameters remain stable across time - Forecasts have consistent statistical properties - Standard errors and confidence intervals are valid - Cross-validation procedures become meaningful</div>
+</div>
+
+### 2.3 Types of Non-Stationarity
+
+| Type | Description | Example |
+|------|-------------|---------|
+| **Trend Stationary** | Deterministic trend + stationary residuals | $x_t = \beta_0 + \beta_1 t + \epsilon_t$ |
+| **Difference Stationary** | Requires differencing to achieve stationarity | Random walk: $x_t = x_{t-1} + \epsilon_t$ |
+| **Structural Break** | Sudden change in statistical properties | Market crash, policy change |
+| **Seasonal Non-stationarity** | Seasonal patterns change over time | Increasing seasonal amplitude |
+| **Variance Non-stationarity** | Changing variance (heteroscedasticity) | Financial volatility clustering |
+
+### 2.4 Stationarity Tests
+
+#### 2.4.1 Augmented Dickey-Fuller (ADF) Test
+
+**Null Hypothesis:** The series has a unit root (non-stationary)
+
+**Test Equation:**
+$$\Delta x_t = \alpha + \beta t + \gamma x_{t-1} + \sum_{i=1}^{p} \delta_i \Delta x_{t-i} + \epsilon_t$$
+
+Where:
+- $\Delta x_t = x_t - x_{t-1}$ (first difference)
+- $\gamma = 0$ under null hypothesis
+- $p$ is the lag order (selected via information criteria)
+
+**Decision Rule:**
+- If test statistic < critical value: Reject null (stationary)
+- If test statistic > critical value: Fail to reject (non-stationary)
+
+**Python Implementation:**
+```python
+from statsmodels.tsa.stattools import adfuller
+
+result = adfuller(series, autolag='AIC')
+print(f'ADF Statistic: {result[0]:.4f}')
+print(f'p-value: {result[1]:.4f}')
+print(f'Critical Values: {result[4]}')
+```
+
+#### 2.4.2 Kwiatkowski-Phillips-Schmidt-Shin (KPSS) Test
+
+**Null Hypothesis:** The series is stationary (opposite of ADF)
+
+**Test Statistic:**
+$$KPSS = \frac{\sum_{t=1}^{T} S_t^2}{T^2 \hat{\sigma}^2}$$
+
+where $S_t = \sum_{i=1}^{t} \hat{\epsilon}_i$ is the partial sum of residuals.
+
+**Key Difference from ADF:**
+- KPSS assumes stationarity under null
+- Use both tests together for robust conclusions
+
+| ADF Result | KPSS Result | Interpretation |
+|------------|-------------|----------------|
+| Stationary | Stationary | Series is stationary |
+| Stationary | Non-stationary | Trend stationary, consider detrending |
+| Non-stationary | Stationary | Difference stationary, apply differencing |
+| Non-stationary | Non-stationary | Inconclusive, further investigation needed |
+
+#### 2.4.3 Phillips-Perron (PP) Test
+
+A non-parametric alternative to ADF that is robust to heteroscedasticity:
+
+$$PP = ADF + \text{correction terms for serial correlation and heteroscedasticity}$$
+
+#### 2.4.4 Zivot-Andrews Test
+
+Tests for unit root allowing for a single structural break:
+
+$$\Delta x_t = \alpha + \beta t + \gamma x_{t-1} + \delta DU_t + \theta DT_t + \sum_{i=1}^{p} \phi_i \Delta x_{t-i} + \epsilon_t$$
+
+Where $DU_t$ and $DT_t$ are dummy variables for level and trend breaks.
+
+### 2.5 Transformations to Achieve Stationarity
+
+#### 2.5.1 Differencing
+
+**First-order differencing:**
+$$\nabla x_t = x_t - x_{t-1} = (1 - B)x_t$$
+
+Where $B$ is the backshift operator: $Bx_t = x_{t-1}$
+
+**Second-order differencing:**
+$$\nabla^2 x_t = (1 - B)^2 x_t = x_t - 2x_{t-1} + x_{t-2}$$
+
+**Seasonal differencing:**
+$$\nabla_s x_t = x_t - x_{t-s} = (1 - B^s)x_t$$
+
+Where $s$ is the seasonal period.
+
+**Guidelines for Differencing:**
+- Apply differencing until ADF test indicates stationarity
+- Over-differencing can introduce artificial patterns
+- Use ACF to check if further differencing is needed
+
+#### 2.5.2 Logarithmic Transformation
+
+For series with increasing variance:
+$$y_t = \log(x_t)$$
+
+Properties:
+- Stabilizes variance (variance proportional to level)
+- Converts multiplicative relationships to additive
+- Cannot be applied to zero or negative values
+
+#### 2.5.3 Box-Cox Transformation
+
+General power transformation:
+
+$$y_t^{(\lambda)} = \begin{cases}
+\frac{x_t^\lambda - 1}{\lambda} & \lambda \neq 0 \\
+\log(x_t) & \lambda = 0
+\end{cases}$$
+
+The parameter $\lambda$ is estimated to maximize normality or stabilize variance.
+
+#### 2.5.4 Power Transformations
+
+**Square root transformation:**
+$$y_t = \sqrt{x_t}$$
+
+**Reciprocal transformation:**
+$$y_t = \frac{1}{x_t}$$
+
+### 2.6 Common Pitfalls in Stationarity Testing
+
+**Pitfall 1: Ignoring Structural Breaks**
+- Standard tests have low power when structural breaks exist
+- Use tests that account for breaks (Zivot-Andrews, Lee-Strazicich)
+
+**Pitfall 2: Over-differencing**
+- Differencing a stationary series creates MA structure
+- Check ACF of differenced series for over-differencing signs
+
+**Pitfall 3: Seasonal Confusion**
+- Non-seasonal tests may miss seasonal non-stationarity
+- Apply seasonal unit root tests (Hegy, Canova-Hansen)
+
+**Pitfall 4: Sample Size Issues**
+- Small samples lead to low test power
+- Large samples may reject null for trivial deviations
+
+---
+
+## 3. Autocorrelation and Partial Autocorrelation
+
+### 3.1 Autocorrelation Function (ACF)
+
+The autocorrelation function measures the linear dependence between observations at different time lags.
+
+**Population Autocorrelation:**
+$$\rho(k) = \frac{\text{Cov}(x_t, x_{t-k})}{\sqrt{\text{Var}(x_t)\text{Var}(x_{t-k})}} = \frac{\gamma(k)}{\gamma(0)}$$
+
+**Sample Autocorrelation:**
+$$\hat{\rho}(k) = \frac{\sum_{t=k+1}^{T}(x_t - \bar{x})(x_{t-k} - \bar{x})}{\sum_{t=1}^{T}(x_t - \bar{x})^2}$$
+
+### 3.2 Properties of ACF
+
+- **Symmetry:** $\rho(k) = \rho(-k)$
+- **Bound:** $-1 \leq \rho(k) \leq 1$
+- **At lag 0:** $\rho(0) = 1$
+- **For white noise:** $\rho(k) = 0$ for $k \neq 0$
+
+### 3.3 Partial Autocorrelation Function (PACF)
+
+PACF measures the correlation between $x_t$ and $x_{t-k}$ after removing the effect of intermediate lags $x_{t-1}, ..., x_{t-k+1}$.
+
+**Definition:**
+$$\phi_{kk} = \text{Corr}(x_t, x_{t-k} | x_{t-1}, ..., x_{t-k+1})$$
+
+**Computation via Yule-Walker Equations:**
+
+$$\begin{pmatrix}
+\rho(0) & \rho(1) & \cdots & \rho(k-1) \\
+\rho(1) & \rho(0) & \cdots & \rho(k-2) \\
+\vdots & \vdots & \ddots & \vdots \\
+\rho(k-1) & \rho(k-2) & \cdots & \rho(0)
+\end{pmatrix}
+\begin{pmatrix}
+\phi_{k1} \\
+\phi_{k2} \\
+\vdots \\
+\phi_{kk}
+\end{pmatrix} =
+\begin{pmatrix}
+\rho(1) \\
+\rho(2) \\
+\vdots \\
+\rho(k)
+\end{pmatrix}$$
+
+### 3.4 ACF/PACF Patterns for Common Models
+
+| Model | ACF Pattern | PACF Pattern |
+|-------|-------------|--------------|
+| **AR(p)** | Tails off gradually | Cuts off after lag p |
+| **MA(q)** | Cuts off after lag q | Tails off gradually |
+| **ARMA(p,q)** | Tails off gradually | Tails off gradually |
+| **Random Walk** | Very slow decay | $\phi_{11} \approx 1$, others near 0 |
+| **Seasonal AR** | Decay at seasonal lags | Spikes at seasonal lags |
+
+### 3.5 Confidence Intervals and Significance Testing
+
+**Bartlett's Formula:**
+For white noise, the standard error of $\hat{\rho}(k)$ is approximately:
+
+$$\text{SE}[\hat{\rho}(k)] \approx \frac{1}{\sqrt{T}}$$
+
+**95% Confidence Interval:**
+$$\hat{\rho}(k) \pm \frac{1.96}{\sqrt{T}}$$
+
+**Ljung-Box Test:**
+Tests whether any of a group of autocorrelations are different from zero:
+
+$$Q = T(T+2)\sum_{k=1}^{h}\frac{\hat{\rho}(k)^2}{T-k} \sim \chi^2(h)$$
+
+### 3.6 Practical Interpretation Guide
+
+<div class="my-6 rounded-xl border border-white/[0.08] bg-surface-1/30 px-4 py-3 callout callout-tip" data-callout-type="tip" data-callout-label="Key Insight">
+  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neon-cyan mb-1">Key Insight</div>
+  <div class="text-text-secondary leading-relaxed">ACF and PACF are diagnostic tools for model identification:</div>
+</div>
+
+1. **Examine ACF first:**
+   - Slow decay suggests non-stationarity (difference the series)
+   - Seasonal spikes suggest seasonal differencing needed
+
+2. **After achieving stationarity:**
+   - ACF cuts off → MA model
+   - PACF cuts off → AR model
+   - Both tail off → ARMA model
+
+3. **For seasonal patterns:**
+   - Look at lags $s, 2s, 3s, ...$ for seasonal structure
+
+---
+
+## 4. ARIMA Models: The Statistical Baseline
+
+### 4.1 The ARIMA Framework
+
+ARIMA (AutoRegressive Integrated Moving Average) models, developed by Box and Jenkins (1970), provide a systematic approach to time series forecasting.
+
+**ARIMA(p,d,q) Model:**
+
+$$\nabla^d x_t = c + \sum_{i=1}^{p}\phi_i \nabla^d x_{t-i} + \epsilon_t + \sum_{j=1}^{q}\theta_j \epsilon_{t-j}$$
+
+Using backshift notation:
+$$(1 - \sum_{i=1}^{p}\phi_i B^i)(1 - B)^d x_t = c + (1 + \sum_{j=1}^{q}\theta_j B^j)\epsilon_t$$
+
+Or more compactly:
+$$\phi(B)\nabla^d x_t = c + \theta(B)\epsilon_t$$
+
+### 4.2 Component Breakdown
+
+#### 4.2.1 AR(p): Autoregressive Component
+
+$$x_t = c + \phi_1 x_{t-1} + \phi_2 x_{t-2} + ... + \phi_p x_{t-p} + \epsilon_t$$
+
+**Stationarity Condition:**
+All roots of the characteristic equation must lie outside the unit circle:
+$$1 - \phi_1 z - \phi_2 z^2 - ... - \phi_p z^p = 0$$
+
+| AR(1) | AR(2) | Interpretation |
+|-------|-------|----------------|
+| $\phi_1 > 0$ | - | Positive autocorrelation |
+| $\phi_1 < 0$ | - | Oscillating behavior |
+| $|\phi_1| < 1$ | - | Stationary |
+| - | $\phi_1^2 + 4\phi_2 < 0$ | Damped oscillations |
+
+#### 4.2.2 MA(q): Moving Average Component
+
+$$x_t = \mu + \epsilon_t + \theta_1 \epsilon_{t-1} + \theta_2 \epsilon_{t-2} + ... + \theta_q \epsilon_{t-q}$$
+
+**Invertibility Condition:**
+All roots of the MA characteristic equation must lie outside the unit circle:
+$$1 + \theta_1 z + \theta_2 z^2 + ... + \theta_q z^q = 0$$
+
+#### 4.2.3 I(d): Integration (Differencing)
+
+The number of differences required to achieve stationarity.
+
+### 4.3 Seasonal ARIMA (SARIMA)
+
+For series with seasonal patterns:
+
+**SARIMA(p,d,q)(P,D,Q)s:**
+$$\Phi_P(B^s)\phi_p(B)\nabla^d\nabla_s^D x_t = \Theta_Q(B^s)\theta_q(B)\epsilon_t$$
+
+Where:
+- $s$ = seasonal period
+- $P, D, Q$ = seasonal AR, differencing, MA orders
+- $\Phi_P(B^s)$ = seasonal AR polynomial
+- $\Theta_Q(B^s)$ = seasonal MA polynomial
+
+### 4.4 Model Identification Procedure
+
+**Step 1: Check Stationarity**
+- Apply ADF and KPSS tests
+- Difference until stationary (determine $d$)
+
+**Step 2: Examine ACF/PACF**
+- Identify AR and MA orders from patterns
+- Check for seasonal patterns
+
+**Step 3: Estimate Parameters**
+- Maximum Likelihood Estimation (MLE)
+- Conditional Least Squares
+
+**Step 4: Diagnostic Checking**
+- Ljung-Box test on residuals
+- Normality of residuals
+- No remaining autocorrelation
+
+### 4.5 Parameter Estimation
+
+**Maximum Likelihood Estimation:**
+Maximize the log-likelihood function:
+
+$$\mathcal{L}(\theta) = -\frac{T}{2}\log(2\pi) - \frac{T}{2}\log(\sigma^2_\epsilon) - \frac{1}{2\sigma^2_\epsilon}\sum_{t=1}^{T}\epsilon_t^2$$
+
+**Information Criteria for Model Selection:**
+
+| Criterion | Formula | Penalty for Complexity |
+|-----------|---------|----------------------|
+| AIC | $-2\log(\mathcal{L}) + 2k$ | Moderate |
+| AICc | AIC + $\frac{2k(k+1)}{T-k-1}$ | Adjusted for small samples |
+| BIC | $-2\log(\mathcal{L}) + k\log(T)$ | Strong |
+| HQIC | $-2\log(\mathcal{L}) + 2k\log(\log(T))$ | Moderate-strong |
+
+Where $k = p + q + P + Q + 1$ (number of parameters).
+
+### 4.6 Forecasting with ARIMA
+
+**Point Forecasts:**
+Minimum mean squared error forecast:
+$$\hat{x}_{T+h|T} = E[x_{T+h} | x_1, ..., x_T]$$
+
+**Forecast Variance:**
+$$\text{Var}(e_{T+h|T}) = \sigma^2_\epsilon \sum_{j=0}^{h-1}\psi_j^2$$
+
+Where $\psi_j$ are the weights from the infinite MA representation.
+
+**Prediction Intervals:**
+$$\hat{x}_{T+h|T} \pm z_{\alpha/2}\sqrt{\text{Var}(e_{T+h|T})}$$
+
+### 4.7 ARIMA as a Baseline for Deep Learning
+
+<div class="my-6 rounded-xl border border-white/[0.08] bg-surface-1/30 px-4 py-3 callout callout-tip" data-callout-type="tip" data-callout-label="Key Insight">
+  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neon-cyan mb-1">Key Insight</div>
+  <div class="text-text-secondary leading-relaxed">ARIMA models serve as essential baselines:</div>
+</div>
+
+1. **Benchmark Performance:** Any sophisticated model should outperform a well-tuned ARIMA
+2. **Model Validation:** If deep learning doesn't beat ARIMA, investigate why
+3. **Feature Engineering:** ARIMA residuals can inform feature design
+4. **Hybrid Approaches:** Combine ARIMA with neural networks
+
+**When ARIMA Excels:**
+- Small datasets
+- Clear seasonal patterns
+- Linear relationships
+- Interpretability requirements
+
+**When Deep Learning Excels:**
+- Large datasets
+- Complex nonlinear patterns
+- Multiple input series
+- Long-term dependencies
+
+---
+
+## 5. Seasonal Decomposition
+
+### 5.1 Classical Decomposition
+
+Time series can be decomposed into components:
+
+**Additive Model:**
+$$x_t = T_t + S_t + R_t$$
+
+**Multiplicative Model:**
+$$x_t = T_t \times S_t \times R_t$$
+
+Where:
+- $T_t$ = Trend component
+- $S_t$ = Seasonal component
+- $R_t$ = Residual/irregular component
+
+### 5.2 Moving Average Trend Estimation
+
+**Centered Moving Average:**
+$$\hat{T}_t = \frac{1}{2m+1}\sum_{j=-m}^{m}x_{t+j}$$
+
+For seasonal period $s$:
+- If $s$ is odd: Use $m = (s-1)/2$
+- If $s$ is even: Use 2×$s$ moving average
+
+### 5.3 Seasonal Component Estimation
+
+**Step 1:** Detrend the series
+- Additive: $x_t - \hat{T}_t$
+- Multiplicative: $x_t / \hat{T}_t$
+
+**Step 2:** Average by season
+$$\hat{S}_k = \frac{1}{n_k}\sum_{t \in \text{season } k}(x_t - \hat{T}_t)$$
+
+**Step 3:** Normalize so seasonal components sum to zero (additive) or average to one (multiplicative)
+
+### 5.4 STL Decomposition (Seasonal and Trend using Loess)
+
+STL is a robust, versatile decomposition method using locally estimated scatterplot smoothing (LOESS).
+
+**Algorithm Overview:**
+1. **Inner Loop:**
+   - Detrend and extract seasonal component
+   - Apply LOESS smoothing to seasonal sub-series
+   - Subtract seasonal to get trend
+
+2. **Outer Loop:**
+   - Compute residuals
+   - Apply robustness weights based on residual magnitude
+   - Repeat inner loop with weights
+
+**Advantages of STL:**
+- Handles any seasonal period
+- Robust to outliers
+- Trend and seasonal smoothness adjustable
+- Can handle changing seasonality
+
+**Parameters:**
+| Parameter | Description | Typical Values |
+|-----------|-------------|----------------|
+| $s$ | Seasonal period | Data-dependent |
+| $n_t$ | Trend smoothness | Odd integer |
+| $n_s$ | Seasonal smoothness | Odd integer |
+| $n_i$ | Inner loop iterations | 1-5 |
+| $n_o$ | Outer loop iterations | 0-15 |
+
+### 5.5 X-13ARIMA-SEATS
+
+The U.S. Census Bureau's official seasonal adjustment program:
+
+**Features:**
+- RegARIMA modeling (ARIMA with regression effects)
+- Automatic outlier detection
+- Trading day and holiday adjustment
+- Model-based SEATS decomposition
+
+**When to Use:**
+- Official statistics publication
+- Economic time series
+- When comparability with official data matters
+
+### 5.6 Practical Seasonal Adjustment Workflow
+
+```python
+from statsmodels.tsa.seasonal import STL
+
+# STL decomposition
+stl = STL(series, period=12, robust=True)
+result = stl.fit()
+
+trend = result.trend
+seasonal = result.seasonal
+residual = result.resid
+
+# Seasonally adjusted series
+adjusted = series - seasonal  # Additive
+```
+
+---
+
+## 6. Windowing Strategies: Mathematical Foundations
+
+### 6.1 The Windowing Problem
+
+Windowing transforms sequential data into supervised learning format:
+
+**Input:** Time series $\{x_1, x_2, ..., x_T\}$
+**Output:** Pairs $\{(X_i, y_i)\}$ where $X_i$ is input window, $y_i$ is target
+
+### 6.2 Window Types
+
+#### 6.2.1 Sliding Window (Rolling Window)
+
+**Definition:**
+Window advances by one time step each iteration.
+
+**Input Window:**
+$$X_t = (x_{t-w+1}, x_{t-w+2}, ..., x_t)$$
+
+**Target:**
+$$y_t = x_{t+h}$$
+
+Where $w$ = window size, $h$ = forecast horizon.
+
+**Number of Windows:**
+$$N_{windows} = T - w - h + 1$$
+
+**Example (w=3, h=1):**
+| Window | Input | Target |
+|--------|-------|--------|
+| 1 | $[x_1, x_2, x_3]$ | $x_4$ |
+| 2 | $[x_2, x_3, x_4]$ | $x_5$ |
+| 3 | $[x_3, x_4, x_5]$ | $x_6$ |
+
+#### 6.2.2 Expanding Window
+
+Window grows over time, incorporating all historical data:
+
+$$X_t = (x_1, x_2, ..., x_t)$$
+
+**Use Cases:**
+- When all historical context matters
+- Cumulative statistics
+- Online learning scenarios
+
+#### 6.2.3 Tumbling Window (Non-overlapping)
+
+Windows do not overlap:
+
+$$X_k = (x_{(k-1)w+1}, ..., x_{kw})$$
+
+**Number of Windows:**
+$$N_{windows} = \lfloor T/w \rfloor$$
+
+### 6.3 Window Size Selection
+
+**Theoretical Considerations:**
+
+| Factor | Smaller Window | Larger Window |
+|--------|---------------|---------------|
+| Training samples | More | Fewer |
+| Context captured | Limited | Extensive |
+| Computational cost | Lower | Higher |
+| Non-stationarity | Less impact | More impact |
+| Long-term patterns | May miss | Captures |
+
+**Heuristics:**
+- Minimum: At least 2× seasonal period
+- For ARIMA: At least 10 observations per parameter
+- For deep learning: Thousands to millions of windows
+- Cross-validation for optimal selection
+
+### 6.4 Feature Engineering from Windows
+
+#### 6.4.1 Statistical Features
+
+For window $W = (x_{t-w+1}, ..., x_t)$:
+
+| Feature | Formula |
+|---------|---------|
+| Mean | $\bar{x} = \frac{1}{w}\sum_{i=1}^{w}x_i$ |
+| Std Dev | $\sigma = \sqrt{\frac{1}{w}\sum_{i=1}^{w}(x_i - \bar{x})^2}$ |
+| Min/Max | $\min(W), \max(W)$ |
+| Range | $\max(W) - \min(W)$ |
+| Skewness | $\frac{1}{w}\sum_{i=1}^{w}\left(\frac{x_i - \bar{x}}{\sigma}\right)^3$ |
+| Kurtosis | $\frac{1}{w}\sum_{i=1}^{w}\left(\frac{x_i - \bar{x}}{\sigma}\right)^4 - 3$ |
+
+#### 6.4.2 Temporal Features
+
+| Feature | Description |
+|---------|-------------|
+| Time of day | Hour, minute cyclical encoding |
+| Day of week | 0-6 with cyclical encoding |
+| Day of month | 1-31 |
+| Month | 1-12 with cyclical encoding |
+| Quarter | 1-4 |
+| Is weekend | Binary |
+| Is holiday | Binary |
+
+**Cyclical Encoding:**
+$$x_{sin} = \sin\left(\frac{2\pi x}{period}\right), \quad x_{cos} = \cos\left(\frac{2\pi x}{period}\right)$$
+
+#### 6.4.3 Lag Features
+
+Direct inclusion of past values:
+$$X_t = (x_{t-1}, x_{t-2}, ..., x_{t-w})$$
+
+#### 6.4.4 Rolling Statistics
+
+Rolling mean with different windows:
+$$\text{MA}_k(t) = \frac{1}{k}\sum_{i=0}^{k-1}x_{t-i}$$
+
+Exponentially weighted moving average:
+$$\text{EWMA}_\alpha(t) = \alpha x_t + (1-\alpha)\text{EWMA}_\alpha(t-1)$$
+
+### 6.5 Windowing for Different Architectures
+
+#### 6.5.1 For RNNs/LSTMs
+
+**3D Input Shape:** $(batch\_size, timesteps, features)$
+
+```python
+# Window shape for univariate LSTM
+window_size = 30
+X = []  # Shape: (n_samples, 30, 1)
+y = []  # Shape: (n_samples,)
+
+for i in range(len(series) - window_size):
+    X.append(series[i:i+window_size])
+    y.append(series[i+window_size])
+```
+
+#### 6.5.2 For 1D CNNs
+
+Same window structure as RNNs; CNN learns local patterns.
+
+#### 6.5.3 For Transformers
+
+Include positional encoding in windows:
+$$PE_{(pos, 2i)} = \sin(pos/10000^{2i/d_{model}})$$
+
+### 6.6 Data Leakage Prevention
+
+**Critical Rule:** Never use future information to predict the past.
+
+**Common Leakage Sources:**
+
+| Source | Problem | Solution |
+|--------|---------|----------|
+| Global normalization | Uses future mean/std | Use rolling/expanding statistics |
+| Feature selection | Uses full dataset | Select on training only |
+| Train/test split | Random split breaks time | Use temporal split |
+| Cross-validation | Random folds | Time Series Split |
+
+**Proper Train/Validation/Test Split:**
+
+```python
+[Training: 60%][Validation: 20%][Test: 20%]
+|---------------> Time ------------>|
+```
+
+**Time Series Cross-Validation:**
+
+```python
+Fold 1: [Train][Val         ]
+Fold 2: [Train     ][Val    ]
+Fold 3: [Train          ][Val]
+```
+
+---
+
+## 7. Forecasting Strategies: Direct, Recursive, and Multi-Output
+
+### 7.1 Problem Formulation
+
+Given historical data $\{x_1, ..., x_T\}$, predict future values $\{x_{T+1}, ..., x_{T+H}\}$ where $H$ is the forecast horizon.
+
+### 7.2 Direct Forecasting (Multi-Model)
+
+**Approach:** Train separate model for each horizon.
+
+**Model for horizon h:**
+$$\hat{x}_{T+h} = f_h(x_T, x_{T-1}, ..., x_{T-w+1})$$
+
+**Advantages:**
+- No error accumulation
+- Each model optimized for specific horizon
+- Captures horizon-specific patterns
+
+**Disadvantages:**
+- Computational cost: H models to train
+- No parameter sharing
+- May produce incoherent forecasts
+
+**Mathematical Formulation:**
+$$\min_{\theta_h} \sum_{t=w}^{T-h} L(x_{t+h}, f_h(x_t, ..., x_{t-w+1}; \theta_h))$$
+
+For each $h \in \{1, ..., H\}$
+
+### 7.3 Recursive Forecasting (Iterative)
+
+**Approach:** Single model, use predictions as inputs for next step.
+
+**One-step model:**
+$$\hat{x}_{t+1} = f(x_t, x_{t-1}, ..., x_{t-w+1})$$
+
+**Multi-step prediction:**
+$$\hat{x}_{T+2} = f(\hat{x}_{T+1}, x_T, ..., x_{T-w+2})$$
+$$\hat{x}_{T+h} = f(\hat{x}_{T+h-1}, ..., \hat{x}_{T+1}, x_T, ..., x_{T-w+h})$$
+
+**Advantages:**
+- Single model to train
+- Parameter efficiency
+- Natural autoregressive structure
+
+**Disadvantages:**
+- Error accumulation
+- Bias toward one-step performance
+- Cannot recover from early errors
+
+**Error Propagation:**
+$$\text{Var}(\hat{x}_{T+h}) \approx h \cdot \sigma^2_\epsilon$$
+
+### 7.4 Multi-Output Forecasting (Sequence-to-Sequence)
+
+**Approach:** Single model predicts entire horizon at once.
+
+$$\hat{x}_{T+1:T+H} = f(x_T, x_{T-1}, ..., x_{T-w+1})$$
+
+Output: Vector of length H
+
+**Advantages:**
+- Captures dependencies between horizons
+- No error accumulation
+- Single model
+
+**Disadvantages:**
+- More complex model
+- Requires more data
+- May underperform at longer horizons
+
+**Loss Function:**
+$$L = \sum_{h=1}^{H} w_h \cdot L_h(x_{T+h}, \hat{x}_{T+h})$$
+
+Where $w_h$ are horizon-specific weights.
+
+### 7.5 Comparison Summary
+
+| Aspect | Direct | Recursive | Multi-Output |
+|--------|--------|-----------|--------------|
+| Models | H | 1 | 1 |
+| Error accumulation | No | Yes | No |
+| Training time | High | Low | Medium |
+| Horizon coherence | No | Yes | Yes |
+| Best for | Long horizons | Short horizons | Medium horizons |
+| Data efficiency | Low | High | Medium |
+
+### 7.6 Advanced Strategies
+
+#### 7.6.1 DirRec (Direct+Recursive)
+
+Hybrid approach using direct models with recursive inputs.
+
+#### 7.6.2 MIMO (Multi-Input Multi-Output)
+
+Predict multiple series simultaneously:
+$$\hat{\mathbf{x}}_{T+1:T+H} = f(\mathbf{x}_T, ..., \mathbf{x}_{T-w+1})$$
+
+Where $\mathbf{x}_t \in \mathbb{R}^d$
+
+#### 7.6.3 Encoder-Decoder Architecture
+
+**Encoder:** Processes historical context
+$$\mathbf{h} = \text{Encoder}(x_T, ..., x_{T-w+1})$$
+
+**Decoder:** Generates forecasts
+$$\hat{x}_{T+h} = \text{Decoder}(\mathbf{h}, \hat{x}_{T+h-1}, ...)$$
+
+Teacher forcing during training:
+$$\hat{x}_{T+h} = \text{Decoder}(\mathbf{h}, x_{T+h-1}, ...)$$
+
+### 7.7 Loss Functions for Multi-Horizon Forecasting
+
+| Loss | Formula | Use Case |
+|------|---------|----------|
+| MSE | $\frac{1}{H}\sum_{h=1}^{H}(x_{T+h} - \hat{x}_{T+h})^2$ | Standard |
+| MAE | $\frac{1}{H}\sum_{h=1}^{H}|x_{T+h} - \hat{x}_{T+h}|$ | Robust |
+| RMSE | $\sqrt{\text{MSE}}$ | Same units as data |
+| MAPE | $\frac{100\%}{H}\sum_{h=1}^{H}\left|\frac{x_{T+h} - \hat{x}_{T+h}}{x_{T+h}}\right|$ | Scale-independent |
+| sMAPE | $\frac{200\%}{H}\sum_{h=1}^{H}\frac{|x_{T+h} - \hat{x}_{T+h}|}{|x_{T+h}| + |\hat{x}_{T+h}|}$ | Symmetric |
+| Quantile | $\frac{1}{H}\sum_{h=1}^{H}\rho_\tau(x_{T+h} - \hat{x}_{T+h})$ | Probabilistic |
+
+---
+
+## 8. Deep Learning Architectures for Time Series
+
+### 8.1 1D Convolutional Neural Networks
+
+#### 8.1.1 1D Convolution Operation
+
+$$y_t = \sum_{k=0}^{K-1} w_k \cdot x_{t+k} + b$$
+
+Where $K$ is the kernel size.
+
+#### 8.1.2 Dilated Convolutions
+
+Expand receptive field exponentially:
+
+$$y_t = \sum_{k=0}^{K-1} w_k \cdot x_{t + d \cdot k}$$
+
+Where $d$ is the dilation rate.
+
+**Receptive Field:**
+$$RF = (K-1) \cdot d + 1$$
+
+#### 8.1.3 Causal Convolutions
+
+Ensure predictions only use past information:
+
+$$y_t = f(x_t, x_{t-1}, ..., x_{t-K+1})$$
+
+No dependence on $x_{t+1}, x_{t+2}, ...$
+
+### 8.2 Recurrent Neural Networks
+
+#### 8.2.1 Vanilla RNN
+
+**Hidden State Update:**
+$$\mathbf{h}_t = \tanh(\mathbf{W}_{hh}\mathbf{h}_{t-1} + \mathbf{W}_{xh}\mathbf{x}_t + \mathbf{b}_h)$$
+
+**Output:**
+$$\mathbf{y}_t = \mathbf{W}_{hy}\mathbf{h}_t + \mathbf{b}_y$$
+
+**Problem:** Vanishing/exploding gradients for long sequences.
+
+#### 8.2.2 Long Short-Term Memory (LSTM)
+
+**Forget Gate:**
+$$\mathbf{f}_t = \sigma(\mathbf{W}_f \cdot [\mathbf{h}_{t-1}, \mathbf{x}_t] + \mathbf{b}_f)$$
+
+**Input Gate:**
+$$\mathbf{i}_t = \sigma(\mathbf{W}_i \cdot [\mathbf{h}_{t-1}, \mathbf{x}_t] + \mathbf{b}_i)$$
+$$\tilde{\mathbf{C}}_t = \tanh(\mathbf{W}_C \cdot [\mathbf{h}_{t-1}, \mathbf{x}_t] + \mathbf{b}_C)$$
+
+**Cell State Update:**
+$$\mathbf{C}_t = \mathbf{f}_t \odot \mathbf{C}_{t-1} + \mathbf{i}_t \odot \tilde{\mathbf{C}}_t$$
+
+**Output Gate:**
+$$\mathbf{o}_t = \sigma(\mathbf{W}_o \cdot [\mathbf{h}_{t-1}, \mathbf{x}_t] + \mathbf{b}_o)$$
+$$\mathbf{h}_t = \mathbf{o}_t \odot \tanh(\mathbf{C}_t)$$
+
+**Key Innovation:** Cell state provides highway for gradient flow.
+
+#### 8.2.3 Gated Recurrent Unit (GRU)
+
+Simplified version with fewer gates:
+
+**Update Gate:**
+$$\mathbf{z}_t = \sigma(\mathbf{W}_z \cdot [\mathbf{h}_{t-1}, \mathbf{x}_t])$$
+
+**Reset Gate:**
+$$\mathbf{r}_t = \sigma(\mathbf{W}_r \cdot [\mathbf{h}_{t-1}, \mathbf{x}_t])$$
+
+**Candidate Activation:**
+$$\tilde{\mathbf{h}}_t = \tanh(\mathbf{W} \cdot [\mathbf{r}_t \odot \mathbf{h}_{t-1}, \mathbf{x}_t])$$
+
+**Hidden State:**
+$$\mathbf{h}_t = (1 - \mathbf{z}_t) \odot \mathbf{h}_{t-1} + \mathbf{z}_t \odot \tilde{\mathbf{h}}_t$$
+
+**LSTM vs GRU:**
+| Feature | LSTM | GRU |
+|---------|------|-----|
+| Gates | 3 | 2 |
+| Parameters | More | Fewer |
+| Training speed | Slower | Faster |
+| Performance | Often better | Often comparable |
+
+### 8.3 Bidirectional RNNs
+
+Process sequence in both directions:
+
+$$\overrightarrow{\mathbf{h}}_t = \text{RNN}(\mathbf{x}_t, \overrightarrow{\mathbf{h}}_{t-1})$$
+$$\overleftarrow{\mathbf{h}}_t = \text{RNN}(\mathbf{x}_t, \overleftarrow{\mathbf{h}}_{t+1})$$
+
+$$\mathbf{h}_t = [\overrightarrow{\mathbf{h}}_t; \overleftarrow{\mathbf{h}}_t]$$
+
+<div class="my-6 rounded-xl border border-white/[0.08] bg-surface-1/30 px-4 py-3 callout callout-note" data-callout-type="note" data-callout-label="Note">
+  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neon-cyan mb-1">Note</div>
+  <div class="text-text-secondary leading-relaxed">Only applicable when future context is available (not for forecasting).</div>
+</div>
+
+### 8.4 Attention Mechanisms
+
+#### 8.4.1 Self-Attention for Time Series
+
+$$\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)V$$
+
+For time series:
+- $Q, K, V$ derived from input sequence
+- Causal masking for forecasting
+
+#### 8.4.2 Multi-Head Attention
+
+$$\text{MultiHead}(Q, K, V) = \text{Concat}(\text{head}_1, ..., \text{head}_h)W^O$$
+
+Where:
+$$\text{head}_i = \text{Attention}(QW_i^Q, KW_i^K, VW_i^V)$$
+
+### 8.5 Architecture Selection Guide
+
+| Scenario | Recommended Architecture |
+|----------|------------------------|
+| Short sequences (<100) | LSTM/GRU |
+| Long sequences (>1000) | TCN, Transformer |
+| Local patterns important | 1D CNN, TCN |
+| Long-term dependencies | LSTM, TCN, Transformer |
+| Multivariate series | LSTM with attention, N-BEATS |
+| Interpretability needed | N-BEATS, ARIMA |
+| Large dataset | Transformer, DeepAR |
+
+---
+
+## 9. Probabilistic Forecasting
+
+### 9.1 Beyond Point Forecasts
+
+Point forecasts provide single values; probabilistic forecasts provide full distributions.
+
+**Why Probabilistic Forecasting:**
+- Uncertainty quantification
+- Risk assessment
+- Decision making under uncertainty
+- Inventory optimization
+- Resource planning
+
+### 9.2 Types of Probabilistic Forecasts
+
+| Type | Description | Example |
+|------|-------------|---------|
+| **Prediction Intervals** | Range with specified coverage | 95% PI: [10, 20] |
+| **Quantile Forecasts** | Specific quantiles | Q(0.9) = 18 |
+| **Full Distribution** | Complete probability distribution | $X_{T+h} \sim \mathcal{N}(\mu, \sigma^2)$ |
+| **Scenarios** | Multiple possible futures | 100 sample paths |
+
+### 9.3 Quantile Regression
+
+**Loss Function (Pinball Loss):**
+$$\rho_\tau(y, \hat{y}) = \begin{cases}
+\tau(y - \hat{y}) & \text{if } y \geq \hat{y} \\
+(1-\tau)(\hat{y} - y) & \text{if } y < \hat{y}
+\end{cases}$$
+
+**Properties:**
+- Minimizing pinball loss yields $\tau$-th quantile
+- Asymmetric: different penalties for over/under-prediction
+- Robust to outliers
+
+**Multi-Quantile Model:**
+Train model to output multiple quantiles simultaneously:
+$$\hat{\mathbf{q}} = [\hat{q}_{0.1}, \hat{q}_{0.5}, \hat{q}_{0.9}]$$
+
+**Quantile Crossing Problem:**
+Ensure $\hat{q}_{\tau_1} \leq \hat{q}_{\tau_2}$ for $\tau_1 < \tau_2$
+
+Solutions:
+- Sort quantiles post-hoc
+- Use monotonic output layers
+
+### 9.4 Parametric Probabilistic Models
+
+#### 9.4.1 Gaussian Distribution
+
+$$p(x_{T+h}) = \mathcal{N}(\mu_{T+h}, \sigma^2_{T+h})$$
+
+Model outputs: $(\mu, \sigma)$
+
+**Negative Log-Likelihood Loss:**
+$$L = -\log p(x | \mu, \sigma) = \frac{1}{2}\log(2\pi\sigma^2) + \frac{(x - \mu)^2}{2\sigma^2}$$
+
+#### 9.4.2 Mixture Density Networks
+
+Mixture of Gaussians:
+$$p(x) = \sum_{k=1}^{K} \pi_k \mathcal{N}(x | \mu_k, \sigma_k^2)$$
+
+Model outputs: $\{(\pi_k, \mu_k, \sigma_k)\}_{k=1}^{K}$
+
+Constraints:
+- $\sum_k \pi_k = 1$
+- $\sigma_k > 0$
+
+#### 9.4.3 Student's t-Distribution
+
+Heavier tails than Gaussian:
+$$p(x) = \frac{\Gamma(\frac{\nu+1}{2})}{\sqrt{\nu\pi}\Gamma(\frac{\nu}{2})}\left(1 + \frac{(x-\mu)^2}{\nu\sigma^2}\right)^{-\frac{\nu+1}{2}}$$
+
+More robust to outliers; $\nu$ = degrees of freedom.
+
+### 9.5 DeepAR: Probabilistic RNN
+
+Amazon's DeepAR model combines RNNs with probabilistic forecasting.
+
+**Architecture:**
+1. RNN processes historical data: $\mathbf{h}_t = \text{RNN}(\mathbf{x}_t, \mathbf{h}_{t-1})$
+2. Output parameters of distribution: $(\mu_t, \sigma_t) = g(\mathbf{h}_t)$
+3. Sample next value: $x_{t+1} \sim p(\cdot | \mu_t, \sigma_t)$
+4. Feed sample back as input (autoregressive)
+
+**Training:**
+Maximize likelihood over training sequences.
+
+**Inference:**
+Generate multiple sample paths (Monte Carlo).
+
+### 9.6 Conformal Prediction
+
+Distribution-free uncertainty quantification.
+
+**Algorithm:**
+1. Compute non-conformity scores on calibration set
+2. Find threshold $\hat{q}$ as $(1-\alpha)(1 + 1/n)$-th quantile
+3. Prediction set: $\{y : s(x, y) \leq \hat{q}\}$
+
+**Guarantee:** Coverage $\geq 1-\alpha$ (marginal)
+
+### 9.7 Evaluation of Probabilistic Forecasts
+
+#### 9.7.1 Continuous Ranked Probability Score (CRPS)
+
+$$\text{CRPS}(F, y) = \int_{-\infty}^{\infty}(F(x) - \mathbb{1}_{[y,\infty)}(x))^2 dx$$
+
+For Gaussian:
+$$\text{CRPS}(\mathcal{N}(\mu, \sigma), y) = \sigma\left(z(2\Phi(z) - 1) + 2\phi(z) - \frac{1}{\sqrt{\pi}}\right)$$
+
+Where $z = (y - \mu)/\sigma$
+
+#### 9.7.2 Quantile Score
+
+$$QS_\tau = \frac{2}{T}\sum_{t=1}^{T}\rho_\tau(y_t, \hat{q}_\tau(t))$$
+
+#### 9.7.3 Coverage and Width
+
+| Metric | Formula | Target |
+|--------|---------|--------|
+| Coverage | $\frac{1}{T}\sum_t \mathbb{1}_{[L_t, U_t]}(y_t)$ | $\approx 1-\alpha$ |
+| Average Width | $\frac{1}{T}\sum_t (U_t - L_t)$ | Minimize |
+
+---
+
+## 10. Anomaly Detection in Time Series
+
+### 10.1 Types of Anomalies
+
+| Type | Description | Example |
+|------|-------------|---------|
+| **Point Anomalies** | Individual unusual observations | Sensor spike |
+| **Contextual Anomalies** | Unusual in context but not globally | High temperature in winter |
+| **Collective Anomalies** | Sequence of unusual values | Gradual drift |
+| **Seasonal Anomalies** | Unusual within seasonal pattern | Holiday sales spike |
+
+### 10.2 Statistical Approaches
+
+#### 10.2.1 Z-Score Method
+
+$$z_t = \frac{x_t - \mu}{\sigma}$$
+
+Anomaly if $|z_t| > \tau$ (typically $\tau = 3$)
+
+**Rolling Z-Score:**
+$$z_t = \frac{x_t - \bar{x}_{t-w:t}}{\sigma_{t-w:t}}$$
+
+#### 10.2.2 Modified Z-Score
+
+Using median and MAD (Median Absolute Deviation):
+
+$$M_t = 0.6745 \cdot \frac{x_t - \text{median}}{\text{MAD}}$$
+
+More robust to outliers.
+
+#### 10.2.3 IQR Method
+
+$$\text{IQR} = Q_3 - Q_1$$
+
+Anomaly if:
+$$x_t < Q_1 - 1.5 \cdot \text{IQR} \quad \text{or} \quad x_t > Q_3 + 1.5 \cdot \text{IQR}$$
+
+### 10.3 Model-Based Approaches
+
+#### 10.3.1 Forecasting-Based
+
+1. Train forecasting model
+2. Compute prediction errors: $e_t = x_t - \hat{x}_t$
+3. Anomaly if $|e_t| > \tau$
+
+#### 10.3.2 STL-Based Decomposition
+
+1. Decompose: $x_t = T_t + S_t + R_t$
+2. Analyze residuals $R_t$
+3. Anomaly if $|R_t| > \tau \cdot \text{MAD}(R)$
+
+### 10.4 Deep Learning Approaches
+
+#### 10.4.1 Autoencoders
+
+**Architecture:**
+- Encoder: Compresses input to latent representation
+- Decoder: Reconstructs input from latent space
+
+**Anomaly Score:**
+$$\text{score}(x) = \|x - \text{Decoder}(\text{Encoder}(x))\|^2$$
+
+**Variants:**
+- LSTM Autoencoder (for sequences)
+- Variational Autoencoder (probabilistic)
+- Convolutional Autoencoder
+
+#### 10.4.2 Isolation Forest
+
+Randomly partition data; anomalies isolated in fewer splits.
+
+**Anomaly Score:**
+$$s(x, n) = 2^{-\frac{E(h(x))}{c(n)}}$$
+
+Where $h(x)$ is path length and $c(n)$ is average path length.
+
+#### 10.4.3 One-Class SVM
+
+Learn boundary of normal data:
+
+$$\min_{w, \rho} \frac{1}{2}\|w\|^2 - \rho + \frac{1}{\nu n}\sum_i \xi_i$$
+
+Subject to: $w \cdot \phi(x_i) \geq \rho - \xi_i$
+
+### 10.5 Evaluation Metrics
+
+| Metric | Formula | Use Case |
+|--------|---------|----------|
+| Precision | $\frac{TP}{TP+FP}$ | Minimize false alarms |
+| Recall | $\frac{TP}{TP+FN}$ | Catch all anomalies |
+| F1-Score | $2\frac{Precision \cdot Recall}{Precision + Recall}$ | Balance |
+| AUC-ROC | Area under ROC curve | Threshold-independent |
+| AUC-PR | Area under Precision-Recall curve | Imbalanced data |
+
+### 10.6 Common Pitfalls
+
+**Pitfall 1: Label Contamination**
+- Training data may contain unlabeled anomalies
+- Solution: Robust training, outlier removal
+
+**Pitfall 2: Concept Drift**
+- Normal behavior changes over time
+- Solution: Online learning, adaptive thresholds
+
+**Pitfall 3: Seasonal Confusion**
+- Seasonal peaks flagged as anomalies
+- Solution: Seasonal decomposition first
+
+---
+
+## 11. Multivariate Time Series
+
+### 11.1 Problem Definition
+
+Multiple related time series observed simultaneously:
+
+$$\mathbf{X}_t = [x_{t,1}, x_{t,2}, ..., x_{t,d}]^T \in \mathbb{R}^d$$
+
+Where $d$ is the number of variables.
+
+### 11.2 Cross-Correlation
+
+**Cross-Correlation Function:**
+$$\rho_{xy}(k) = \frac{\text{Cov}(x_t, y_{t-k})}{\sigma_x \sigma_y}$$
+
+**Cross-Correlation Matrix:**
+$$\mathbf{R}(k) = \begin{pmatrix}
+\rho_{11}(k) & \rho_{12}(k) & \cdots & \rho_{1d}(k) \\
+\rho_{21}(k) & \rho_{22}(k) & \cdots & \rho_{2d}(k) \\
+\vdots & \vdots & \ddots & \vdots \\
+\rho_{d1}(k) & \rho_{d2}(k) & \cdots & \rho_{dd}(k)
+\end{pmatrix}$$
+
+### 11.3 Vector Autoregression (VAR)
+
+**VAR(p) Model:**
+$$\mathbf{x}_t = \mathbf{c} + \sum_{i=1}^{p}\mathbf{A}_i\mathbf{x}_{t-i} + \boldsymbol{\epsilon}_t$$
+
+Where:
+- $\mathbf{c} \in \mathbb{R}^d$ is the constant vector
+- $\mathbf{A}_i \in \mathbb{R}^{d \times d}$ are coefficient matrices
+- $\boldsymbol{\epsilon}_t \sim \mathcal{N}(0, \boldsymbol{\Sigma})$
+
+**VAR(1) in Matrix Form:**
+$$\begin{pmatrix}
+x_{t,1} \\
+x_{t,2} \\
+\vdots \\
+x_{t,d}
+\end{pmatrix} =
+\begin{pmatrix}
+c_1 \\
+c_2 \\
+\vdots \\
+c_d
+\end{pmatrix} +
+\begin{pmatrix}
+a_{11} & a_{12} & \cdots & a_{1d} \\
+a_{21} & a_{22} & \cdots & a_{2d} \\
+\vdots & \vdots & \ddots & \vdots \\
+a_{d1} & a_{d2} & \cdots & a_{dd}
+\end{pmatrix}
+\begin{pmatrix}
+x_{t-1,1} \\
+x_{t-1,2} \\
+\vdots \\
+x_{t-1,d}
+\end{pmatrix} +
+\begin{pmatrix}
+\epsilon_{t,1} \\
+\epsilon_{t,2} \\
+\vdots \\
+\epsilon_{t,d}
+\end{pmatrix}$$
+
+### 11.4 Granger Causality
+
+Tests whether one time series helps predict another.
+
+**Null Hypothesis:** Series $y$ does not Granger-cause series $x$
+
+**Test:**
+1. Estimate restricted model: $x_t$ on lags of $x$
+2. Estimate unrestricted model: $x_t$ on lags of $x$ and $y$
+3. F-test: Are lags of $y$ jointly significant?
+
+**Limitations:**
+- Not true causality (predictive relationship)
+- Sensitive to omitted variables
+- Requires stationarity
+
+### 11.5 Cointegration
+
+When non-stationary series share a common stochastic trend.
+
+**Definition:**
+Series $\mathbf{x}_t$ are cointegrated if:
+1. Each $x_{t,i}$ is I(1) (integrated of order 1)
+2. There exists $\boldsymbol{\beta}$ such that $\boldsymbol{\beta}^T\mathbf{x}_t$ is I(0)
+
+**Engle-Granger Test:**
+1. Test each series for unit root
+2. Estimate: $x_{t,1} = \alpha + \beta x_{t,2} + \epsilon_t$
+3. Test residuals for unit root
+
+**Vector Error Correction Model (VECM):**
+$$\Delta \mathbf{x}_t = \boldsymbol{\alpha}\boldsymbol{\beta}^T\mathbf{x}_{t-1} + \sum_{i=1}^{p-1}\boldsymbol{\Gamma}_i\Delta\mathbf{x}_{t-i} + \boldsymbol{\epsilon}_t$$
+
+Where $\boldsymbol{\alpha}\boldsymbol{\beta}^T\mathbf{x}_{t-1}$ is the error correction term.
+
+### 11.6 Deep Learning for Multivariate Series
+
+#### 11.6.1 LSTM with Multiple Inputs
+
+```python
+# Input shape: (batch, timesteps, features)
+model = Sequential([
+    LSTM(64, input_shape=(timesteps, n_features)),
+    Dense(n_outputs)
+])
+```
+
+#### 11.6.2 Graph Neural Networks for MT
+
+When variables have known relationships:
+
+$$\mathbf{H}^{(l+1)} = \sigma(\tilde{\mathbf{D}}^{-1/2}\tilde{\mathbf{A}}\tilde{\mathbf{D}}^{-1/2}\mathbf{H}^{(l)}\mathbf{W}^{(l)})$$
+
+Where $\tilde{\mathbf{A}} = \mathbf{A} + \mathbf{I}$ is the adjacency matrix with self-loops.
+
+### 11.7 Dimensionality Reduction
+
+#### 11.7.1 Principal Component Analysis (PCA)
+
+$$\mathbf{z}_t = \mathbf{W}^T(\mathbf{x}_t - \boldsymbol{\mu})$$
+
+Where $\mathbf{W}$ contains eigenvectors of covariance matrix.
+
+#### 11.7.2 Dynamic Factor Models
+
+$$\mathbf{x}_t = \boldsymbol{\Lambda}\mathbf{f}_t + \boldsymbol{\epsilon}_t$$
+
+Where $\mathbf{f}_t$ are common factors and $\boldsymbol{\Lambda}$ is the loading matrix.
+
+---
+
+## 12. Temporal Convolutional Networks (TCN)
+
+### 12.1 Introduction
+
+TCNs, introduced by Bai, Kolter, and Koltun (2018), offer a CNN-based alternative to RNNs for sequence modeling.
+
+**Key Advantages:**
+- Parallel processing (unlike sequential RNNs)
+- Flexible receptive field size
+- Stable gradients
+- Lower memory requirements for training
+
+### 12.2 Core Components
+
+#### 12.2.1 Causal Convolutions
+
+Ensure no information leakage from future to past:
+
+$$\text{Output}_t = \sum_{k=0}^{K-1} \text{Filter}_k \cdot \text{Input}_{t-k}$$
+
+**Implementation:** Padding on the left only.
+
+#### 12.2.2 Dilated Convolutions
+
+Exponentially increase receptive field:
+
+$$F(s) = (x * d f)(s) = \sum_{i=0}^{k-1} f(i) \cdot x_{s - d \cdot i}$$
+
+Where $d$ is the dilation factor.
+
+**Receptive Field Growth:**
+With $L$ layers and dilation $d_i = 2^i$:
+$$RF = 1 + 2 \cdot (K - 1) \cdot (2^L - 1)$$
+
+<div class="my-6 rounded-xl border border-white/[0.08] bg-surface-1/30 px-4 py-3 callout callout-note" data-callout-type="note" data-callout-label="Example">
+  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neon-cyan mb-1">Example</div>
+  <div class="text-text-secondary leading-relaxed">| Layer | Dilation | Receptive Field Contribution | |-------|----------|------------------------------| | 1 | 1 | $K$ | | 2 | 2 | $2(K-1)$ | | 3 | 4 | $4(K-1)$ | | 4 | 8 | $8(K-1)$ |</div>
+</div>
+
+Total: $RF = 1 + (K-1)(1 + 2 + 4 + 8) = 1 + 15(K-1)$
+
+#### 12.2.3 Residual Connections
+
+Address vanishing gradients in deep networks:
+
+$$\mathbf{o} = \text{Activation}(\mathbf{x} + \mathcal{F}(\mathbf{x}; \mathbf{W}))$$
+
+Where $\mathcal{F}$ is the convolutional block.
+
+**TCN Residual Block:**
+```python
+Input
+  |
+  +---> [Conv1D] ---> [WeightNorm] ---> [ReLU] ---> [Dropout]
+  |           |
+  |           v
+  |       [Conv1D] ---> [WeightNorm] ---> [ReLU] ---> [Dropout]
+  |           |
+  +-----------+---> [1x1 Conv if channels differ]
+              |
+              v
+           [Output]
+```
+
+### 12.3 TCN Architecture
+
+```python
+Input Sequence
+     |
+     v
+[TCN Block 1] - dilation=1
+     |
+     v
+[TCN Block 2] - dilation=2
+     |
+     v
+[TCN Block 3] - dilation=4
+     |
+     v
+[TCN Block 4] - dilation=8
+     |
+     v
+   [Dense]
+     |
+     v
+   Output
+```
+
+### 12.4 Mathematical Formulation
+
+**Single TCN Layer:**
+$$\mathbf{h}^{(l)}_t = \text{ReLU}\left(\mathbf{W}^{(l)} *_{d_l} \mathbf{h}^{(l-1)}_t + \mathbf{b}^{(l)}\right)$$
+
+Where $*_{d_l}$ denotes dilated convolution with dilation $d_l = 2^{l-1}$.
+
+**Full Network:**
+$$\hat{y}_t = \mathbf{W}^{out} \cdot \mathbf{h}^{(L)}_t + b^{out}$$
+
+### 12.5 TCN vs LSTM Comparison
+
+| Aspect | TCN | LSTM |
+|--------|-----|------|
+| Parallelism | Yes | No |
+| Receptive field | Adjustable | Theoretically infinite |
+| Training speed | Faster | Slower |
+| Memory during training | Lower | Higher |
+| Long-term dependencies | Good | Can struggle |
+| Variable length inputs | Padding needed | Natural handling |
+| Interpretability | Filter visualization | Gate analysis |
+
+### 12.6 Advanced TCN Variants
+
+#### 12.6.1 Gated TCN
+
+Introduce gating mechanism:
+
+$$\mathbf{h} = \tanh(\mathbf{W}_{f} * \mathbf{x}) \odot \sigma(\mathbf{W}_{g} * \mathbf{x})$$
+
+Where $\mathbf{W}_f$ is filter and $\mathbf{W}_g$ is gate.
+
+#### 12.6.2 Attention-Augmented TCN
+
+Add self-attention to capture global dependencies:
+
+$$\text{Output} = \text{TCN}(\mathbf{x}) + \text{Attention}(\mathbf{x})$$
+
+### 12.7 Practical Considerations
+
+**Hyperparameter Selection:**
+
+| Parameter | Effect | Typical Range |
+|-----------|--------|---------------|
+| Kernel size | Local context captured | 2-7 |
+| Number of layers | Receptive field depth | 4-10 |
+| Filters per layer | Model capacity | 32-256 |
+| Dilation base | Receptive field growth | 2 |
+
+**Receptive Field Calculation:**
+```python
+def receptive_field(kernel_size, n_layers, dilation_base=2):
+    return 1 + (kernel_size - 1) * (dilation_base**n_layers - 1)
+
+# Example: kernel=3, layers=8
+rf = receptive_field(3, 8)  # 511
+```
+
+---
+
+## 13. Advanced Topics and Research Frontiers
+
+### 13.1 Transformers for Time Series
+
+#### 13.1.1 Informer
+
+Efficient transformer for long sequences:
+- ProbSparse self-attention (O(L log L) complexity)
+- Self-attention distilling
+- Generative style decoder
+
+#### 13.1.2 Autoformer
+
+Decomposition-based transformer:
+- Series decomposition block
+- Auto-correlation mechanism
+- Seasonal-trend separation
+
+#### 13.1.3 FEDformer
+
+Frequency-domain transformer:
+- Fourier-enhanced blocks
+- Mixture of experts for frequency modes
+- Linear complexity
+
+### 13.2 Neural Basis Expansion
+
+#### 13.2.1 N-BEATS
+
+Pure deep learning without time-specific features:
+- Stack of fully-connected layers
+- Basis function expansion
+- Interpretable and generic variants
+
+**Block Structure:**
+$$\hat{y}_{t+h} = \sum_{i=1}^{\text{dim}(\mathbf{b})} f_i(h) \cdot g_i(\mathbf{x})$$
+
+Where $f_i$ are basis functions and $g_i$ are learned from data.
+
+#### 13.2.2 N-HiTS
+
+Hierarchical interpolation for time series:
+- Multi-rate signal sampling
+- Hierarchical interpolation
+- Better long-horizon forecasting
+
+### 13.3 Continuous-Time Models
+
+#### 13.3.1 Neural ODEs
+
+Learn continuous dynamics:
+$$\frac{d\mathbf{h}(t)}{dt} = f(\mathbf{h}(t), t, \theta)$$
+
+Solved with ODE solvers; naturally handles irregular sampling.
+
+#### 13.3.2 Latent ODEs
+
+Combine with variational inference:
+$$\mathbf{z}_0 \sim q_\phi(\mathbf{z}_0 | \{x_{t_i}\})$$
+$$\mathbf{z}(t) = \text{ODESolve}(f_\theta, \mathbf{z}_0, t)$$
+
+### 13.4 Domain-Specific Applications
+
+| Domain | Challenges | Specialized Approaches |
+|--------|-----------|----------------------|
+| Finance | Volatility, fat tails | GARCH, regime-switching |
+| Healthcare | Irregular sampling | Neural ODEs, interpolation |
+| IoT/Sensors | Streaming, resource-constrained | Online learning, quantization |
+| Energy | Multiple seasonality | STL, multiple harmonics |
+| Retail | Promotions, holidays | External regressors |
+
+### 13.5 Evaluation Best Practices
+
+**Key Principles:**
+1. Use multiple metrics (point and probabilistic)
+2. Report confidence intervals
+3. Test on multiple datasets
+4. Compare against strong baselines
+5. Consider computational efficiency
+6. Validate on truly held-out periods
+
+**Benchmark Datasets:**
+- M3/M4 Competition
+- Monash Time Series Repository
+- Google Trends
+- UCI Repository
+
+---
+
+## Key Insights Summary
+
+### Insight 1: Stationarity is Foundation
+Always test and achieve stationarity before modeling. Non-stationary series lead to spurious relationships and unreliable forecasts.
+
+### Insight 2: ARIMA as Baseline
+A well-tuned ARIMA model is a powerful baseline. If your deep learning model doesn't beat it, investigate your architecture and training procedure.
+
+### Insight 3: Windowing Matters
+The choice of window size and strategy fundamentally affects what patterns your model can learn. Match window size to the temporal scale of patterns you want to capture.
+
+### Insight 4: Uncertainty is Essential
+Point forecasts are insufficient for decision-making. Always provide prediction intervals or full distributions when possible.
+
+### Insight 5: Architecture Selection
+No single architecture is best for all problems. Consider sequence length, pattern complexity, data size, and interpretability needs.
+
+---
+
+## Common Pitfalls Summary
+
+| Pitfall | Why It Happens | Solution |
+|---------|---------------|----------|
+| Data leakage | Using future information | Temporal splits, rolling statistics |
+| Over-differencing | Aggressive stationarity pursuit | Check ACF, use KPSS alongside ADF |
+| Ignoring seasonality | Focus on trend only | Decompose first, model components |
+| Wrong evaluation metric | Using standard CV | Time series cross-validation |
+| Overfitting to noise | Complex models, small data | Regularization, simpler models |
+| Ignoring scale | Different series magnitudes | Normalization, scaling |
+| Forecast horizon mismatch | Training for wrong horizon | Match training to deployment |
+
+---
+
+## Mathematical Notation Reference
+
+| Symbol | Meaning |
+|--------|---------|
+| $x_t$ | Observation at time $t$ |
+| $\mathbf{x}_t$ | Vector observation at time $t$ |
+| $B$ | Backshift operator ($Bx_t = x_{t-1}$) |
+| $\nabla$ | Difference operator ($\nabla x_t = x_t - x_{t-1}$) |
+| $\rho(k)$ | Autocorrelation at lag $k$ |
+| $\phi_{kk}$ | Partial autocorrelation at lag $k$ |
+| $\epsilon_t$ | White noise/error term |
+| $\sigma^2$ | Variance |
+| $\gamma(k)$ | Autocovariance at lag $k$ |
+| $L$ | Loss function |
+| $\theta$ | Model parameters |
+| $\hat{x}_{T+h|T}$ | Forecast for $T+h$ made at time $T$ |
+| $w$ | Window size |
+| $h$ | Forecast horizon |
+| $H$ | Maximum forecast horizon |
+| $d$ | Integration order (differencing) |
+| $p$ | AR order |
+| $q$ | MA order |
+| $s$ | Seasonal period |
+
+---
+
+*This module provides approximately 3 weeks of lecture material for a semester-long TensorFlow course, covering theoretical foundations from classical statistics to cutting-edge deep learning approaches for time series forecasting.*

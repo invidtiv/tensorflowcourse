@@ -1,0 +1,481 @@
+---
+title: "Fine-tuning Pretrained Models"
+module: 3
+labNumber: 13
+difficulty: "easy"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Fine-tuning Pretrained Models
+
+## Objectives
+- Implement advanced fine-tuning strategies
+- Use differential learning rates
+- Apply layer-wise learning rate decay
+
+## Prerequisites
+- Completion of Labs 3.10-3.11
+- Understanding of optimization techniques
+
+```python
+"""
+Lab 3.12: Fine-tuning Pretrained Models
+Advanced fine-tuning strategies and techniques
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers, models, optimizers
+from tensorflow.keras.applications import ResNet50, EfficientNetB0
+from tensorflow.keras.datasets import cifar10
+from tensorflow.keras.utils import to_categorical
+import time
+
+# =============================================================================
+# Section 1: Advanced Fine-tuning Strategies
+# =============================================================================
+
+print("=" * 60)
+print("ADVANCED FINE-TUNING STRATEGIES")
+print("=" * 60)
+
+print("""
+Fine-tuning Best Practices:
+===========================
+
+1. Differential Learning Rates:
+   - Lower LR for early layers (general features)
+   - Higher LR for later layers (task-specific)
+   - Formula: lr_layer = base_lr * decay_factor^(depth - layer_depth)
+
+2. Progressive Unfreezing:
+   - Start with classifier only
+   - Gradually unfreeze layers from end to start
+   - Train each stage with appropriate LR
+
+3. Discriminative Fine-tuning (ULMFiT):
+   - Different LRs for different layer groups
+   - Layer-wise learning rate decay
+
+4. Learning Rate Warmup:
+   - Start with very small LR
+   - Gradually increase to target LR
+   - Helps stabilize early training
+""")
+
+
+# =============================================================================
+# Section 2: Custom Optimizer with Layer-wise LR
+# =============================================================================
+
+class LayerWiseOptimizer:
+    """Custom optimizer wrapper for layer-wise learning rates."""
+    
+    def __init__(self, base_lr=0.001, decay_factor=0.9):
+        self.base_lr = base_lr
+        self.decay_factor = decay_factor
+    
+    def create_optimizer(self, model, layer_groups):
+        """
+        Create optimizer with different LRs for each layer group.
+        
+        Args:
+            model: Keras model
+            layer_groups: List of (layer_names, lr_multiplier) tuples
+        """
+        
+        # Build learning rate dictionary
+        lr_dict = {}
+        
+        for group_idx, (names, multiplier) in enumerate(layer_groups):
+            lr = self.base_lr * (self.decay_factor ** group_idx) * multiplier
+            for name in names:
+                layer = model.get_layer(name)
+                if layer is not None and layer.trainable:
+                    lr_dict[id(layer)] = lr
+        
+        # Use Adam with different LRs
+        # Note: This is a simplified version
+        # Full implementation would require custom training loop
+        
+        return optimizers.Adam(learning_rate=self.base_lr)
+
+
+# =============================================================================
+# Section 3: Progressive Fine-tuning Implementation
+# =============================================================================
+
+def progressive_finetuning_strategy(X_train, y_train, X_test, y_test):
+    """
+    Implement progressive fine-tuning with multiple stages.
+    """
+    
+    print("\n" + "=" * 60)
+    print("PROGRESSIVE FINE-TUNING IMPLEMENTATION")
+    print("=" * 60)
+    
+    # Load base model
+    base_model = ResNet50(weights='imagenet', include_top=False, 
+                          input_shape=(32, 32, 3))
+    
+    histories = []
+    
+    # Stage 1: Train only classifier
+    print("\n--- Stage 1: Classifier Only ---")
+    base_model.trainable = False
+    
+    inputs = keras.Input(shape=(32, 32, 3))
+    x = base_model(inputs, training=False)
+    x = layers.GlobalAveragePooling2D()(x)
+    x = layers.Dense(256, activation='relu')(x)
+    x = layers.Dropout(0.5)(x)
+    outputs = layers.Dense(10, activation='softmax')(x)
+    
+    model = models.Model(inputs, outputs)
+    model.compile(optimizer=optimizers.Adam(0.001),
+                  loss='categorical_crossentropy',
+                  metrics=['accuracy'])
+    
+    history1 = model.fit(X_train[:5000], y_train[:5000],
+                        batch_size=64, epochs=5, verbose=1,
+                        validation_split=0.1)
+    histories.append(('Stage 1: Classifier', history1))
+    
+    # Stage 2: Fine-tune last block
+    print("\n--- Stage 2: Fine-tune conv5 ---")
+    base_model.trainable = True
+    
+    for layer in base_model.layers:
+        if 'conv5' in layer.name:
+            layer.trainable = True
+        else:
+            layer.trainable = False
+    
+    model.compile(optimizer=optimizers.Adam(0.0001),
+                  loss='categorical_crossentropy',
+                  metrics=['accuracy'])
+    
+    history2 = model.fit(X_train[:5000], y_train[:5000],
+                        batch_size=64, epochs=5, verbose=1,
+                        validation_split=0.1)
+    histories.append(('Stage 2: conv5', history2))
+    
+    # Stage 3: Fine-tune more layers
+    print("\n--- Stage 3: Fine-tune conv4+conv5 ---")
+    for layer in base_model.layers:
+        if 'conv4' in layer.name or 'conv5' in layer.name:
+            layer.trainable = True
+        else:
+            layer.trainable = False
+    
+    model.compile(optimizer=optimizers.Adam(0.00001),
+                  loss='categorical_crossentropy',
+                  metrics=['accuracy'])
+    
+    history3 = model.fit(X_train[:5000], y_train[:5000],
+                        batch_size=64, epochs=5, verbose=1,
+                        validation_split=0.1)
+    histories.append(('Stage 3: conv4+conv5', history3))
+    
+    return model, histories
+
+
+# Load data
+(X_train, y_train), (X_test, y_test) = cifar10.load_data()
+X_train = keras.applications.resnet50.preprocess_input(X_train.astype('float32'))
+X_test = keras.applications.resnet50.preprocess_input(X_test.astype('float32'))
+y_train = to_categorical(y_train, 10)
+y_test = to_categorical(y_test, 10)
+
+# Run progressive fine-tuning
+model, histories = progressive_finetuning_strategy(X_train, y_train, X_test, y_test)
+
+
+# =============================================================================
+# Section 4: Visualize Progressive Training
+# =============================================================================
+
+def plot_progressive_training(histories):
+    """Plot training progress across stages."""
+    
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    
+    # Combine all histories
+    all_acc = []
+    all_val_acc = []
+    all_loss = []
+    all_val_loss = []
+    stage_boundaries = [0]
+    
+    for name, history in histories:
+        all_acc.extend(history.history['accuracy'])
+        all_val_acc.extend(history.history['val_accuracy'])
+        all_loss.extend(history.history['loss'])
+        all_val_loss.extend(history.history['val_loss'])
+        stage_boundaries.append(len(all_acc))
+    
+    epochs = range(1, len(all_acc) + 1)
+    
+    # Plot accuracy
+    axes[0].plot(epochs, all_acc, label='Training', marker='o', markersize=4)
+    axes[0].plot(epochs, all_val_acc, label='Validation', marker='s', markersize=4)
+    
+    # Add stage boundaries
+    for boundary in stage_boundaries[1:-1]:
+        axes[0].axvline(x=boundary, color='red', linestyle='--', alpha=0.5)
+    
+    axes[0].set_title('Accuracy Across Stages')
+    axes[0].set_xlabel('Epoch')
+    axes[0].set_ylabel('Accuracy')
+    axes[0].legend()
+    axes[0].grid(True)
+    
+    # Plot loss
+    axes[1].plot(epochs, all_loss, label='Training', marker='o', markersize=4)
+    axes[1].plot(epochs, all_val_loss, label='Validation', marker='s', markersize=4)
+    
+    for boundary in stage_boundaries[1:-1]:
+        axes[1].axvline(x=boundary, color='red', linestyle='--', alpha=0.5)
+    
+    axes[1].set_title('Loss Across Stages')
+    axes[1].set_xlabel('Epoch')
+    axes[1].set_ylabel('Loss')
+    axes[1].legend()
+    axes[1].grid(True)
+    
+    # Add stage labels
+    stage_names = [h[0] for h in histories]
+    for i, (start, end) in enumerate(zip(stage_boundaries[:-1], stage_boundaries[1:])):
+        mid = (start + end) / 2
+        axes[0].text(mid, axes[0].get_ylim()[1]*0.95, stage_names[i],
+                    ha='center', fontsize=9, 
+                    bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+    
+    plt.tight_layout()
+    plt.savefig('/mnt/okcomputer/output/lab312_progressive_training.png', dpi=150)
+    plt.show()
+    print("\nProgressive training plot saved to: /mnt/okcomputer/output/lab312_progressive_training.png")
+
+
+plot_progressive_training(histories)
+
+
+# =============================================================================
+# Section 5: Learning Rate Warmup
+# =============================================================================
+
+class WarmUpLearningRateScheduler(keras.callbacks.Callback):
+    """Learning rate warmup scheduler."""
+    
+    def __init__(self, warmup_epochs, target_lr):
+        super().__init__()
+        self.warmup_epochs = warmup_epochs
+        self.target_lr = target_lr
+        self.current_epoch = 0
+    
+    def on_epoch_begin(self, epoch, logs=None):
+        self.current_epoch = epoch
+        if epoch < self.warmup_epochs:
+            # Linear warmup
+            new_lr = self.target_lr * (epoch + 1) / self.warmup_epochs
+            self.model.optimizer.learning_rate.assign(new_lr)
+            print(f"\nWarmup LR: {new_lr:.6f}")
+    
+    def on_epoch_end(self, epoch, logs=None):
+        if epoch == self.warmup_epochs - 1:
+            self.model.optimizer.learning_rate.assign(self.target_lr)
+            print(f"\nWarmup complete. LR set to: {self.target_lr:.6f}")
+
+
+def train_with_warmup(X_train, y_train):
+    """Train with learning rate warmup."""
+    
+    print("\n" + "=" * 60)
+    print("TRAINING WITH LEARNING RATE WARMUP")
+    print("=" * 60)
+    
+    # Load model
+    base_model = ResNet50(weights='imagenet', include_top=False, 
+                          input_shape=(32, 32, 3))
+    base_model.trainable = False
+    
+    inputs = keras.Input(shape=(32, 32, 3))
+    x = base_model(inputs, training=False)
+    x = layers.GlobalAveragePooling2D()(x)
+    x = layers.Dense(256, activation='relu')(x)
+    outputs = layers.Dense(10, activation='softmax')(x)
+    
+    model = models.Model(inputs, outputs)
+    model.compile(optimizer=optimizers.Adam(0.001),
+                  loss='categorical_crossentropy',
+                  metrics=['accuracy'])
+    
+    # Train with warmup
+    warmup_callback = WarmUpLearningRateScheduler(warmup_epochs=3, target_lr=0.001)
+    
+    history = model.fit(X_train[:5000], y_train[:5000],
+                       batch_size=64, epochs=10, verbose=1,
+                       validation_split=0.1,
+                       callbacks=[warmup_callback])
+    
+    return history
+
+
+history_warmup = train_with_warmup(X_train, y_train)
+
+
+# =============================================================================
+# Section 6: Compare Fine-tuning Strategies
+# =============================================================================
+
+def compare_strategies():
+    """Compare different fine-tuning strategies."""
+    
+    print("\n" + "=" * 60)
+    print("STRATEGY COMPARISON")
+    print("=" * 60)
+    
+    strategies = {
+        'Feature Extraction': {'trainable': 0, 'lr': 0.001},
+        'Fine-tune Last Block': {'trainable': 10, 'lr': 0.0001},
+        'Fine-tune Half': {'trainable': 50, 'lr': 0.00001},
+        'Full Fine-tuning': {'trainable': 100, 'lr': 0.00001}
+    }
+    
+    results = {}
+    
+    for name, config in strategies.items():
+        print(f"\n--- Testing: {name} ---")
+        
+        base = ResNet50(weights='imagenet', include_top=False, 
+                       input_shape=(32, 32, 3))
+        
+        # Set trainable layers
+        if config['trainable'] == 0:
+            base.trainable = False
+        elif config['trainable'] == 100:
+            base.trainable = True
+        else:
+            # Partial unfreezing
+            n_layers = len(base.layers)
+            n_trainable = int(n_layers * config['trainable'] / 100)
+            for i, layer in enumerate(base.layers):
+                layer.trainable = (i >= n_layers - n_trainable)
+        
+        # Build and train
+        inputs = keras.Input(shape=(32, 32, 3))
+        x = base(inputs, training=True)
+        x = layers.GlobalAveragePooling2D()(x)
+        x = layers.Dense(256, activation='relu')(x)
+        outputs = layers.Dense(10, activation='softmax')(x)
+        
+        model = models.Model(inputs, outputs)
+        model.compile(optimizer=optimizers.Adam(config['lr']),
+                      loss='categorical_crossentropy',
+                      metrics=['accuracy'])
+        
+        start = time.time()
+        history = model.fit(X_train[:3000], y_train[:3000],
+                           batch_size=64, epochs=5, verbose=0,
+                           validation_split=0.1)
+        train_time = time.time() - start
+        
+        results[name] = {
+            'final_acc': history.history['val_accuracy'][-1],
+            'time': train_time,
+            'history': history
+        }
+        
+        print(f"  Final accuracy: {results[name]['final_acc']:.4f}")
+        print(f"  Training time: {train_time:.2f}s")
+    
+    return results
+
+
+strategy_results = compare_strategies()
+
+
+# =============================================================================
+# Section 7: Visualize Strategy Comparison
+# =============================================================================
+
+def plot_strategy_comparison(results):
+    """Plot comparison of fine-tuning strategies."""
+    
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    
+    # Accuracy comparison
+    for name, data in results.items():
+        axes[0].plot(data['history'].history['val_accuracy'], 
+                    label=name, marker='o', markersize=4)
+    
+    axes[0].set_title('Validation Accuracy by Strategy')
+    axes[0].set_xlabel('Epoch')
+    axes[0].set_ylabel('Accuracy')
+    axes[0].legend()
+    axes[0].grid(True)
+    
+    # Time vs Accuracy scatter
+    names = list(results.keys())
+    times = [results[n]['time'] for n in names]
+    accs = [results[n]['final_acc'] for n in names]
+    
+    scatter = axes[1].scatter(times, accs, s=200, c=range(len(names)),
+                             cmap='viridis', edgecolors='black', linewidth=2)
+    
+    for i, name in enumerate(names):
+        axes[1].annotate(name, (times[i], accs[i]),
+                        xytext=(5, 5), textcoords='offset points',
+                        fontsize=9)
+    
+    axes[1].set_title('Accuracy vs Training Time')
+    axes[1].set_xlabel('Training Time (seconds)')
+    axes[1].set_ylabel('Validation Accuracy')
+    axes[1].grid(True)
+    
+    plt.tight_layout()
+    plt.savefig('/mnt/okcomputer/output/lab312_strategy_comparison.png', dpi=150)
+    plt.show()
+    print("\nStrategy comparison saved to: /mnt/okcomputer/output/lab312_strategy_comparison.png")
+
+
+plot_strategy_comparison(strategy_results)
+
+
+# =============================================================================
+# Section 8: Exercises
+# =============================================================================
+
+print("\n" + "=" * 60)
+print("EXERCISES")
+print("=" * 60)
+
+print("""
+Exercise 1: Cyclical Learning Rates
+- Implement cyclical learning rate schedule
+- Compare with constant LR
+
+Exercise 2: Snapshot Ensembling
+- Save model snapshots at different LR cycles
+- Ensemble predictions
+
+Exercise 3: Test-Time Augmentation
+- Apply augmentation during inference
+- Average predictions
+
+Exercise 4: Knowledge Distillation
+- Train smaller student model using pretrained teacher
+- Compare student vs. teacher performance
+""")
+
+print("\n" + "=" * 60)
+print("Lab 3.12 Complete!")
+print("=" * 60)
+```
+
+
+---
+
+<a name="lab-313"></a>

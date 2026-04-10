@@ -1,0 +1,440 @@
+---
+title: "LSTM for IMDB Sentiment Analysis"
+module: 8
+labNumber: 8
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# LSTM for IMDB Sentiment Analysis
+
+### Objectives
+- Implement LSTM from scratch
+- Build complete sentiment analysis pipeline
+- Use real IMDB dataset
+
+### Complete Implementation
+
+```python
+"""
+Lab 8.7: LSTM for IMDB Sentiment Analysis
+=========================================
+Complete sentiment analysis pipeline using LSTM.
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+
+# ============================================================
+# PART 1: Load and Prepare IMDB Dataset
+# ============================================================
+
+print("=" * 60)
+print("IMDB SENTIMENT ANALYSIS WITH LSTM")
+print("=" * 60)
+
+# Load IMDB dataset
+print("\nLoading IMDB dataset...")
+
+# Parameters
+vocab_size = 10000
+max_length = 200
+embedding_dim = 128
+lstm_units = 64
+
+# Load data
+(x_train, y_train), (x_test, y_test) = tf.keras.datasets.imdb.load_data(
+    num_words=vocab_size
+)
+
+print(f"Training samples: {len(x_train)}")
+print(f"Test samples: {len(x_test)}")
+
+# Get word index for decoding
+word_index = tf.keras.datasets.imdb.get_word_index()
+reverse_word_index = {v: k for k, v in word_index.items()}
+
+def decode_review(encoded_review):
+    """Decode encoded review back to text."""
+    return ' '.join([reverse_word_index.get(i-3, '?') for i in encoded_review if i > 3])
+
+# Show sample
+print(f"\nSample review (decoded):")
+print(decode_review(x_train[0][:50]))
+print(f"Label: {'Positive' if y_train[0] == 1 else 'Negative'}")
+
+# Pad sequences
+x_train = tf.keras.preprocessing.sequence.pad_sequences(
+    x_train, maxlen=max_length, padding='post', truncating='post'
+)
+x_test = tf.keras.preprocessing.sequence.pad_sequences(
+    x_test, maxlen=max_length, padding='post', truncating='post'
+)
+
+print(f"\nPadded sequence shape: {x_train.shape}")
+
+
+# ============================================================
+# PART 2: LSTM Cell from Scratch
+# ============================================================
+
+class LSTMCell(tf.keras.layers.Layer):
+    """
+    LSTM cell implemented from scratch.
+    
+    LSTM equations:
+    f_t = sigmoid(W_f · [h_{t-1}, x_t] + b_f)  # Forget gate
+    i_t = sigmoid(W_i · [h_{t-1}, x_t] + b_i)  # Input gate
+    c~_t = tanh(W_c · [h_{t-1}, x_t] + b_c)    # Candidate cell state
+    c_t = f_t * c_{t-1} + i_t * c~_t           # Cell state update
+    o_t = sigmoid(W_o · [h_{t-1}, x_t] + b_o)  # Output gate
+    h_t = o_t * tanh(c_t)                      # Hidden state
+    """
+    
+    def __init__(self, units, **kwargs):
+        super(LSTMCell, self).__init__(**kwargs)
+        self.units = units
+        self.state_size = [units, units]  # h and c
+        self.output_size = units
+    
+    def build(self, input_shape):
+        # Combined weights for all gates
+        # Input dimension = input_dim + hidden_dim (concatenated)
+        input_dim = input_shape[-1] + self.units
+        
+        # Forget gate
+        self.W_f = self.add_weight(
+            shape=(input_dim, self.units),
+            initializer='glorot_uniform',
+            name='W_f'
+        )
+        self.b_f = self.add_weight(
+            shape=(self.units,),
+            initializer='zeros',
+            name='b_f'
+        )
+        
+        # Input gate
+        self.W_i = self.add_weight(
+            shape=(input_dim, self.units),
+            initializer='glorot_uniform',
+            name='W_i'
+        )
+        self.b_i = self.add_weight(
+            shape=(self.units,),
+            initializer='zeros',
+            name='b_i'
+        )
+        
+        # Candidate cell state
+        self.W_c = self.add_weight(
+            shape=(input_dim, self.units),
+            initializer='glorot_uniform',
+            name='W_c'
+        )
+        self.b_c = self.add_weight(
+            shape=(self.units,),
+            initializer='zeros',
+            name='b_c'
+        )
+        
+        # Output gate
+        self.W_o = self.add_weight(
+            shape=(input_dim, self.units),
+            initializer='glorot_uniform',
+            name='W_o'
+        )
+        self.b_o = self.add_weight(
+            shape=(self.units,),
+            initializer='zeros',
+            name='b_o'
+        )
+        
+        super(LSTMCell, self).build(input_shape)
+    
+    def call(self, inputs, states):
+        """
+        Single LSTM step.
+        
+        Args:
+            inputs: (batch, input_dim)
+            states: [h_prev, c_prev]
+            
+        Returns:
+            h_t, [h_t, c_t]
+        """
+        h_prev, c_prev = states
+        
+        # Concatenate input and previous hidden state
+        concat = tf.concat([inputs, h_prev], axis=1)
+        
+        # Forget gate
+        f_t = tf.sigmoid(tf.matmul(concat, self.W_f) + self.b_f)
+        
+        # Input gate
+        i_t = tf.sigmoid(tf.matmul(concat, self.W_i) + self.b_i)
+        
+        # Candidate cell state
+        c_tilde = tf.tanh(tf.matmul(concat, self.W_c) + self.b_c)
+        
+        # Update cell state
+        c_t = f_t * c_prev + i_t * c_tilde
+        
+        # Output gate
+        o_t = tf.sigmoid(tf.matmul(concat, self.W_o) + self.b_o)
+        
+        # Update hidden state
+        h_t = o_t * tf.tanh(c_t)
+        
+        return h_t, [h_t, c_t]
+    
+    def get_initial_state(self, inputs=None, batch_size=None, dtype=None):
+        """Initialize hidden and cell states to zeros."""
+        return [
+            tf.zeros((batch_size, self.units), dtype=dtype),
+            tf.zeros((batch_size, self.units), dtype=dtype)
+        ]
+
+
+# ============================================================
+# PART 3: LSTM Sentiment Classifier
+# ============================================================
+
+def create_lstm_classifier(vocab_size, embedding_dim, lstm_units, max_length):
+    """
+    Create LSTM-based sentiment classifier.
+    """
+    model = tf.keras.Sequential([
+        # Embedding layer
+        tf.keras.layers.Embedding(
+            vocab_size, embedding_dim, 
+            input_length=max_length,
+            mask_zero=True
+        ),
+        
+        # LSTM layer (using built-in for efficiency)
+        tf.keras.layers.LSTM(
+            lstm_units,
+            dropout=0.2,
+            recurrent_dropout=0.2,
+            return_sequences=False
+        ),
+        
+        # Dense layers
+        tf.keras.layers.Dense(64, activation='relu'),
+        tf.keras.layers.Dropout(0.5),
+        tf.keras.layers.Dense(1, activation='sigmoid')
+    ])
+    
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+        loss='binary_crossentropy',
+        metrics=['accuracy']
+    )
+    
+    return model
+
+
+# ============================================================
+# PART 4: Training
+# ============================================================
+
+# Create model
+model = create_lstm_classifier(vocab_size, embedding_dim, lstm_units, max_length)
+
+print("\nModel Architecture:")
+model.summary()
+
+# Callbacks
+callbacks = [
+    tf.keras.callbacks.EarlyStopping(
+        monitor='val_loss',
+        patience=3,
+        restore_best_weights=True
+    ),
+    tf.keras.callbacks.ReduceLROnPlateau(
+        monitor='val_loss',
+        factor=0.5,
+        patience=2
+    )
+]
+
+# Train
+print("\nTraining...")
+history = model.fit(
+    x_train, y_train,
+    validation_split=0.2,
+    epochs=10,
+    batch_size=64,
+    callbacks=callbacks,
+    verbose=1
+)
+
+# Evaluate
+test_loss, test_acc = model.evaluate(x_test, y_test, verbose=0)
+print(f"\nTest accuracy: {test_acc:.4f}")
+
+
+# ============================================================
+# PART 5: Visualization
+# ============================================================
+
+# Plot training history
+fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+# Loss
+axes[0].plot(history.history['loss'], label='Train Loss')
+axes[0].plot(history.history['val_loss'], label='Val Loss')
+axes[0].set_xlabel('Epoch')
+axes[0].set_ylabel('Loss')
+axes[0].set_title('Training Loss')
+axes[0].legend()
+axes[0].grid(True, alpha=0.3)
+
+# Accuracy
+axes[1].plot(history.history['accuracy'], label='Train Acc')
+axes[1].plot(history.history['val_accuracy'], label='Val Acc')
+axes[1].set_xlabel('Epoch')
+axes[1].set_ylabel('Accuracy')
+axes[1].set_title('Training Accuracy')
+axes[1].legend()
+axes[1].grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.savefig('imdb_lstm_training.png', dpi=150)
+plt.show()
+
+print("\nTraining plot saved to 'imdb_lstm_training.png'")
+
+
+# ============================================================
+# PART 6: Inference and Prediction
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PREDICTION EXAMPLES")
+print("=" * 60)
+
+# Make predictions on test samples
+num_samples = 5
+predictions = model.predict(x_test[:num_samples])
+
+for i in range(num_samples):
+    review = decode_review(x_test[i])
+    pred_prob = predictions[i][0]
+    pred_label = 'Positive' if pred_prob > 0.5 else 'Negative'
+    true_label = 'Positive' if y_test[i] == 1 else 'Negative'
+    
+    print(f"\nReview {i+1}:")
+    print(f"  Text: {review[:100]}...")
+    print(f"  Predicted: {pred_label} (confidence: {pred_prob:.4f})")
+    print(f"  Actual: {true_label}")
+    print(f"  Correct: {'✓' if (pred_prob > 0.5) == (y_test[i] == 1) else '✗'}")
+
+
+# ============================================================
+# PART 7: LSTM Variants Comparison
+# ============================================================
+
+print("\n" + "=" * 60)
+print("LSTM VARIANTS COMPARISON")
+print("=" * 60)
+
+def create_model_variant(variant='lstm'):
+    """Create model with different RNN variants."""
+    model = tf.keras.Sequential()
+    model.add(tf.keras.layers.Embedding(vocab_size, embedding_dim, input_length=max_length))
+    
+    if variant == 'lstm':
+        model.add(tf.keras.layers.LSTM(lstm_units, dropout=0.2))
+    elif variant == 'gru':
+        model.add(tf.keras.layers.GRU(lstm_units, dropout=0.2))
+    elif variant == 'bilstm':
+        model.add(tf.keras.layers.Bidirectional(
+            tf.keras.layers.LSTM(lstm_units // 2, dropout=0.2)
+        ))
+    elif variant == 'stacked':
+        model.add(tf.keras.layers.LSTM(lstm_units, dropout=0.2, return_sequences=True))
+        model.add(tf.keras.layers.LSTM(lstm_units // 2, dropout=0.2))
+    
+    model.add(tf.keras.layers.Dense(64, activation='relu'))
+    model.add(tf.keras.layers.Dropout(0.5))
+    model.add(tf.keras.layers.Dense(1, activation='sigmoid'))
+    
+    model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+    
+    return model
+
+# Compare variants (using subset for speed)
+x_sub = x_train[:5000]
+y_sub = y_train[:5000]
+
+variants = ['lstm', 'gru', 'bilstm']
+results = {}
+
+print("\nComparing variants (on subset)...")
+for variant in variants:
+    print(f"\nTraining {variant.upper()}...")
+    model = create_model_variant(variant)
+    
+    history = model.fit(
+        x_sub, y_sub,
+        validation_split=0.2,
+        epochs=3,
+        batch_size=64,
+        verbose=0
+    )
+    
+    val_acc = max(history.history['val_accuracy'])
+    results[variant] = val_acc
+    print(f"  Best val accuracy: {val_acc:.4f}")
+
+print("\n" + "-" * 40)
+print("Results Summary:")
+for variant, acc in results.items():
+    print(f"  {variant.upper()}: {acc:.4f}")
+
+
+# ============================================================
+# EXERCISES
+# ============================================================
+
+print("\n" + "=" * 60)
+print("EXERCISES")
+print("=" * 60)
+
+exercises = """
+Exercise 1: Attention Mechanism
+-------------------------------
+Add attention to the LSTM:
+- Compute attention weights over sequence
+- Weighted sum of hidden states
+- Compare with last-hidden-state approach
+
+Exercise 2: Pretrained Embeddings
+---------------------------------
+Use GloVe embeddings:
+- Load pretrained embeddings
+- Initialize embedding layer
+- Fine-tune vs freeze comparison
+
+Exercise 3: Character-level Model
+---------------------------------
+Build character-level LSTM:
+- Process text as characters
+- Compare with word-level
+- Analyze handling of misspellings
+
+Exercise 4: Multi-task Learning
+-------------------------------
+Train on multiple sentiment datasets:
+- IMDB + Yelp + Amazon reviews
+- Share LSTM encoder
+- Task-specific classifiers
+"""
+
+print(exercises)
+```
+
+---

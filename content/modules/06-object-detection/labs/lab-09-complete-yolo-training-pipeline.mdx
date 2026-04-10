@@ -1,0 +1,406 @@
+---
+title: "Complete YOLO Training Pipeline"
+module: 6
+labNumber: 9
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Complete YOLO Training Pipeline
+
+## Objectives
+- Implement YOLO loss function
+- Create training data pipeline
+- Train a simplified YOLO model
+- Monitor training metrics
+
+## Complete Implementation
+
+```python
+"""
+Lab 6.8: Complete YOLO Training Pipeline
+Object Detection Systems - Module 6
+"""
+
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+import numpy as np
+import matplotlib.pyplot as plt
+from typing import Tuple, List, Dict
+
+# =============================================================================
+# Section 1: YOLO Loss Function
+# =============================================================================
+
+class YOLOLoss(keras.losses.Loss):
+    """
+    YOLO loss function combining:
+    - Coordinate loss (MSE for x, y, w, h)
+    - Confidence loss (BCE for objectness)
+    - Classification loss (BCE for class probs)
+    """
+    
+    def __init__(self,
+                 num_classes: int = 80,
+                 lambda_coord: float = 5.0,
+                 lambda_noobj: float = 0.5,
+                 lambda_obj: float = 1.0,
+                 lambda_cls: float = 0.5,
+                 **kwargs):
+        super().__init__(**kwargs)
+        
+        self.num_classes = num_classes
+        self.lambda_coord = lambda_coord
+        self.lambda_noobj = lambda_noobj
+        self.lambda_obj = lambda_obj
+        self.lambda_cls = lambda_cls
+        
+        self.bce = keras.losses.BinaryCrossentropy(reduction='none')
+        self.mse = keras.losses.MeanSquaredError(reduction='none')
+    
+    def call(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+        """
+        Compute YOLO loss.
+        
+        Args:
+            y_true: Ground truth [batch, grid_h, grid_w, num_anchors, 5 + num_classes]
+            y_pred: Predictions [batch, grid_h, grid_w, num_anchors, 5 + num_classes]
+        
+        Returns:
+            Total loss
+        """
+        # Object mask (which anchors have objects)
+        obj_mask = y_true[..., 4:5]  # [batch, H, W, A, 1]
+        noobj_mask = 1.0 - obj_mask
+        
+        # Coordinate loss (only for objects)
+        xy_loss = self.mse(y_true[..., 0:2], tf.sigmoid(y_pred[..., 0:2]))
+        xy_loss = tf.reduce_sum(xy_loss * obj_mask)
+        
+        # Size loss (with sqrt for small boxes)
+        wh_loss = self.mse(
+            tf.sqrt(y_true[..., 2:4] + 1e-7),
+            tf.sqrt(tf.exp(y_pred[..., 2:4]) + 1e-7)
+        )
+        wh_loss = tf.reduce_sum(wh_loss * obj_mask)
+        
+        coord_loss = self.lambda_coord * (xy_loss + wh_loss)
+        
+        # Confidence loss
+        obj_conf_loss = self.bce(obj_mask, tf.sigmoid(y_pred[..., 4:5]))
+        obj_conf_loss = self.lambda_obj * tf.reduce_sum(obj_conf_loss * obj_mask)
+        
+        noobj_conf_loss = self.bce(obj_mask, tf.sigmoid(y_pred[..., 4:5]))
+        noobj_conf_loss = self.lambda_noobj * tf.reduce_sum(noobj_conf_loss * noobj_mask)
+        
+        conf_loss = obj_conf_loss + noobj_conf_loss
+        
+        # Classification loss (only for objects)
+        cls_loss = self.bce(y_true[..., 5:], tf.sigmoid(y_pred[..., 5:]))
+        cls_loss = self.lambda_cls * tf.reduce_sum(cls_loss * obj_mask)
+        
+        # Total loss
+        total_loss = coord_loss + conf_loss + cls_loss
+        
+        # Normalize by number of objects
+        num_objects = tf.reduce_sum(obj_mask) + 1e-7
+        total_loss = total_loss / num_objects
+        
+        return total_loss
+    
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            'num_classes': self.num_classes,
+            'lambda_coord': self.lambda_coord,
+            'lambda_noobj': self.lambda_noobj,
+            'lambda_obj': self.lambda_obj,
+            'lambda_cls': self.lambda_cls
+        })
+        return config
+
+
+# =============================================================================
+# Section 2: Data Generator for Training
+# =============================================================================
+
+class YOLODataGenerator:
+    """
+    Generate synthetic training data for YOLO.
+    """
+    
+    def __init__(self,
+                 image_size: Tuple[int, int] = (416, 416),
+                 grid_sizes: List[Tuple[int, int]] = [(52, 52), (26, 26), (13, 13)],
+                 num_classes: int = 3,
+                 num_anchors: int = 3):
+        self.image_size = image_size
+        self.grid_sizes = grid_sizes
+        self.num_classes = num_classes
+        self.num_anchors = num_anchors
+        
+        # Define anchors for each scale (width, height)
+        self.anchors = [
+            np.array([[10, 13], [16, 30], [33, 23]]),      # P3
+            np.array([[30, 61], [62, 45], [59, 119]]),     # P4
+            np.array([[116, 90], [156, 198], [373, 326]])  # P5
+        ]
+    
+    def generate_batch(self, batch_size: int) -> Tuple[tf.Tensor, List[tf.Tensor]]:
+        """
+        Generate a batch of training data.
+        
+        Returns:
+            images: [batch, H, W, 3]
+            targets: List of target tensors for each scale
+        """
+        images = []
+        targets = [[] for _ in self.grid_sizes]
+        
+        for _ in range(batch_size):
+            image, target_dict = self._generate_sample()
+            images.append(image)
+            
+            for i, grid_size in enumerate(self.grid_sizes):
+                targets[i].append(target_dict[i])
+        
+        images = tf.stack(images)
+        targets = [tf.stack(t) for t in targets]
+        
+        return images, targets
+    
+    def _generate_sample(self) -> Tuple[tf.Tensor, Dict[int, tf.Tensor]]:
+        """Generate a single training sample."""
+        h, w = self.image_size
+        
+        # Create blank image
+        image = np.zeros((h, w, 3), dtype=np.float32)
+        
+        # Random number of objects (1-3)
+        num_objects = np.random.randint(1, 4)
+        
+        # Initialize targets for each scale
+        targets = {}
+        for i, (gh, gw) in enumerate(self.grid_sizes):
+            targets[i] = np.zeros((gh, gw, self.num_anchors, 5 + self.num_classes), 
+                                  dtype=np.float32)
+        
+        for _ in range(num_objects):
+            # Random box
+            box_w = np.random.uniform(0.1, 0.4)
+            box_h = np.random.uniform(0.1, 0.4)
+            cx = np.random.uniform(box_w/2, 1 - box_w/2)
+            cy = np.random.uniform(box_h/2, 1 - box_h/2)
+            
+            # Random class
+            cls = np.random.randint(0, self.num_classes)
+            
+            # Determine appropriate scale based on box size
+            box_area = box_w * box_h
+            if box_area < 0.04:
+                scale_idx = 0  # Small objects -> P3
+            elif box_area < 0.16:
+                scale_idx = 1  # Medium objects -> P4
+            else:
+                scale_idx = 2  # Large objects -> P5
+            
+            gh, gw = self.grid_sizes[scale_idx]
+            
+            # Find best matching anchor
+            best_iou = 0
+            best_anchor = 0
+            
+            box_wh = np.array([box_w * w, box_h * h])
+            
+            for a_idx, anchor in enumerate(self.anchors[scale_idx]):
+                # Calculate IoU with anchor
+                intersection = np.minimum(box_wh, anchor).prod()
+                union = box_wh.prod() + anchor.prod() - intersection
+                iou = intersection / (union + 1e-7)
+                
+                if iou > best_iou:
+                    best_iou = iou
+                    best_anchor = a_idx
+            
+            # Assign to grid cell
+            grid_x = int(cx * gw)
+            grid_y = int(cy * gh)
+            
+            # Clamp to grid bounds
+            grid_x = min(grid_x, gw - 1)
+            grid_y = min(grid_y, gh - 1)
+            
+            # Fill target
+            targets[scale_idx][grid_y, grid_x, best_anchor, 0] = cx * gw - grid_x  # x offset
+            targets[scale_idx][grid_y, grid_x, best_anchor, 1] = cy * gh - grid_y  # y offset
+            targets[scale_idx][grid_y, grid_x, best_anchor, 2] = np.log(box_w * w / self.anchors[scale_idx][best_anchor][0] + 1e-7)
+            targets[scale_idx][grid_y, grid_x, best_anchor, 3] = np.log(box_h * h / self.anchors[scale_idx][best_anchor][1] + 1e-7)
+            targets[scale_idx][grid_y, grid_x, best_anchor, 4] = 1.0  # Objectness
+            targets[scale_idx][grid_y, grid_x, best_anchor, 5 + cls] = 1.0  # Class
+            
+            # Draw box on image (for visualization)
+            x1 = int((cx - box_w/2) * w)
+            y1 = int((cy - box_h/2) * h)
+            x2 = int((cx + box_w/2) * w)
+            y2 = int((cy + box_h/2) * h)
+            
+            color = plt.cm.rainbow(cls / self.num_classes)[:3]
+            image[y1:y2, x1:x2] = color
+        
+        return tf.constant(image), targets
+
+
+# =============================================================================
+# Section 3: Simplified YOLO Model for Training
+# =============================================================================
+
+def create_simple_yolo(input_shape: Tuple[int, int, int] = (416, 416, 3),
+                       num_classes: int = 3,
+                       num_anchors: int = 3) -> keras.Model:
+    """
+    Create a simplified YOLO model for training demonstration.
+    """
+    inputs = layers.Input(shape=input_shape)
+    x = inputs
+    
+    # Backbone
+    filters = [32, 64, 128, 256, 512]
+    features = []
+    
+    for i, f in enumerate(filters):
+        x = layers.Conv2D(f, 3, strides=2 if i > 0 else 1,
+                         padding='same', use_bias=False)(x)
+        x = layers.BatchNormalization()(x)
+        x = layers.LeakyReLU(0.1)(x)
+        
+        if i >= 2:
+            features.append(x)
+    
+    # Detection heads
+    outputs = []
+    for i, feature in enumerate(features):
+        x = layers.Conv2D(256, 3, padding='same', use_bias=False)(feature)
+        x = layers.BatchNormalization()(x)
+        x = layers.LeakyReLU(0.1)(x)
+        
+        output_channels = num_anchors * (5 + num_classes)
+        output = layers.Conv2D(output_channels, 1, padding='same')(x)
+        outputs.append(output)
+    
+    return keras.Model(inputs, outputs, name='simple_yolo')
+
+
+# =============================================================================
+# Section 4: Training Loop
+# =============================================================================
+
+def train_yolo_demo(epochs: int = 10, batch_size: int = 4):
+    """
+    Demonstrate YOLO training on synthetic data.
+    """
+    print("\n" + "=" * 60)
+    print("YOLO Training Demo")
+    print("=" * 60)
+    
+    # Configuration
+    image_size = (416, 416)
+    num_classes = 3
+    num_anchors = 3
+    grid_sizes = [(52, 52), (26, 26), (13, 13)]
+    
+    # Create model
+    model = create_simple_yolo(
+        input_shape=(*image_size, 3),
+        num_classes=num_classes,
+        num_anchors=num_anchors
+    )
+    
+    print(f"\nModel created with {model.count_params():,} parameters")
+    
+    # Create data generator
+    data_gen = YOLODataGenerator(
+        image_size=image_size,
+        grid_sizes=grid_sizes,
+        num_classes=num_classes,
+        num_anchors=num_anchors
+    )
+    
+    # Create loss functions for each scale
+    losses = {
+        f'output_{i}': YOLOLoss(num_classes=num_classes, name=f'loss_p{i+3}')
+        for i in range(3)
+    }
+    
+    # Compile model
+    model.compile(
+        optimizer=keras.optimizers.Adam(learning_rate=1e-4),
+        loss=list(losses.values())
+    )
+    
+    # Training loop
+    print(f"\nTraining for {epochs} epochs...")
+    
+    loss_history = []
+    
+    for epoch in range(epochs):
+        # Generate batch
+        images, targets = data_gen.generate_batch(batch_size)
+        
+        # Train step
+        loss_values = model.train_on_batch(images, targets)
+        
+        if isinstance(loss_values, list):
+            total_loss = sum(loss_values)
+        else:
+            total_loss = loss_values
+        
+        loss_history.append(total_loss)
+        
+        if (epoch + 1) % 2 == 0:
+            print(f"Epoch {epoch + 1}/{epochs}, Loss: {total_loss:.4f}")
+    
+    # Plot loss history
+    plt.figure(figsize=(10, 5))
+    plt.plot(loss_history)
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.title('Training Loss')
+    plt.grid(True, alpha=0.3)
+    plt.show()
+    
+    return model, loss_history
+
+
+# =============================================================================
+# Main Execution
+# =============================================================================
+
+if __name__ == "__main__":
+    print("\n" + "=" * 70)
+    print("Lab 6.8: Complete YOLO Training Pipeline")
+    print("=" * 70)
+    
+    # Train model
+    model, loss_history = train_yolo_demo(epochs=20, batch_size=4)
+    
+    # Test prediction
+    print("\n" + "-" * 60)
+    print("Testing Model Predictions")
+    print("-" * 60)
+    
+    data_gen = YOLODataGenerator()
+    test_images, _ = data_gen.generate_batch(2)
+    
+    predictions = model.predict(test_images)
+    
+    print(f"\nNumber of output scales: {len(predictions)}")
+    for i, pred in enumerate(predictions):
+        print(f"  Scale P{i+3}: {pred.shape}")
+    
+    print("\n" + "=" * 70)
+    print("Lab 6.8 Complete!")
+    print("=" * 70)
+```
+
+---

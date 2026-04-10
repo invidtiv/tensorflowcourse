@@ -1,0 +1,553 @@
+---
+title: "Building ResNet Blocks"
+module: 3
+labNumber: 6
+difficulty: "easy"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Building ResNet Blocks
+
+## Objectives
+- Implement residual blocks from scratch
+- Build a complete ResNet architecture
+- Understand skip connections and their benefits
+
+## Prerequisites
+- Understanding of CNN fundamentals
+- Knowledge of batch normalization
+
+```python
+"""
+Lab 3.5: Building ResNet Blocks
+Implementing residual connections and building ResNet
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers, models, optimizers
+from tensorflow.keras.datasets import cifar10
+from tensorflow.keras.utils import to_categorical
+import time
+
+# =============================================================================
+# Section 1: ResNet Theory
+# =============================================================================
+
+print("=" * 60)
+print("ResNet ARCHITECTURE")
+print("=" * 60)
+
+print("""
+ResNet (Residual Networks) - He et al. (2015):
+==============================================
+
+Key Innovation: Skip Connections (Residual Connections)
+
+Standard block:    x → Conv → BN → ReLU → Conv → BN → F(x)
+Residual block:    x → Conv → BN → ReLU → Conv → BN → + → ReLU
+                     ↓______________________________↑
+
+The residual mapping: F(x) = H(x) - x
+Learning: F(x) + x instead of H(x)
+
+Benefits:
+1. Solves vanishing gradient problem
+2. Enables training of very deep networks (1000+ layers)
+3. Easier optimization (learning identity is easier)
+
+Types of Blocks:
+- Basic Block: Two 3x3 convolutions (ResNet-18, ResNet-34)
+- Bottleneck Block: 1x1 → 3x3 → 1x1 (ResNet-50, ResNet-101, ResNet-152)
+""")
+
+
+# =============================================================================
+# Section 2: Basic Residual Block
+# =============================================================================
+
+def basic_residual_block(x, filters, stride=1, name='res_block'):
+    """
+    Basic residual block with two 3x3 convolutions.
+    
+    Args:
+        x: Input tensor
+        filters: Number of output filters
+        stride: Stride for first convolution
+        name: Block name
+    
+    Returns:
+        Output tensor
+    """
+    shortcut = x
+    
+    # First convolution
+    x = layers.Conv2D(filters, 3, strides=stride, padding='same',
+                     use_bias=False, name=f'{name}_conv1')(x)
+    x = layers.BatchNormalization(name=f'{name}_bn1')(x)
+    x = layers.Activation('relu', name=f'{name}_relu1')(x)
+    
+    # Second convolution
+    x = layers.Conv2D(filters, 3, strides=1, padding='same',
+                     use_bias=False, name=f'{name}_conv2')(x)
+    x = layers.BatchNormalization(name=f'{name}_bn2')(x)
+    
+    # Shortcut connection
+    if stride != 1 or shortcut.shape[-1] != filters:
+        # Projection shortcut
+        shortcut = layers.Conv2D(filters, 1, strides=stride, padding='same',
+                                use_bias=False, name=f'{name}_shortcut')(shortcut)
+        shortcut = layers.BatchNormalization(name=f'{name}_shortcut_bn')(shortcut)
+    
+    # Add shortcut
+    x = layers.Add(name=f'{name}_add')([x, shortcut])
+    x = layers.Activation('relu', name=f'{name}_relu2')(x)
+    
+    return x
+
+
+# =============================================================================
+# Section 3: Bottleneck Block
+# =============================================================================
+
+def bottleneck_block(x, filters, stride=1, name='bottleneck'):
+    """
+    Bottleneck residual block: 1x1 → 3x3 → 1x1
+    
+    Args:
+        x: Input tensor
+        filters: Number of output filters
+        stride: Stride for middle convolution
+        name: Block name
+    
+    Returns:
+        Output tensor
+    """
+    shortcut = x
+    
+    # 1x1 convolution (reduce)
+    x = layers.Conv2D(filters // 4, 1, strides=1, padding='same',
+                     use_bias=False, name=f'{name}_conv1')(x)
+    x = layers.BatchNormalization(name=f'{name}_bn1')(x)
+    x = layers.Activation('relu', name=f'{name}_relu1')(x)
+    
+    # 3x3 convolution (process)
+    x = layers.Conv2D(filters // 4, 3, strides=stride, padding='same',
+                     use_bias=False, name=f'{name}_conv2')(x)
+    x = layers.BatchNormalization(name=f'{name}_bn2')(x)
+    x = layers.Activation('relu', name=f'{name}_relu2')(x)
+    
+    # 1x1 convolution (expand)
+    x = layers.Conv2D(filters, 1, strides=1, padding='same',
+                     use_bias=False, name=f'{name}_conv3')(x)
+    x = layers.BatchNormalization(name=f'{name}_bn3')(x)
+    
+    # Shortcut connection
+    if stride != 1 or shortcut.shape[-1] != filters:
+        shortcut = layers.Conv2D(filters, 1, strides=stride, padding='same',
+                                use_bias=False, name=f'{name}_shortcut')(shortcut)
+        shortcut = layers.BatchNormalization(name=f'{name}_shortcut_bn')(shortcut)
+    
+    # Add shortcut
+    x = layers.Add(name=f'{name}_add')([x, shortcut])
+    x = layers.Activation('relu', name=f'{name}_relu3')(x)
+    
+    return x
+
+
+# =============================================================================
+# Section 4: Build ResNet-18
+# =============================================================================
+
+def build_resnet18(input_shape=(32, 32, 3), num_classes=10):
+    """
+    Build ResNet-18 architecture.
+    
+    Architecture:
+    - Conv1: 7x7, 64, stride 2
+    - Pool: 3x3, stride 2
+    - Conv2_x: 2 basic blocks, 64 filters
+    - Conv3_x: 2 basic blocks, 128 filters, stride 2
+    - Conv4_x: 2 basic blocks, 256 filters, stride 2
+    - Conv5_x: 2 basic blocks, 512 filters, stride 2
+    - Global Average Pooling
+    - FC: num_classes
+    """
+    
+    print("\n" + "=" * 60)
+    print("BUILDING ResNet-18")
+    print("=" * 60)
+    
+    inputs = layers.Input(shape=input_shape, name='input')
+    
+    # Initial convolution
+    x = layers.Conv2D(64, 3, strides=1, padding='same',
+                     use_bias=False, name='conv1')(inputs)
+    x = layers.BatchNormalization(name='bn1')(x)
+    x = layers.Activation('relu', name='relu1')(x)
+    # Note: No maxpool for CIFAR-10 (small images)
+    
+    # Conv2_x - 2 blocks, 64 filters
+    x = basic_residual_block(x, 64, stride=1, name='conv2_1')
+    x = basic_residual_block(x, 64, stride=1, name='conv2_2')
+    
+    # Conv3_x - 2 blocks, 128 filters
+    x = basic_residual_block(x, 128, stride=2, name='conv3_1')
+    x = basic_residual_block(x, 128, stride=1, name='conv3_2')
+    
+    # Conv4_x - 2 blocks, 256 filters
+    x = basic_residual_block(x, 256, stride=2, name='conv4_1')
+    x = basic_residual_block(x, 256, stride=1, name='conv4_2')
+    
+    # Conv5_x - 2 blocks, 512 filters
+    x = basic_residual_block(x, 512, stride=2, name='conv5_1')
+    x = basic_residual_block(x, 512, stride=1, name='conv5_2')
+    
+    # Global average pooling
+    x = layers.GlobalAveragePooling2D(name='global_avg_pool')(x)
+    
+    # Fully connected layer
+    outputs = layers.Dense(num_classes, activation='softmax', name='output')(x)
+    
+    model = models.Model(inputs, outputs, name='ResNet18')
+    
+    return model
+
+
+# Build ResNet-18
+resnet18 = build_resnet18()
+resnet18.summary()
+
+
+# =============================================================================
+# Section 5: Build ResNet-50
+# =============================================================================
+
+def build_resnet50(input_shape=(32, 32, 3), num_classes=10):
+    """
+    Build ResNet-50 architecture with bottleneck blocks.
+    
+    Architecture:
+    - Conv1: 7x7, 64, stride 2
+    - Conv2_x: 3 bottleneck blocks, 256 filters
+    - Conv3_x: 4 bottleneck blocks, 512 filters, stride 2
+    - Conv4_x: 6 bottleneck blocks, 1024 filters, stride 2
+    - Conv5_x: 3 bottleneck blocks, 2048 filters, stride 2
+    """
+    
+    print("\n" + "=" * 60)
+    print("BUILDING ResNet-50")
+    print("=" * 60)
+    
+    inputs = layers.Input(shape=input_shape, name='input')
+    
+    # Initial convolution
+    x = layers.Conv2D(64, 3, strides=1, padding='same',
+                     use_bias=False, name='conv1')(inputs)
+    x = layers.BatchNormalization(name='bn1')(x)
+    x = layers.Activation('relu', name='relu1')(x)
+    
+    # Conv2_x - 3 bottleneck blocks, 256 filters
+    x = bottleneck_block(x, 256, stride=1, name='conv2_1')
+    x = bottleneck_block(x, 256, stride=1, name='conv2_2')
+    x = bottleneck_block(x, 256, stride=1, name='conv2_3')
+    
+    # Conv3_x - 4 bottleneck blocks, 512 filters
+    x = bottleneck_block(x, 512, stride=2, name='conv3_1')
+    x = bottleneck_block(x, 512, stride=1, name='conv3_2')
+    x = bottleneck_block(x, 512, stride=1, name='conv3_3')
+    x = bottleneck_block(x, 512, stride=1, name='conv3_4')
+    
+    # Conv4_x - 6 bottleneck blocks, 1024 filters
+    x = bottleneck_block(x, 1024, stride=2, name='conv4_1')
+    x = bottleneck_block(x, 1024, stride=1, name='conv4_2')
+    x = bottleneck_block(x, 1024, stride=1, name='conv4_3')
+    x = bottleneck_block(x, 1024, stride=1, name='conv4_4')
+    x = bottleneck_block(x, 1024, stride=1, name='conv4_5')
+    x = bottleneck_block(x, 1024, stride=1, name='conv4_6')
+    
+    # Conv5_x - 3 bottleneck blocks, 2048 filters
+    x = bottleneck_block(x, 2048, stride=2, name='conv5_1')
+    x = bottleneck_block(x, 2048, stride=1, name='conv5_2')
+    x = bottleneck_block(x, 2048, stride=1, name='conv5_3')
+    
+    # Global average pooling
+    x = layers.GlobalAveragePooling2D(name='global_avg_pool')(x)
+    
+    # Fully connected layer
+    outputs = layers.Dense(num_classes, activation='softmax', name='output')(x)
+    
+    model = models.Model(inputs, outputs, name='ResNet50')
+    
+    return model
+
+
+# Build ResNet-50
+resnet50 = build_resnet50()
+print(f"\nResNet-50 total parameters: {resnet50.count_params():,}")
+
+
+# =============================================================================
+# Section 6: Visualize Residual Connections
+# =============================================================================
+
+def visualize_residual_block():
+    """Visualize the residual block structure."""
+    
+    fig, ax = plt.subplots(figsize=(12, 8))
+    ax.set_xlim(0, 10)
+    ax.set_ylim(0, 10)
+    ax.axis('off')
+    
+    # Title
+    ax.text(5, 9.5, 'Residual Block Structure', ha='center', fontsize=16, fontweight='bold')
+    
+    # Main path
+    boxes_main = [
+        (2, 7, 'Conv 3x3\nBN\nReLU'),
+        (2, 5, 'Conv 3x3\nBN'),
+    ]
+    
+    for x, y, text in boxes_main:
+        rect = plt.Rectangle((x, y), 2, 1.5, fill=True, 
+                            facecolor='lightblue', edgecolor='black', linewidth=2)
+        ax.add_patch(rect)
+        ax.text(x+1, y+0.75, text, ha='center', va='center', fontsize=10)
+    
+    # Shortcut
+    rect_shortcut = plt.Rectangle((6, 7), 2, 1.5, fill=True,
+                                 facecolor='lightgreen', edgecolor='black', linewidth=2)
+    ax.add_patch(rect_shortcut)
+    ax.text(7, 7.75, 'Shortcut\n(Identity or\nProjection)', 
+           ha='center', va='center', fontsize=9)
+    
+    # Addition
+    circle = plt.Circle((5, 3), 0.5, fill=True, facecolor='yellow', edgecolor='black')
+    ax.add_patch(circle)
+    ax.text(5, 3, '+', ha='center', va='center', fontsize=16, fontweight='bold')
+    
+    # ReLU
+    rect_relu = plt.Rectangle((4, 1, ), 2, 1, fill=True,
+                             facecolor='lightcoral', edgecolor='black', linewidth=2)
+    ax.add_patch(rect_relu)
+    ax.text(5, 1.5, 'ReLU', ha='center', va='center', fontsize=10)
+    
+    # Arrows
+    ax.annotate('', xy=(3, 7), xytext=(3, 8.5),
+               arrowprops=dict(arrowstyle='->', lw=2))
+    ax.annotate('', xy=(3, 5), xytext=(3, 6.5),
+               arrowprops=dict(arrowstyle='->', lw=2))
+    ax.annotate('', xy=(5, 3.5), xytext=(3, 5),
+               arrowprops=dict(arrowstyle='->', lw=2))
+    ax.annotate('', xy=(5, 3.5), xytext=(7, 7),
+               arrowprops=dict(arrowstyle='->', lw=2, connectionstyle='arc3,rad=0.3'))
+    ax.annotate('', xy=(5, 2), xytext=(5, 2.5),
+               arrowprops=dict(arrowstyle='->', lw=2))
+    ax.annotate('', xy=(5, 1), xytext=(5, 0.3),
+               arrowprops=dict(arrowstyle='->', lw=2))
+    
+    # Labels
+    ax.text(1, 8.5, 'Input', fontsize=10)
+    ax.text(5, 0, 'Output', ha='center', fontsize=10)
+    
+    plt.tight_layout()
+    plt.savefig('/mnt/okcomputer/output/lab35_residual_block.png', dpi=150)
+    plt.show()
+    print("\nResidual block diagram saved to: /mnt/okcomputer/output/lab35_residual_block.png")
+
+
+visualize_residual_block()
+
+
+# =============================================================================
+# Section 7: Train ResNet on CIFAR-10
+# =============================================================================
+
+def train_resnet(model, X_train, y_train, X_test, y_test, epochs=20):
+    """Train ResNet model."""
+    
+    print("\n" + "=" * 60)
+    print(f"TRAINING {model.name}")
+    print("=" * 60)
+    
+    # Compile
+    model.compile(optimizer=optimizers.Adam(learning_rate=0.001),
+                  loss='categorical_crossentropy',
+                  metrics=['accuracy'])
+    
+    # Callbacks
+    cb = [
+        keras.callbacks.EarlyStopping(patience=10, restore_best_weights=True),
+        keras.callbacks.ReduceLROnPlateau(factor=0.5, patience=5, min_lr=1e-6)
+    ]
+    
+    # Train
+    start_time = time.time()
+    
+    history = model.fit(X_train, y_train,
+                       batch_size=128,
+                       epochs=epochs,
+                       validation_data=(X_test, y_test),
+                       callbacks=cb,
+                       verbose=1)
+    
+    training_time = time.time() - start_time
+    print(f"\nTraining completed in {training_time:.2f} seconds")
+    
+    # Evaluate
+    test_loss, test_acc = model.evaluate(X_test, y_test, verbose=0)
+    print(f"Test accuracy: {test_acc:.4f}")
+    
+    return history
+
+
+# Load CIFAR-10
+(X_train, y_train), (X_test, y_test) = cifar10.load_data()
+X_train = X_train.astype('float32') / 255.0
+X_test = X_test.astype('float32') / 255.0
+y_train = to_categorical(y_train, 10)
+y_test = to_categorical(y_test, 10)
+
+# Train ResNet-18 (reduced epochs for demo)
+history_resnet = train_resnet(resnet18, X_train, y_train, X_test, y_test, epochs=10)
+
+
+# =============================================================================
+# Section 8: Compare with Plain CNN
+# =============================================================================
+
+def build_plain_cnn(input_shape=(32, 32, 3), num_classes=10):
+    """Build a plain CNN without residual connections."""
+    
+    model = models.Sequential([
+        layers.Conv2D(64, 3, padding='same', input_shape=input_shape),
+        layers.BatchNormalization(),
+        layers.Activation('relu'),
+        layers.Conv2D(64, 3, padding='same'),
+        layers.BatchNormalization(),
+        layers.Activation('relu'),
+        layers.MaxPooling2D(2),
+        
+        layers.Conv2D(128, 3, padding='same'),
+        layers.BatchNormalization(),
+        layers.Activation('relu'),
+        layers.Conv2D(128, 3, padding='same'),
+        layers.BatchNormalization(),
+        layers.Activation('relu'),
+        layers.MaxPooling2D(2),
+        
+        layers.Conv2D(256, 3, padding='same'),
+        layers.BatchNormalization(),
+        layers.Activation('relu'),
+        layers.Conv2D(256, 3, padding='same'),
+        layers.BatchNormalization(),
+        layers.Activation('relu'),
+        layers.MaxPooling2D(2),
+        
+        layers.Conv2D(512, 3, padding='same'),
+        layers.BatchNormalization(),
+        layers.Activation('relu'),
+        layers.Conv2D(512, 3, padding='same'),
+        layers.BatchNormalization(),
+        layers.Activation('relu'),
+        layers.MaxPooling2D(2),
+        
+        layers.GlobalAveragePooling2D(),
+        layers.Dense(num_classes, activation='softmax')
+    ])
+    
+    return model
+
+
+# Build and train plain CNN
+plain_cnn = build_plain_cnn()
+print(f"\nPlain CNN parameters: {plain_cnn.count_params():,}")
+
+plain_cnn.compile(optimizer=optimizers.Adam(learning_rate=0.001),
+                 loss='categorical_crossentropy',
+                 metrics=['accuracy'])
+
+history_plain = plain_cnn.fit(X_train, y_train,
+                              batch_size=128,
+                              epochs=10,
+                              validation_data=(X_test, y_test),
+                              verbose=1)
+
+
+# =============================================================================
+# Section 9: Visualize Comparison
+# =============================================================================
+
+def compare_resnet_plain(history_resnet, history_plain):
+    """Compare ResNet with plain CNN."""
+    
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    
+    # Accuracy
+    axes[0].plot(history_resnet.history['val_accuracy'], label='ResNet-18', linewidth=2)
+    axes[0].plot(history_plain.history['val_accuracy'], label='Plain CNN', linewidth=2)
+    axes[0].set_title('Validation Accuracy: ResNet vs Plain CNN')
+    axes[0].set_xlabel('Epoch')
+    axes[0].set_ylabel('Accuracy')
+    axes[0].legend()
+    axes[0].grid(True)
+    
+    # Loss
+    axes[1].plot(history_resnet.history['val_loss'], label='ResNet-18', linewidth=2)
+    axes[1].plot(history_plain.history['val_loss'], label='Plain CNN', linewidth=2)
+    axes[1].set_title('Validation Loss: ResNet vs Plain CNN')
+    axes[1].set_xlabel('Epoch')
+    axes[1].set_ylabel('Loss')
+    axes[1].legend()
+    axes[1].grid(True)
+    
+    plt.tight_layout()
+    plt.savefig('/mnt/okcomputer/output/lab35_resnet_comparison.png', dpi=150)
+    plt.show()
+    print("\nComparison saved to: /mnt/okcomputer/output/lab35_resnet_comparison.png")
+
+
+compare_resnet_plain(history_resnet, history_plain)
+
+
+# =============================================================================
+# Section 10: Exercises
+# =============================================================================
+
+print("\n" + "=" * 60)
+print("EXERCISES")
+print("=" * 60)
+
+print("""
+Exercise 1: Implement Pre-activation ResNet
+- Move BN and ReLU before convolution
+- Compare with original ResNet
+
+Exercise 2: Wide ResNet
+- Increase width (number of filters) instead of depth
+- Compare accuracy vs. parameters
+
+Exercise 3: ResNeXt Block
+- Implement grouped convolutions in residual block
+- Compare with basic block
+
+Exercise 4: DenseNet-style Connections
+- Implement dense connections (concatenate instead of add)
+- Compare feature reuse
+
+Exercise 5: Analyze Gradient Flow
+- Visualize gradients at different layers
+- Compare ResNet vs. plain CNN
+""")
+
+print("\n" + "=" * 60)
+print("Lab 3.5 Complete!")
+print("=" * 60)
+```
+
+
+---
+
+<a name="lab-36"></a>

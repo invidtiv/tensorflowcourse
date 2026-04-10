@@ -1,0 +1,477 @@
+---
+title: "Non-Maximum Suppression (NMS)"
+module: 6
+labNumber: 6
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Non-Maximum Suppression (NMS)
+
+## Objectives
+- Understand the NMS algorithm
+- Implement NMS from scratch
+- Apply NMS to object detection outputs
+- Optimize NMS for different scenarios
+
+## Theory
+
+Non-Maximum Suppression (NMS) removes duplicate detections by:
+1. Sorting detections by confidence score
+2. Selecting the highest confidence detection
+3. Removing all detections with IoU > threshold with the selected one
+4. Repeating until no detections remain
+
+## Complete Implementation
+
+```python
+"""
+Lab 6.5: Non-Maximum Suppression (NMS)
+Object Detection Systems - Module 6
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+from typing import Tuple, List
+
+# =============================================================================
+# Section 1: Basic NMS Implementation
+# =============================================================================
+
+def nms_numpy(boxes: np.ndarray,
+              scores: np.ndarray,
+              iou_threshold: float = 0.5,
+              max_detections: int = 100) -> List[int]:
+    """
+    Pure NumPy implementation of NMS.
+    
+    Args:
+        boxes: Bounding boxes [N, 4] in [x1, y1, x2, y2] format
+        scores: Confidence scores [N]
+        iou_threshold: IoU threshold for suppression
+        max_detections: Maximum number of detections to keep
+    
+    Returns:
+        Indices of kept boxes
+    """
+    # Sort by scores in descending order
+    indices = np.argsort(scores)[::-1]
+    
+    keep = []
+    
+    while len(indices) > 0 and len(keep) < max_detections:
+        # Select the box with highest score
+        current = indices[0]
+        keep.append(current)
+        
+        if len(indices) == 1:
+            break
+        
+        # Compute IoU with remaining boxes
+        current_box = boxes[current]
+        remaining_boxes = boxes[indices[1:]]
+        
+        # Calculate intersection
+        x1 = np.maximum(current_box[0], remaining_boxes[:, 0])
+        y1 = np.maximum(current_box[1], remaining_boxes[:, 1])
+        x2 = np.minimum(current_box[2], remaining_boxes[:, 2])
+        y2 = np.minimum(current_box[3], remaining_boxes[:, 3])
+        
+        intersect_w = np.maximum(0, x2 - x1)
+        intersect_h = np.maximum(0, y2 - y1)
+        intersect_area = intersect_w * intersect_h
+        
+        # Calculate areas
+        current_area = (current_box[2] - current_box[0]) * (current_box[3] - current_box[1])
+        remaining_areas = (remaining_boxes[:, 2] - remaining_boxes[:, 0]) * \
+                         (remaining_boxes[:, 3] - remaining_boxes[:, 1])
+        
+        # Calculate IoU
+        union_area = current_area + remaining_areas - intersect_area
+        iou = intersect_area / (union_area + 1e-7)
+        
+        # Keep boxes with IoU below threshold
+        mask = iou <= iou_threshold
+        indices = indices[1:][mask]
+    
+    return keep
+
+
+def nms_tensorflow(boxes: tf.Tensor,
+                   scores: tf.Tensor,
+                   max_output_size: int = 100,
+                   iou_threshold: float = 0.5,
+                   score_threshold: float = 0.0) -> tf.Tensor:
+    """
+    TensorFlow's built-in NMS implementation.
+    
+    Args:
+        boxes: Bounding boxes [N, 4]
+        scores: Confidence scores [N]
+        max_output_size: Maximum number of boxes to keep
+        iou_threshold: IoU threshold
+        score_threshold: Minimum score threshold
+    
+    Returns:
+        Indices of kept boxes
+    """
+    return tf.image.non_max_suppression(
+        boxes=boxes,
+        scores=scores,
+        max_output_size=max_output_size,
+        iou_threshold=iou_threshold,
+        score_threshold=score_threshold
+    )
+
+
+# =============================================================================
+# Section 2: Class-Aware NMS
+# =============================================================================
+
+def class_aware_nms(boxes: tf.Tensor,
+                    scores: tf.Tensor,
+                    classes: tf.Tensor,
+                    num_classes: int,
+                    iou_threshold: float = 0.5,
+                    max_detections_per_class: int = 100,
+                    max_total_detections: int = 300) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+    """
+    Perform NMS independently for each class.
+    
+    Args:
+        boxes: Bounding boxes [N, 4]
+        scores: Confidence scores [N]
+        classes: Class IDs [N]
+        num_classes: Total number of classes
+        iou_threshold: IoU threshold
+        max_detections_per_class: Max detections per class
+        max_total_detections: Max total detections
+    
+    Returns:
+        kept_boxes, kept_scores, kept_classes
+    """
+    all_boxes = []
+    all_scores = []
+    all_classes = []
+    
+    for class_id in range(num_classes):
+        # Get boxes for this class
+        class_mask = classes == class_id
+        class_indices = tf.where(class_mask)[:, 0]
+        
+        if len(class_indices) == 0:
+            continue
+        
+        class_boxes = tf.gather(boxes, class_indices)
+        class_scores = tf.gather(scores, class_indices)
+        
+        # Apply NMS for this class
+        keep_indices = tf.image.non_max_suppression(
+            class_boxes, class_scores,
+            max_output_size=max_detections_per_class,
+            iou_threshold=iou_threshold
+        )
+        
+        # Gather kept boxes
+        kept_boxes = tf.gather(class_boxes, keep_indices)
+        kept_scores = tf.gather(class_scores, keep_indices)
+        kept_classes = tf.fill([len(keep_indices)], class_id)
+        
+        all_boxes.append(kept_boxes)
+        all_scores.append(kept_scores)
+        all_classes.append(kept_classes)
+    
+    # Concatenate all classes
+    if len(all_boxes) > 0:
+        all_boxes = tf.concat(all_boxes, axis=0)
+        all_scores = tf.concat(all_scores, axis=0)
+        all_classes = tf.concat(all_classes, axis=0)
+        
+        # Sort by score and take top-k
+        top_k = tf.minimum(max_total_detections, len(all_scores))
+        top_indices = tf.nn.top_k(all_scores, k=top_k).indices
+        
+        all_boxes = tf.gather(all_boxes, top_indices)
+        all_scores = tf.gather(all_scores, top_indices)
+        all_classes = tf.gather(all_classes, top_indices)
+    else:
+        all_boxes = tf.zeros([0, 4], dtype=tf.float32)
+        all_scores = tf.zeros([0], dtype=tf.float32)
+        all_classes = tf.zeros([0], dtype=tf.int32)
+    
+    return all_boxes, all_scores, all_classes
+
+
+# =============================================================================
+# Section 3: Batched NMS
+# =============================================================================
+
+def batched_nms(boxes: tf.Tensor,
+                scores: tf.Tensor,
+                class_ids: tf.Tensor,
+                iou_threshold: float = 0.5,
+                max_detections: int = 100) -> tf.Tensor:
+    """
+    Batched NMS for multiple images.
+    
+    Args:
+        boxes: [batch_size, num_boxes, 4]
+        scores: [batch_size, num_boxes]
+        class_ids: [batch_size, num_boxes]
+        iou_threshold: IoU threshold
+        max_detections: Max detections per image
+    
+    Returns:
+        nms_indices: [batch_size, max_detections] (padded with -1)
+    """
+    batch_size = tf.shape(boxes)[0]
+    
+    def nms_single(args):
+        img_boxes, img_scores, img_classes = args
+        
+        # Offset boxes by class to prevent cross-class suppression
+        offsets = tf.cast(img_classes, tf.float32) * 1000
+        offset_boxes = img_boxes + tf.expand_dims(offsets, 1)
+        
+        keep = tf.image.non_max_suppression(
+            offset_boxes, img_scores,
+            max_output_size=max_detections,
+            iou_threshold=iou_threshold
+        )
+        
+        # Pad to max_detections
+        num_keep = tf.shape(keep)[0]
+        pad_size = max_detections - num_keep
+        keep_padded = tf.pad(keep, [[0, pad_size]], constant_values=-1)
+        
+        return keep_padded
+    
+    # Apply NMS to each image in batch
+    nms_indices = tf.map_fn(
+        nms_single,
+        [boxes, scores, class_ids],
+        fn_output_signature=tf.TensorSpec(shape=[max_detections], dtype=tf.int32)
+    )
+    
+    return nms_indices
+
+
+# =============================================================================
+# Section 4: Visualization and Testing
+# =============================================================================
+
+def generate_test_detections(num_detections: int = 50,
+                              image_size: Tuple[int, int] = (640, 640),
+                              seed: int = 42) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Generate synthetic detections for NMS testing.
+    """
+    np.random.seed(seed)
+    
+    # Generate random boxes
+    centers_x = np.random.uniform(0.2, 0.8, num_detections)
+    centers_y = np.random.uniform(0.2, 0.8, num_detections)
+    widths = np.random.uniform(0.05, 0.2, num_detections)
+    heights = np.random.uniform(0.05, 0.2, num_detections)
+    
+    # Create some overlapping boxes (simulating duplicates)
+    for i in range(0, num_detections - 2, 3):
+        centers_x[i+1] = centers_x[i] + np.random.uniform(-0.02, 0.02)
+        centers_y[i+1] = centers_y[i] + np.random.uniform(-0.02, 0.02)
+        widths[i+1] = widths[i] * np.random.uniform(0.9, 1.1)
+        heights[i+1] = heights[i] * np.random.uniform(0.9, 1.1)
+    
+    x1 = centers_x - widths / 2
+    y1 = centers_y - heights / 2
+    x2 = centers_x + widths / 2
+    y2 = centers_y + heights / 2
+    
+    boxes = np.stack([x1, y1, x2, y2], axis=1)
+    boxes = np.clip(boxes, 0, 1)
+    
+    # Generate scores (higher for earlier boxes)
+    scores = np.random.uniform(0.5, 1.0, num_detections)
+    for i in range(0, num_detections - 2, 3):
+        scores[i+1] = scores[i] * np.random.uniform(0.7, 0.9)
+        scores[i+2] = scores[i] * np.random.uniform(0.5, 0.7)
+    
+    # Generate random classes
+    classes = np.random.randint(0, 5, num_detections)
+    
+    return boxes, scores, classes
+
+
+def visualize_nms_results(boxes: np.ndarray,
+                          scores: np.ndarray,
+                          classes: np.ndarray,
+                          keep_indices: List[int],
+                          title: str = "NMS Results"):
+    """
+    Visualize NMS results.
+    """
+    fig, axes = plt.subplots(1, 2, figsize=(16, 8))
+    
+    # Before NMS
+    ax = axes[0]
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.set_aspect('equal')
+    ax.invert_yaxis()
+    
+    colors = plt.cm.rainbow(np.linspace(0, 1, 5))
+    
+    for i, (box, cls) in enumerate(zip(boxes, classes)):
+        color = colors[cls % 5]
+        x_min, y_min, x_max, y_max = box
+        width = x_max - x_min
+        height = y_max - y_min
+        
+        rect = patches.Rectangle(
+            (x_min, y_min), width, height,
+            linewidth=1, edgecolor=color, facecolor='none', alpha=0.5
+        )
+        ax.add_patch(rect)
+    
+    ax.set_title(f'Before NMS: {len(boxes)} detections')
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+    
+    # After NMS
+    ax = axes[1]
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.set_aspect('equal')
+    ax.invert_yaxis()
+    
+    kept_boxes = boxes[keep_indices]
+    kept_classes = classes[keep_indices]
+    kept_scores = scores[keep_indices]
+    
+    for i, (box, cls, score) in enumerate(zip(kept_boxes, kept_classes, kept_scores)):
+        color = colors[cls % 5]
+        x_min, y_min, x_max, y_max = box
+        width = x_max - x_min
+        height = y_max - y_min
+        
+        rect = patches.Rectangle(
+            (x_min, y_min), width, height,
+            linewidth=2, edgecolor=color, facecolor='none'
+        )
+        ax.add_patch(rect)
+        
+        # Add score label
+        ax.text(x_min, y_min - 0.02, f'{score:.2f}', 
+               color=color, fontsize=8, fontweight='bold')
+    
+    ax.set_title(f'After NMS: {len(keep_indices)} detections')
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+    
+    plt.suptitle(title)
+    plt.tight_layout()
+    plt.show()
+
+
+# =============================================================================
+# Section 5: Performance Comparison
+# =============================================================================
+
+def compare_nms_implementations():
+    """
+    Compare different NMS implementations.
+    """
+    import time
+    
+    print("\n" + "=" * 60)
+    print("NMS Performance Comparison")
+    print("=" * 60)
+    
+    # Generate test data
+    num_detections = 1000
+    boxes, scores, classes = generate_test_detections(num_detections)
+    
+    # NumPy NMS
+    start = time.time()
+    keep_numpy = nms_numpy(boxes, scores, iou_threshold=0.5)
+    numpy_time = time.time() - start
+    
+    # TensorFlow NMS
+    boxes_tf = tf.constant(boxes, dtype=tf.float32)
+    scores_tf = tf.constant(scores, dtype=tf.float32)
+    
+    start = time.time()
+    keep_tf = nms_tensorflow(boxes_tf, scores_tf, iou_threshold=0.5)
+    tf_time = time.time() - start
+    
+    print(f"\nNumPy NMS:")
+    print(f"  Time: {numpy_time*1000:.2f} ms")
+    print(f"  Kept: {len(keep_numpy)} / {num_detections}")
+    
+    print(f"\nTensorFlow NMS:")
+    print(f"  Time: {tf_time*1000:.2f} ms")
+    print(f"  Kept: {len(keep_tf)} / {num_detections}")
+    
+    print(f"\nSpeedup: {numpy_time/tf_time:.2f}x")
+
+
+# =============================================================================
+# Main Execution
+# =============================================================================
+
+if __name__ == "__main__":
+    print("\n" + "=" * 70)
+    print("Lab 6.5: Non-Maximum Suppression (NMS)")
+    print("=" * 70)
+    
+    # Generate test detections
+    print("\n" + "-" * 60)
+    print("Generating Test Detections")
+    print("-" * 60)
+    
+    boxes, scores, classes = generate_test_detections(num_detections=50)
+    print(f"Generated {len(boxes)} detections")
+    
+    # Apply NMS
+    print("\n" + "-" * 60)
+    print("Applying NMS")
+    print("-" * 60)
+    
+    boxes_tf = tf.constant(boxes, dtype=tf.float32)
+    scores_tf = tf.constant(scores, dtype=tf.float32)
+    
+    keep_indices = nms_tensorflow(boxes_tf, scores_tf, iou_threshold=0.5)
+    keep_indices = keep_indices.numpy()
+    
+    print(f"Before NMS: {len(boxes)} detections")
+    print(f"After NMS: {len(keep_indices)} detections")
+    print(f"Reduction: {(1 - len(keep_indices)/len(boxes))*100:.1f}%")
+    
+    # Visualize results
+    print("\nGenerating visualization...")
+    visualize_nms_results(boxes, scores, classes, keep_indices, "Basic NMS")
+    
+    # Class-aware NMS
+    print("\n" + "-" * 60)
+    print("Class-Aware NMS")
+    print("-" * 60)
+    
+    classes_tf = tf.constant(classes, dtype=tf.int32)
+    
+    kept_boxes, kept_scores, kept_classes = class_aware_nms(
+        boxes_tf, scores_tf, classes_tf,
+        num_classes=5, iou_threshold=0.5
+    )
+    
+    print(f"After class-aware NMS: {len(kept_boxes)} detections")
+    
+    # Performance comparison
+    compare_nms_implementations()
+    
+    print("\n" + "=" * 70)
+    print("Lab 6.5 Complete!")
+    print("=" * 70)
+```
+
+---

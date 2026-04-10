@@ -1,0 +1,388 @@
+---
+title: "4: Feature Engineering with TensorFlow"
+module: 2
+labNumber: 6
+difficulty: "easy"
+estimatedTime: "45-60 minutes"
+source: "lab-02-part2.md"
+---
+# 4: Feature Engineering with TensorFlow
+
+```python
+"""
+Lab 2.1.4: Feature Engineering with TensorFlow
+Advanced feature engineering techniques using TensorFlow operations.
+"""
+
+import tensorflow as tf
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+print("=" * 60)
+print("LAB 2.1.4: Feature Engineering with TensorFlow")
+print("=" * 60)
+
+# ============================================================
+# STEP 1: Create Sample Dataset
+# ============================================================
+print("\n[STEP 1] Creating sample dataset for feature engineering...")
+
+np.random.seed(42)
+n_samples = 1000
+
+# Create features with different characteristics
+data = pd.DataFrame({
+    'numeric_1': np.random.normal(100, 20, n_samples),
+    'numeric_2': np.random.exponential(50, n_samples),
+    'numeric_3': np.random.uniform(0, 1, n_samples),
+    'category': np.random.choice(['A', 'B', 'C', 'D'], n_samples),
+    'date_offset': np.random.randint(0, 365, n_samples)
+})
+
+# Create target with non-linear relationship
+data['target'] = (
+    data['numeric_1'] * 0.5 +
+    np.sqrt(data['numeric_2']) * 2 +
+    np.sin(data['numeric_3'] * np.pi) * 10 +
+    np.random.normal(0, 5, n_samples)
+)
+
+print(f"Dataset shape: {data.shape}")
+print("\nFirst 5 rows:")
+print(data.head())
+
+# ============================================================
+# STEP 2: Mathematical Feature Transformations
+# ============================================================
+print("\n[STEP 2] Mathematical feature transformations...")
+
+# Convert to tensors
+numeric_features = tf.constant(data[['numeric_1', 'numeric_2', 'numeric_3']].values, dtype=tf.float32)
+
+# Feature engineering functions
+def engineer_features(inputs):
+    """Apply various mathematical transformations."""
+    features = []
+    
+    # Original features
+    features.append(inputs)
+    
+    # Polynomial features (degree 2)
+    features.append(tf.square(inputs))
+    
+    # Square root (with clipping for numerical stability)
+    features.append(tf.sqrt(tf.clip_by_value(inputs, 0.001, float('inf'))))
+    
+    # Log transform
+    features.append(tf.math.log1p(tf.clip_by_value(inputs, 0, float('inf'))))
+    
+    # Interaction terms (pairwise products)
+    f1, f2, f3 = inputs[:, 0:1], inputs[:, 1:2], inputs[:, 2:3]
+    features.append(f1 * f2)
+    features.append(f1 * f3)
+    features.append(f2 * f3)
+    
+    # Trigonometric features
+    features.append(tf.sin(inputs * np.pi))
+    features.append(tf.cos(inputs * np.pi))
+    
+    # Binning (bucketization)
+    bins_1 = tf.cast(inputs[:, 0:1] > tf.reduce_mean(inputs[:, 0]), tf.float32)
+    features.append(bins_1)
+    
+    return tf.concat(features, axis=1)
+
+# Apply feature engineering
+engineered = engineer_features(numeric_features)
+print(f"\nOriginal features shape: {numeric_features.shape}")
+print(f"Engineered features shape: {engineered.shape}")
+print(f"Feature expansion ratio: {engineered.shape[1] / numeric_features.shape[1]:.1f}x")
+
+# ============================================================
+# STEP 3: Custom Feature Engineering Layer
+# ============================================================
+print("\n[STEP 3] Creating custom feature engineering layer...")
+
+class FeatureEngineeringLayer(tf.keras.layers.Layer):
+    """Custom layer for feature engineering."""
+    
+    def __init__(self, polynomial_degree=2, include_interactions=True, 
+                 include_trigonometric=True, **kwargs):
+        super().__init__(**kwargs)
+        self.polynomial_degree = polynomial_degree
+        self.include_interactions = include_interactions
+        self.include_trigonometric = include_trigonometric
+    
+    def call(self, inputs):
+        features = [inputs]  # Start with original features
+        
+        # Polynomial features
+        for degree in range(2, self.polynomial_degree + 1):
+            features.append(tf.pow(inputs, float(degree)))
+        
+        # Interaction terms
+        if self.include_interactions:
+            n_features = inputs.shape[1]
+            for i in range(n_features):
+                for j in range(i + 1, n_features):
+                    interaction = inputs[:, i:i+1] * inputs[:, j:j+1]
+                    features.append(interaction)
+        
+        # Trigonometric features
+        if self.include_trigonometric:
+            features.append(tf.sin(inputs))
+            features.append(tf.cos(inputs))
+        
+        return tf.concat(features, axis=1)
+    
+    def compute_output_shape(self, input_shape):
+        n = input_shape[1]
+        total = n  # Original features
+        
+        # Polynomial features
+        total += n * (self.polynomial_degree - 1)
+        
+        # Interaction terms
+        if self.include_interactions:
+            total += n * (n - 1) // 2
+        
+        # Trigonometric features
+        if self.include_trigonometric:
+            total += 2 * n
+        
+        return (input_shape[0], total)
+
+# Test the layer
+feature_layer = FeatureEngineeringLayer(
+    polynomial_degree=2,
+    include_interactions=True,
+    include_trigonometric=True
+)
+
+# Build the layer by calling it
+_ = feature_layer(numeric_features[:1])
+
+print(f"\nFeature Engineering Layer:")
+print(f"  Input shape: {numeric_features.shape}")
+print(f"  Output shape: {feature_layer(numeric_features).shape}")
+
+# ============================================================
+# STEP 4: Feature Selection with TensorFlow
+# ============================================================
+print("\n[STEP 4] Feature selection techniques...")
+
+# Method 1: Variance-based selection
+def variance_threshold(features, threshold=0.01):
+    """Remove low-variance features."""
+    variances = tf.math.reduce_variance(features, axis=0)
+    mask = variances > threshold
+    selected_indices = tf.where(mask)[:, 0]
+    return tf.gather(features, selected_indices, axis=1), selected_indices
+
+# Method 2: Correlation-based selection
+def correlation_filter(features, target, threshold=0.1):
+    """Select features correlated with target."""
+    target = tf.cast(target, tf.float32)
+    correlations = []
+    
+    for i in range(features.shape[1]):
+        feature = features[:, i]
+        # Compute correlation
+        mean_f = tf.reduce_mean(feature)
+        mean_t = tf.reduce_mean(target)
+        
+        numerator = tf.reduce_sum((feature - mean_f) * (target - mean_t))
+        denominator = tf.sqrt(
+            tf.reduce_sum(tf.square(feature - mean_f)) * 
+            tf.reduce_sum(tf.square(target - mean_t))
+        )
+        
+        corr = numerator / (denominator + 1e-8)
+        correlations.append(tf.abs(corr))
+    
+    correlations = tf.stack(correlations)
+    mask = correlations > threshold
+    selected_indices = tf.where(mask)[:, 0]
+    
+    return tf.gather(features, selected_indices, axis=1), selected_indices, correlations
+
+# Apply feature selection
+target_tensor = tf.constant(data['target'].values, dtype=tf.float32)
+
+# Variance threshold
+high_var_features, var_indices = variance_threshold(engineered, threshold=0.1)
+print(f"\nVariance-based selection:")
+print(f"  Features before: {engineered.shape[1]}")
+print(f"  Features after: {high_var_features.shape[1]}")
+
+# Correlation filter
+corr_features, corr_indices, correlations = correlation_filter(
+    engineered, target_tensor, threshold=0.05
+)
+print(f"\nCorrelation-based selection:")
+print(f"  Features before: {engineered.shape[1]}")
+print(f"  Features after: {corr_features.shape[1]}")
+print(f"  Top 5 correlations: {tf.nn.top_k(correlations, k=5).values.numpy()}")
+
+# ============================================================
+# STEP 5: Dimensionality Reduction
+# ============================================================
+print("\n[STEP 5] Dimensionality reduction with autoencoder...")
+
+# Build a simple autoencoder for feature compression
+input_dim = engineered.shape[1]
+encoding_dim = 8
+
+# Encoder
+encoder_input = tf.keras.Input(shape=(input_dim,))
+encoded = tf.keras.layers.Dense(64, activation='relu')(encoder_input)
+encoded = tf.keras.layers.Dense(32, activation='relu')(encoded)
+encoded = tf.keras.layers.Dense(encoding_dim, activation='relu', name='bottleneck')(encoded)
+
+# Decoder
+decoded = tf.keras.layers.Dense(32, activation='relu')(encoded)
+decoded = tf.keras.layers.Dense(64, activation='relu')(decoded)
+decoded = tf.keras.layers.Dense(input_dim, activation='linear', name='reconstruction')(decoded)
+
+# Full autoencoder
+autoencoder = tf.keras.Model(encoder_input, decoded, name='autoencoder')
+autoencoder.compile(optimizer='adam', loss='mse')
+
+# Encoder model (for feature extraction)
+encoder = tf.keras.Model(encoder_input, encoded, name='encoder')
+
+print("\nAutoencoder architecture:")
+autoencoder.summary()
+
+# Normalize engineered features for autoencoder
+from sklearn.preprocessing import StandardScaler
+scaler = StandardScaler()
+engineered_scaled = scaler.fit_transform(engineered.numpy())
+
+# Train autoencoder
+print("\nTraining autoencoder...")
+autoencoder.fit(
+    engineered_scaled, engineered_scaled,
+    epochs=50,
+    batch_size=32,
+    validation_split=0.2,
+    verbose=0
+)
+
+# Extract compressed features
+compressed_features = encoder.predict(engineered_scaled, verbose=0)
+print(f"\nOriginal feature dimension: {engineered.shape[1]}")
+print(f"Compressed feature dimension: {compressed_features.shape[1]}")
+print(f"Compression ratio: {engineered.shape[1] / compressed_features.shape[1]:.1f}x")
+
+# ============================================================
+# STEP 6: Compare Model Performance
+# ============================================================
+print("\n[STEP 6] Comparing model performance with different feature sets...")
+
+from sklearn.model_selection import train_test_split
+
+# Prepare different feature sets
+feature_sets = {
+    'Original': numeric_features.numpy(),
+    'Engineered': engineered.numpy(),
+    'Compressed': compressed_features
+}
+
+target = data['target'].values
+
+results = {}
+for name, features in feature_sets.items():
+    X_train, X_test, y_train, y_test = train_test_split(
+        features, target, test_size=0.2, random_state=42
+    )
+    
+    # Normalize
+    scaler = StandardScaler()
+    X_train = scaler.fit_transform(X_train)
+    X_test = scaler.transform(X_test)
+    
+    # Build model
+    model = tf.keras.Sequential([
+        tf.keras.layers.Dense(64, activation='relu', input_shape=(X_train.shape[1],)),
+        tf.keras.layers.Dropout(0.2),
+        tf.keras.layers.Dense(32, activation='relu'),
+        tf.keras.layers.Dense(1)
+    ])
+    
+    model.compile(optimizer='adam', loss='mse', metrics=['mae'])
+    
+    # Train
+    history = model.fit(
+        X_train, y_train,
+        validation_split=0.2,
+        epochs=30,
+        batch_size=32,
+        verbose=0
+    )
+    
+    # Evaluate
+    test_loss, test_mae = model.evaluate(X_test, y_test, verbose=0)
+    
+    results[name] = {
+        'feature_count': X_train.shape[1],
+        'test_mae': test_mae,
+        'final_val_loss': history.history['val_loss'][-1]
+    }
+    
+    print(f"\n{name} Features ({X_train.shape[1]} features):")
+    print(f"  Test MAE: {test_mae:.4f}")
+    print(f"  Final Val Loss: {history.history['val_loss'][-1]:.4f}")
+
+# ============================================================
+# STEP 7: Visualization
+# ============================================================
+print("\n[STEP 7] Creating visualization...")
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+# Feature count vs performance
+ax1 = axes[0]
+names = list(results.keys())
+counts = [results[n]['feature_count'] for n in names]
+maes = [results[n]['test_mae'] for n in names]
+
+bars = ax1.bar(names, counts, color=['skyblue', 'lightgreen', 'salmon'], alpha=0.7)
+ax1.set_ylabel('Number of Features', color='blue')
+ax1.set_title('Feature Count by Method', fontweight='bold')
+ax1.tick_params(axis='y', labelcolor='blue')
+
+# Add value labels
+for bar in bars:
+    height = bar.get_height()
+    ax1.text(bar.get_x() + bar.get_width()/2., height,
+             f'{int(height)}', ha='center', va='bottom')
+
+# MAE comparison
+ax2 = axes[1]
+bars = ax2.bar(names, maes, color=['skyblue', 'lightgreen', 'salmon'], alpha=0.7)
+ax2.set_ylabel('Test MAE', color='red')
+ax2.set_title('Model Performance by Feature Set', fontweight='bold')
+ax2.tick_params(axis='y', labelcolor='red')
+
+# Add value labels
+for bar in bars:
+    height = bar.get_height()
+    ax2.text(bar.get_x() + bar.get_width()/2., height,
+             f'{height:.2f}', ha='center', va='bottom')
+
+plt.tight_layout()
+plt.savefig('/mnt/okcomputer/output/feature_engineering_comparison.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+print("\n" + "=" * 60)
+print("LAB 2.1.4 COMPLETED SUCCESSFULLY!")
+print("=" * 60)
+print("\nKEY TAKEAWAYS:")
+print("1. Feature engineering can significantly improve model performance")
+print("2. Polynomial and interaction features capture non-linear relationships")
+print("3. Too many features can lead to overfitting - use feature selection")
+print("4. Autoencoders can compress features while preserving information")
+print("5. TensorFlow layers enable feature engineering in the model graph")
+```

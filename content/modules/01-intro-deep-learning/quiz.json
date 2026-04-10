@@ -1,0 +1,136 @@
+{
+  "version": 1,
+  "passingScore": 80,
+  "questions": [
+    {
+      "id": "m1-q1",
+      "type": "multiple-choice",
+      "difficulty": "easy",
+      "topic": "Gradient Descent",
+      "question": "In vanilla gradient descent, what does the learning rate control?",
+      "options": [
+        {
+          "text": "The number of training epochs",
+          "correct": false
+        },
+        {
+          "text": "The step size taken in the direction of the negative gradient",
+          "correct": true
+        },
+        {
+          "text": "The number of parameters in the model",
+          "correct": false
+        },
+        {
+          "text": "The batch size used during training",
+          "correct": false
+        }
+      ],
+      "explanation": "The learning rate \u03b1 scales the gradient to determine how far each parameter update moves in the negative gradient direction."
+    },
+    {
+      "id": "m1-q2",
+      "type": "multiple-choice",
+      "difficulty": "easy",
+      "topic": "SGD vs Batch GD",
+      "question": "What is the primary advantage of stochastic gradient descent (SGD) over full-batch gradient descent?",
+      "options": [
+        {
+          "text": "SGD always converges to a lower loss",
+          "correct": false
+        },
+        {
+          "text": "SGD updates parameters more frequently and scales to large datasets",
+          "correct": true
+        },
+        {
+          "text": "SGD does not require a learning rate",
+          "correct": false
+        },
+        {
+          "text": "SGD computes the exact true gradient",
+          "correct": false
+        }
+      ],
+      "explanation": "SGD uses a single sample (or mini-batch) per update, enabling faster updates and tractable training on large datasets, at the cost of gradient noise."
+    },
+    {
+      "id": "m1-q3",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "NumPy",
+      "question": "Which NumPy operation computes the element-wise product of two arrays of identical shape?",
+      "options": [
+        {
+          "text": "np.dot(a, b)",
+          "correct": false
+        },
+        {
+          "text": "a @ b",
+          "correct": false
+        },
+        {
+          "text": "a * b",
+          "correct": true
+        },
+        {
+          "text": "np.matmul(a, b)",
+          "correct": false
+        }
+      ],
+      "explanation": "The * operator performs element-wise (Hadamard) multiplication in NumPy, whereas np.dot and @ perform matrix multiplication."
+    },
+    {
+      "id": "m1-q4",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "TensorFlow Basics",
+      "question": "What is the purpose of tf.GradientTape?",
+      "options": [
+        {
+          "text": "To record operations for automatic differentiation",
+          "correct": true
+        },
+        {
+          "text": "To save model weights to disk",
+          "correct": false
+        },
+        {
+          "text": "To accelerate training on GPU only",
+          "correct": false
+        },
+        {
+          "text": "To visualize training metrics",
+          "correct": false
+        }
+      ],
+      "explanation": "tf.GradientTape records forward operations so gradients can be computed via reverse-mode autodiff when tape.gradient() is called."
+    },
+    {
+      "id": "m1-q5",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "Deep Learning History",
+      "question": "Which factor is generally NOT considered a primary driver of the deep learning revolution of the 2010s?",
+      "options": [
+        {
+          "text": "Availability of large labeled datasets (e.g. ImageNet)",
+          "correct": false
+        },
+        {
+          "text": "GPU-accelerated parallel computation",
+          "correct": false
+        },
+        {
+          "text": "Quantum computing hardware",
+          "correct": true
+        },
+        {
+          "text": "Algorithmic advances (ReLU, dropout, batch norm)",
+          "correct": false
+        }
+      ],
+      "explanation": "The deep learning revolution was driven by data, compute (GPUs), and algorithmic advances. Quantum computing was not a contributor."
+    }
+  ]
+}

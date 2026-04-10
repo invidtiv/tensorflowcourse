@@ -1,0 +1,429 @@
+---
+title: "Soft-NMS and Advanced Variants"
+module: 6
+labNumber: 7
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Soft-NMS and Advanced Variants
+
+## Objectives
+- Understand limitations of standard NMS
+- Implement Soft-NMS algorithm
+- Implement DIoU-NMS
+- Compare different NMS variants
+
+## Theory
+
+### Soft-NMS
+Instead of completely removing overlapping boxes, Soft-NMS decays their scores:
+```
+s_i = s_i * f(IoU(M, b_i))
+```
+where f can be linear or Gaussian decay.
+
+### DIoU-NMS
+Incorporates center point distance in the suppression decision:
+```
+s_i = s_i * (1 - IoU) * (center_distance / enclosing_diagonal)
+```
+
+## Complete Implementation
+
+```python
+"""
+Lab 6.6: Soft-NMS and Advanced Variants
+Object Detection Systems - Module 6
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+from typing import Tuple
+
+# =============================================================================
+# Section 1: Soft-NMS Implementation
+# =============================================================================
+
+def soft_nms_numpy(boxes: np.ndarray,
+                   scores: np.ndarray,
+                   method: str = 'gaussian',
+                   sigma: float = 0.5,
+                   iou_threshold: float = 0.3,
+                   score_threshold: float = 0.001,
+                   max_detections: int = 100) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Soft-NMS implementation.
+    
+    Args:
+        boxes: Bounding boxes [N, 4]
+        scores: Confidence scores [N]
+        method: 'linear' or 'gaussian' decay
+        sigma: Sigma for Gaussian decay
+        iou_threshold: IoU threshold for linear decay
+        score_threshold: Minimum score to keep
+        max_detections: Maximum detections
+    
+    Returns:
+        kept_indices, updated_scores
+    """
+    N = len(boxes)
+    indices = np.arange(N)
+    
+    # Sort by scores
+    sorted_indices = np.argsort(scores)[::-1]
+    boxes = boxes[sorted_indices]
+    scores = scores[sorted_indices].copy()
+    indices = indices[sorted_indices]
+    
+    keep = []
+    
+    while len(boxes) > 0 and len(keep) < max_detections:
+        # Select box with highest score
+        current_box = boxes[0]
+        current_score = scores[0]
+        current_idx = indices[0]
+        
+        if current_score < score_threshold:
+            break
+        
+        keep.append(current_idx)
+        
+        if len(boxes) == 1:
+            break
+        
+        # Compute IoU with remaining boxes
+        remaining_boxes = boxes[1:]
+        
+        x1 = np.maximum(current_box[0], remaining_boxes[:, 0])
+        y1 = np.maximum(current_box[1], remaining_boxes[:, 1])
+        x2 = np.minimum(current_box[2], remaining_boxes[:, 2])
+        y2 = np.minimum(current_box[3], remaining_boxes[:, 3])
+        
+        intersect_w = np.maximum(0, x2 - x1)
+        intersect_h = np.maximum(0, y2 - y1)
+        intersect_area = intersect_w * intersect_h
+        
+        current_area = (current_box[2] - current_box[0]) * (current_box[3] - current_box[1])
+        remaining_areas = (remaining_boxes[:, 2] - remaining_boxes[:, 0]) * \
+                         (remaining_boxes[:, 3] - remaining_boxes[:, 1])
+        
+        union_area = current_area + remaining_areas - intersect_area
+        iou = intersect_area / (union_area + 1e-7)
+        
+        # Apply decay
+        if method == 'linear':
+            # Linear decay
+            decay = np.where(iou > iou_threshold, 1 - iou, 1.0)
+        else:  # gaussian
+            # Gaussian decay
+            decay = np.exp(-(iou * iou) / sigma)
+        
+        scores[1:] = scores[1:] * decay
+        
+        # Remove processed box
+        boxes = boxes[1:]
+        scores = scores[1:]
+        indices = indices[1:]
+        
+        # Re-sort by updated scores
+        sorted_indices = np.argsort(scores)[::-1]
+        boxes = boxes[sorted_indices]
+        scores = scores[sorted_indices]
+        indices = indices[sorted_indices]
+    
+    return np.array(keep), scores
+
+
+def soft_nms_tensorflow(boxes: tf.Tensor,
+                        scores: tf.Tensor,
+                        method: str = 'gaussian',
+                        sigma: float = 0.5,
+                        iou_threshold: float = 0.3,
+                        max_detections: int = 100) -> tf.Tensor:
+    """
+    TensorFlow implementation of Soft-NMS.
+    """
+    N = tf.shape(boxes)[0]
+    
+    # Sort by scores
+    sorted_indices = tf.argsort(scores, direction='DESCENDING')
+    boxes = tf.gather(boxes, sorted_indices)
+    scores = tf.gather(scores, sorted_indices)
+    
+    keep = tf.TensorArray(tf.int32, size=0, dynamic_size=True)
+    keep_count = 0
+    
+    def condition(i, boxes, scores, keep, keep_count):
+        return tf.less(i, max_detections) & tf.greater(tf.shape(boxes)[0], 0)
+    
+    def body(i, boxes, scores, keep, keep_count):
+        # Get current box
+        current_box = boxes[0]
+        current_score = scores[0]
+        
+        # Add to keep
+        keep = keep.write(keep_count, sorted_indices[i])
+        keep_count = keep_count + 1
+        
+        # Compute IoU with remaining
+        remaining_boxes = boxes[1:]
+        
+        x1 = tf.maximum(current_box[0], remaining_boxes[:, 0])
+        y1 = tf.maximum(current_box[1], remaining_boxes[:, 1])
+        x2 = tf.minimum(current_box[2], remaining_boxes[:, 2])
+        y2 = tf.minimum(current_box[3], remaining_boxes[:, 3])
+        
+        intersect_w = tf.maximum(0.0, x2 - x1)
+        intersect_h = tf.maximum(0.0, y2 - y1)
+        intersect_area = intersect_w * intersect_h
+        
+        current_area = (current_box[2] - current_box[0]) * (current_box[3] - current_box[1])
+        remaining_areas = (remaining_boxes[:, 2] - remaining_boxes[:, 0]) * \
+                         (remaining_boxes[:, 3] - remaining_boxes[:, 1])
+        
+        union_area = current_area + remaining_areas - intersect_area
+        iou = intersect_area / (union_area + 1e-7)
+        
+        # Apply decay
+        if method == 'linear':
+            decay = tf.where(iou > iou_threshold, 1.0 - iou, tf.ones_like(iou))
+        else:
+            decay = tf.exp(-tf.square(iou) / sigma)
+        
+        new_scores = scores[1:] * decay
+        
+        # Filter low scores
+        valid_mask = new_scores > 0.001
+        new_boxes = tf.boolean_mask(remaining_boxes, valid_mask)
+        new_scores = tf.boolean_mask(new_scores, valid_mask)
+        
+        return i + 1, new_boxes, new_scores, keep, keep_count
+    
+    _, _, _, keep, _ = tf.while_loop(
+        condition, body,
+        [0, boxes, scores, keep, 0],
+        shape_invariants=[
+            tf.TensorShape([]),
+            tf.TensorShape([None, 4]),
+            tf.TensorShape([None]),
+            tf.TensorShape(None),
+            tf.TensorShape([])
+        ]
+    )
+    
+    return keep.stack()
+
+
+# =============================================================================
+# Section 2: DIoU-NMS Implementation
+# =============================================================================
+
+def diou_nms_numpy(boxes: np.ndarray,
+                   scores: np.ndarray,
+                   iou_threshold: float = 0.5,
+                   beta: float = 0.6,
+                   max_detections: int = 100) -> np.ndarray:
+    """
+    DIoU-NMS: Incorporates center point distance.
+    
+    Args:
+        boxes: Bounding boxes [N, 4]
+        scores: Confidence scores [N]
+        iou_threshold: IoU threshold
+        beta: Weight for DIoU term
+        max_detections: Maximum detections
+    
+    Returns:
+        Indices of kept boxes
+    """
+    indices = np.argsort(scores)[::-1]
+    keep = []
+    
+    while len(indices) > 0 and len(keep) < max_detections:
+        current = indices[0]
+        keep.append(current)
+        
+        if len(indices) == 1:
+            break
+        
+        current_box = boxes[current]
+        remaining_boxes = boxes[indices[1:]]
+        
+        # Calculate IoU
+        x1 = np.maximum(current_box[0], remaining_boxes[:, 0])
+        y1 = np.maximum(current_box[1], remaining_boxes[:, 1])
+        x2 = np.minimum(current_box[2], remaining_boxes[:, 2])
+        y2 = np.minimum(current_box[3], remaining_boxes[:, 3])
+        
+        intersect_w = np.maximum(0, x2 - x1)
+        intersect_h = np.maximum(0, y2 - y1)
+        intersect_area = intersect_w * intersect_h
+        
+        current_area = (current_box[2] - current_box[0]) * (current_box[3] - current_box[1])
+        remaining_areas = (remaining_boxes[:, 2] - remaining_boxes[:, 0]) * \
+                         (remaining_boxes[:, 3] - remaining_boxes[:, 1])
+        
+        union_area = current_area + remaining_areas - intersect_area
+        iou = intersect_area / (union_area + 1e-7)
+        
+        # Calculate center distance
+        current_center = np.array([(current_box[0] + current_box[2]) / 2,
+                                   (current_box[1] + current_box[3]) / 2])
+        remaining_centers = np.stack([
+            (remaining_boxes[:, 0] + remaining_boxes[:, 2]) / 2,
+            (remaining_boxes[:, 1] + remaining_boxes[:, 3]) / 2
+        ], axis=1)
+        
+        center_dist = np.sqrt(np.sum((remaining_centers - current_center) ** 2, axis=1))
+        
+        # Calculate diagonal of enclosing box
+        c_x1 = np.minimum(current_box[0], remaining_boxes[:, 0])
+        c_y1 = np.minimum(current_box[1], remaining_boxes[:, 1])
+        c_x2 = np.maximum(current_box[2], remaining_boxes[:, 2])
+        c_y2 = np.maximum(current_box[3], remaining_boxes[:, 3])
+        
+        c_diag = np.sqrt((c_x2 - c_x1) ** 2 + (c_y2 - c_y1) ** 2)
+        
+        # DIoU = IoU - center_dist^2 / c_diag^2
+        diou = iou - center_dist ** 2 / (c_diag ** 2 + 1e-7)
+        
+        # Suppression criteria: use DIoU instead of IoU
+        # Higher DIoU means boxes are closer (both in overlap and center)
+        mask = diou < iou_threshold
+        indices = indices[1:][mask]
+    
+    return np.array(keep)
+
+
+# =============================================================================
+# Section 3: Comparison and Analysis
+# =============================================================================
+
+def compare_nms_variants(boxes: np.ndarray,
+                         scores: np.ndarray,
+                         classes: np.ndarray = None):
+    """
+    Compare different NMS variants.
+    """
+    print("\n" + "=" * 60)
+    print("NMS Variants Comparison")
+    print("=" * 60)
+    
+    # Standard NMS
+    keep_standard = nms_numpy(boxes, scores, iou_threshold=0.5)
+    print(f"\nStandard NMS: {len(keep_standard)} detections kept")
+    
+    # Soft-NMS (Gaussian)
+    keep_soft_g, scores_soft_g = soft_nms_numpy(
+        boxes, scores, method='gaussian', sigma=0.5
+    )
+    print(f"Soft-NMS (Gaussian): {len(keep_soft_g)} detections kept")
+    
+    # Soft-NMS (Linear)
+    keep_soft_l, scores_soft_l = soft_nms_numpy(
+        boxes, scores, method='linear', iou_threshold=0.3
+    )
+    print(f"Soft-NMS (Linear): {len(keep_soft_l)} detections kept")
+    
+    # DIoU-NMS
+    keep_diou = diou_nms_numpy(boxes, scores, iou_threshold=0.5)
+    print(f"DIoU-NMS: {len(keep_diou)} detections kept")
+    
+    # Compare kept detections
+    print("\n" + "-" * 40)
+    print("Overlap Analysis:")
+    
+    standard_set = set(keep_standard)
+    soft_g_set = set(keep_soft_g)
+    soft_l_set = set(keep_soft_l)
+    diou_set = set(keep_diou)
+    
+    print(f"  Standard ∩ Soft-Gaussian: {len(standard_set & soft_g_set)}")
+    print(f"  Standard ∩ DIoU: {len(standard_set & diou_set)}")
+    print(f"  Unique to Soft-Gaussian: {len(soft_g_set - standard_set)}")
+    print(f"  Unique to DIoU: {len(diou_set - standard_set)}")
+    
+    return {
+        'standard': keep_standard,
+        'soft_gaussian': keep_soft_g,
+        'soft_linear': keep_soft_l,
+        'diou': keep_diou
+    }
+
+
+def visualize_nms_comparison(boxes: np.ndarray,
+                             scores: np.ndarray,
+                             classes: np.ndarray,
+                             results: dict):
+    """
+    Visualize comparison of NMS variants.
+    """
+    fig, axes = plt.subplots(2, 2, figsize=(16, 16))
+    axes = axes.flatten()
+    
+    titles = [
+        f"Standard NMS ({len(results['standard'])})",
+        f"Soft-NMS Gaussian ({len(results['soft_gaussian'])})",
+        f"Soft-NMS Linear ({len(results['soft_linear'])})",
+        f"DIoU-NMS ({len(results['diou'])})",
+    ]
+    
+    colors = plt.cm.rainbow(np.linspace(0, 1, 5))
+    
+    for ax, (key, keep_indices), title in zip(axes, results.items(), titles):
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.set_aspect('equal')
+        ax.invert_yaxis()
+        
+        kept_boxes = boxes[keep_indices]
+        kept_classes = classes[keep_indices]
+        
+        for box, cls in zip(kept_boxes, kept_classes):
+            color = colors[cls % 5]
+            x_min, y_min, x_max, y_max = box
+            width = x_max - x_min
+            height = y_max - y_min
+            
+            rect = patches.Rectangle(
+                (x_min, y_min), width, height,
+                linewidth=2, edgecolor=color, facecolor='none'
+            )
+            ax.add_patch(rect)
+        
+        ax.set_title(title)
+        ax.set_xlabel('x')
+        ax.set_ylabel('y')
+    
+    plt.tight_layout()
+    plt.show()
+
+
+# =============================================================================
+# Main Execution
+# =============================================================================
+
+if __name__ == "__main__":
+    print("\n" + "=" * 70)
+    print("Lab 6.6: Soft-NMS and Advanced Variants")
+    print("=" * 70)
+    
+    # Generate test data with overlapping detections
+    print("\nGenerating test detections with overlaps...")
+    boxes, scores, classes = generate_test_detections(num_detections=100)
+    
+    # Compare NMS variants
+    results = compare_nms_variants(boxes, scores, classes)
+    
+    # Visualize comparison
+    print("\nGenerating visualization...")
+    visualize_nms_comparison(boxes, scores, classes, results)
+    
+    print("\n" + "=" * 70)
+    print("Lab 6.6 Complete!")
+    print("=" * 70)
+```
+
+---

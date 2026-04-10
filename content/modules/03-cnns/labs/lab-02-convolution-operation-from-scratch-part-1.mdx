@@ -1,0 +1,360 @@
+---
+title: "Convolution Operation from Scratch - Part 1"
+module: 3
+labNumber: 2
+difficulty: "easy"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Convolution Operation from Scratch - Part 1
+
+## Objectives
+- Understand the mathematical foundation of convolution
+- Implement 2D convolution using NumPy
+- Visualize how kernels extract features from images
+
+## Prerequisites
+- NumPy basics
+- Understanding of image representation (height, width, channels)
+
+## Theory
+
+The 2D convolution operation is defined as:
+
+```
+(I * K)(i, j) = Σ_m Σ_n I(i+m, j+n) × K(m, n)
+```
+
+Where:
+- I is the input image
+- K is the kernel/filter
+- (i, j) are the output coordinates
+
+## Implementation
+
+```python
+"""
+Lab 3.1: Convolution Operation from Scratch - Part 1
+Implementing 2D convolution using NumPy
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+from PIL import Image
+import tensorflow as tf
+
+# =============================================================================
+# Section 1: Basic 2D Convolution Implementation
+# =============================================================================
+
+def conv2d_single_channel(image, kernel, stride=1, padding=0):
+    """
+    Perform 2D convolution on a single-channel image.
+    
+    Args:
+        image: 2D numpy array (H, W)
+        kernel: 2D numpy array (kH, kW)
+        stride: Step size for sliding window
+        padding: Number of pixels to pad around the image
+    
+    Returns:
+        output: 2D numpy array after convolution
+    """
+    # Add padding if specified
+    if padding > 0:
+        image = np.pad(image, padding, mode='constant', constant_values=0)
+    
+    # Get dimensions
+    img_h, img_w = image.shape
+    kernel_h, kernel_w = kernel.shape
+    
+    # Calculate output dimensions
+    # Formula: output_size = floor((input_size + 2*padding - kernel_size) / stride) + 1
+    out_h = (img_h - kernel_h) // stride + 1
+    out_w = (img_w - kernel_w) // stride + 1
+    
+    # Initialize output
+    output = np.zeros((out_h, out_w))
+    
+    # Perform convolution
+    for i in range(out_h):
+        for j in range(out_w):
+            # Extract the region of interest
+            i_start = i * stride
+            j_start = j * stride
+            region = image[i_start:i_start + kernel_h, 
+                          j_start:j_start + kernel_w]
+            
+            # Element-wise multiplication and sum
+            output[i, j] = np.sum(region * kernel)
+    
+    return output
+
+
+# =============================================================================
+# Section 2: Test with Simple Example
+# =============================================================================
+
+# Create a simple test image (5x5)
+test_image = np.array([
+    [1, 1, 1, 0, 0],
+    [0, 1, 1, 1, 0],
+    [0, 0, 1, 1, 1],
+    [0, 0, 1, 1, 0],
+    [0, 1, 1, 0, 0]
+], dtype=np.float32)
+
+# Define an edge detection kernel (Sobel-like)
+edge_kernel = np.array([
+    [-1, -1, -1],
+    [-1,  8, -1],
+    [-1, -1, -1]
+], dtype=np.float32)
+
+print("=" * 60)
+print("CONVOLUTION FROM SCRATCH - BASIC EXAMPLE")
+print("=" * 60)
+
+print("\nTest Image (5x5):")
+print(test_image)
+
+print("\nEdge Detection Kernel (3x3):")
+print(edge_kernel)
+
+# Apply convolution
+result = conv2d_single_channel(test_image, edge_kernel, stride=1, padding=0)
+
+print("\nConvolution Result (3x3):")
+print(result)
+
+print(f"\nInput shape: {test_image.shape}")
+print(f"Kernel shape: {edge_kernel.shape}")
+print(f"Output shape: {result.shape}")
+
+
+# =============================================================================
+# Section 3: Visualize Different Kernels
+# =============================================================================
+
+def visualize_kernels():
+    """Visualize the effect of different convolution kernels."""
+    
+    # Create a sample image with patterns
+    sample_img = np.zeros((50, 50))
+    sample_img[10:40, 10:20] = 1  # Vertical bar
+    sample_img[10:40, 30:40] = 1  # Another vertical bar
+    sample_img[20:30, 10:40] = 0.5  # Horizontal bar
+    
+    # Define different kernels
+    kernels = {
+        'Identity': np.array([[0, 0, 0], [0, 1, 0], [0, 0, 0]]),
+        'Edge Detection': np.array([[-1, -1, -1], [-1, 8, -1], [-1, -1, -1]]),
+        'Sharpen': np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]]),
+        'Horizontal Edges': np.array([[-1, -2, -1], [0, 0, 0], [1, 2, 1]]),
+        'Vertical Edges': np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]]),
+        'Gaussian Blur': np.array([[1, 2, 1], [2, 4, 2], [1, 2, 1]]) / 16
+    }
+    
+    fig, axes = plt.subplots(2, 4, figsize=(16, 8))
+    axes = axes.flatten()
+    
+    # Show original
+    axes[0].imshow(sample_img, cmap='gray')
+    axes[0].set_title('Original Image')
+    axes[0].axis('off')
+    
+    # Apply each kernel
+    for idx, (name, kernel) in enumerate(kernels.items(), 1):
+        result = conv2d_single_channel(sample_img, kernel, stride=1, padding=1)
+        axes[idx].imshow(result, cmap='gray')
+        axes[idx].set_title(f'{name}')
+        axes[idx].axis('off')
+    
+    plt.tight_layout()
+    plt.savefig('/mnt/okcomputer/output/lab31_kernel_visualization.png', dpi=150)
+    plt.show()
+    print("\nVisualization saved to: /mnt/okcomputer/output/lab31_kernel_visualization.png")
+
+visualize_kernels()
+
+
+# =============================================================================
+# Section 4: Multi-Channel Convolution
+# =============================================================================
+
+def conv2d_multi_channel(image, kernels, stride=1, padding=0):
+    """
+    Perform 2D convolution on multi-channel image with multiple filters.
+    
+    Args:
+        image: 3D numpy array (H, W, C_in)
+        kernels: 4D numpy array (kH, kW, C_in, C_out)
+        stride: Step size
+        padding: Padding size
+    
+    Returns:
+        output: 3D numpy array (H_out, W_out, C_out)
+    """
+    if padding > 0:
+        image = np.pad(image, ((padding, padding), (padding, padding), (0, 0)), 
+                      mode='constant', constant_values=0)
+    
+    img_h, img_w, img_c = image.shape
+    kernel_h, kernel_w, kernel_c_in, kernel_c_out = kernels.shape
+    
+    assert img_c == kernel_c_in, "Input channels must match kernel input channels"
+    
+    out_h = (img_h - kernel_h) // stride + 1
+    out_w = (img_w - kernel_w) // stride + 1
+    
+    output = np.zeros((out_h, out_w, kernel_c_out))
+    
+    # For each output channel
+    for out_c in range(kernel_c_out):
+        # For each spatial position
+        for i in range(out_h):
+            for j in range(out_w):
+                i_start = i * stride
+                j_start = j * stride
+                region = image[i_start:i_start + kernel_h, 
+                              j_start:j_start + kernel_w, :]
+                
+                # Sum over all input channels
+                output[i, j, out_c] = np.sum(region * kernels[:, :, :, out_c])
+    
+    return output
+
+
+# Test multi-channel convolution
+print("\n" + "=" * 60)
+print("MULTI-CHANNEL CONVOLUTION TEST")
+print("=" * 60)
+
+# Create a 3-channel image (RGB-like)
+rgb_image = np.random.randn(10, 10, 3).astype(np.float32)
+
+# Create 2 filters, each 3x3 with 3 input channels
+multi_kernels = np.random.randn(3, 3, 3, 2).astype(np.float32)
+
+multi_result = conv2d_multi_channel(rgb_image, multi_kernels, stride=1, padding=0)
+
+print(f"\nInput shape: {rgb_image.shape}")
+print(f"Kernels shape: {multi_kernels.shape}")
+print(f"Output shape: {multi_result.shape}")
+print(f"\nExpected output shape: (8, 8, 2)")
+
+
+# =============================================================================
+# Section 5: Compare with TensorFlow
+# =============================================================================
+
+def compare_with_tf():
+    """Compare our implementation with TensorFlow's convolution."""
+    
+    print("\n" + "=" * 60)
+    print("COMPARISON WITH TENSORFLOW")
+    print("=" * 60)
+    
+    # Create test data
+    test_img = np.random.randn(1, 28, 28, 1).astype(np.float32)
+    test_kernel = np.random.randn(3, 3, 1, 1).astype(np.float32)
+    
+    # Our implementation
+    our_result = conv2d_single_channel(test_img[0, :, :, 0], 
+                                       test_kernel[:, :, 0, 0], 
+                                       stride=1, padding=0)
+    
+    # TensorFlow implementation
+    tf_result = tf.nn.conv2d(test_img, test_kernel, strides=1, padding='VALID')
+    tf_result = tf_result[0, :, :, 0].numpy()
+    
+    print(f"\nOur result shape: {our_result.shape}")
+    print(f"TF result shape: {tf_result.shape}")
+    
+    # Check if results are close
+    diff = np.abs(our_result - tf_result)
+    print(f"\nMax absolute difference: {np.max(diff):.10f}")
+    print(f"Mean absolute difference: {np.mean(diff):.10f}")
+    
+    if np.max(diff) < 1e-5:
+        print("\n✓ Results match! Our implementation is correct.")
+    else:
+        print("\n✗ Results differ. Check implementation.")
+
+compare_with_tf()
+
+
+# =============================================================================
+# Section 6: Exercises
+# =============================================================================
+
+print("\n" + "=" * 60)
+print("EXERCISES")
+print("=" * 60)
+
+print("""
+Exercise 1: Implement Average Pooling
+- Create a function that performs average pooling
+- Compare with max pooling
+
+Exercise 2: Dilated Convolution
+- Implement convolution with dilation rate > 1
+- Visualize the receptive field
+
+Exercise 3: Separable Convolution
+- Implement depthwise separable convolution
+- Compare parameter count with standard convolution
+
+Exercise 4: Strided Convolution
+- Experiment with different stride values
+- Observe how output size changes
+""")
+
+
+# =============================================================================
+# Section 7: Exercise Solutions
+# =============================================================================
+
+def average_pooling(image, pool_size=2, stride=2):
+    """Exercise 1 Solution: Average Pooling"""
+    img_h, img_w = image.shape
+    out_h = (img_h - pool_size) // stride + 1
+    out_w = (img_w - pool_size) // stride + 1
+    
+    output = np.zeros((out_h, out_w))
+    
+    for i in range(out_h):
+        for j in range(out_w):
+            i_start = i * stride
+            j_start = j * stride
+            region = image[i_start:i_start + pool_size, 
+                          j_start:j_start + pool_size]
+            output[i, j] = np.mean(region)
+    
+    return output
+
+
+# Test average pooling
+print("\n" + "-" * 40)
+print("Exercise 1 Solution: Average Pooling")
+print("-" * 40)
+
+test_pool_img = np.array([
+    [1, 2, 3, 4],
+    [5, 6, 7, 8],
+    [9, 10, 11, 12],
+    [13, 14, 15, 16]
+], dtype=np.float32)
+
+pooled = average_pooling(test_pool_img, pool_size=2, stride=2)
+print(f"\nInput:\n{test_pool_img}")
+print(f"\nAverage Pooled (2x2):\n{pooled}")
+
+print("\n" + "=" * 60)
+print("Lab 3.1 Complete!")
+print("=" * 60)
+```
+
+---
+
+<a name="lab-32"></a>

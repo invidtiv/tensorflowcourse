@@ -1,0 +1,171 @@
+---
+title: "Seq2Seq for Multi-step Forecasting"
+module: 9
+labNumber: 15
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Seq2Seq for Multi-step Forecasting
+
+### Complete Implementation
+
+```python
+"""
+Lab 5.3: Seq2Seq for Multi-step Forecasting
+Topic: Encoder-Decoder Architecture
+"""
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics import mean_squared_error, mean_absolute_error
+
+np.random.seed(42)
+tf.random.set_seed(42)
+
+# Generate and Prepare Data
+print("=" * 60)
+print("STEP 1: Generating Data")
+print("=" * 60)
+
+def generate_data(n_points=1000):
+    t = np.arange(n_points)
+    trend = 0.01 * t
+    seasonal = 10 * np.sin(2 * np.pi * t / 50)
+    noise = np.random.normal(0, 2, n_points)
+    return 100 + trend + seasonal + noise
+
+data = generate_data(1000)
+scaler = MinMaxScaler()
+scaled_data = scaler.fit_transform(data.reshape(-1, 1)).flatten()
+
+# Create Seq2Seq Windows
+print("\n" + "=" * 60)
+print("STEP 2: Creating Seq2Seq Windows")
+print("=" * 60)
+
+def create_seq2seq_windows(data, encoder_size, decoder_size):
+    X_encoder, X_decoder, y = [], [], []
+    for i in range(len(data) - encoder_size - decoder_size + 1):
+        X_encoder.append(data[i:(i + encoder_size)])
+        decoder_input = np.zeros(decoder_size)
+        decoder_input[0] = data[i + encoder_size - 1]
+        X_decoder.append(decoder_input)
+        y.append(data[(i + encoder_size):(i + encoder_size + decoder_size)])
+    return (np.array(X_encoder), np.array(X_decoder)), np.array(y)
+
+encoder_size = 60
+decoder_size = 7
+(X_encoder, X_decoder), y = create_seq2seq_windows(scaled_data, encoder_size, decoder_size)
+X_encoder = X_encoder.reshape(X_encoder.shape[0], X_encoder.shape[1], 1)
+X_decoder = X_decoder.reshape(X_decoder.shape[0], X_decoder.shape[1], 1)
+
+print(f"X_encoder shape: {X_encoder.shape}")
+print(f"X_decoder shape: {X_decoder.shape}")
+print(f"y shape: {y.shape}")
+
+train_size = int(0.7 * len(X_encoder))
+X_enc_train, X_dec_train, y_train = X_encoder[:train_size], X_decoder[:train_size], y[:train_size]
+X_enc_val, X_dec_val, y_val = X_encoder[train_size:int(0.85*len(X_encoder))], X_decoder[train_size:int(0.85*len(X_encoder))], y[train_size:int(0.85*len(X_encoder))]
+X_enc_test, X_dec_test, y_test = X_encoder[int(0.85*len(X_encoder)):], X_decoder[int(0.85*len(X_encoder)):], y[int(0.85*len(X_encoder)):]
+
+# Build Seq2Seq Model
+print("\n" + "=" * 60)
+print("STEP 3: Building Seq2Seq Model")
+print("=" * 60)
+
+def build_seq2seq_model(encoder_size, decoder_size, n_features=1):
+    # Encoder
+    encoder_inputs = layers.Input(shape=(encoder_size, n_features))
+    encoder_lstm = layers.LSTM(64, return_state=True)
+    encoder_outputs, state_h, state_c = encoder_lstm(encoder_inputs)
+    encoder_states = [state_h, state_c]
+    # Decoder
+    decoder_inputs = layers.Input(shape=(decoder_size, n_features))
+    decoder_lstm = layers.LSTM(64, return_sequences=True, return_state=True)
+    decoder_outputs, _, _ = decoder_lstm(decoder_inputs, initial_state=encoder_states)
+    # Output layer
+    decoder_dense = layers.TimeDistributed(layers.Dense(1))
+    decoder_outputs = decoder_dense(decoder_outputs)
+    decoder_outputs = layers.Reshape((decoder_size,))(decoder_outputs)
+    model = keras.Model([encoder_inputs, decoder_inputs], decoder_outputs)
+    model.compile(optimizer='adam', loss='mse', metrics=['mae'])
+    return model
+
+model_seq2seq = build_seq2seq_model(encoder_size, decoder_size)
+model_seq2seq.summary()
+
+# Train Seq2Seq Model
+print("\n" + "=" * 60)
+print("STEP 4: Training Seq2Seq Model")
+print("=" * 60)
+
+early_stop = keras.callbacks.EarlyStopping(
+    monitor='val_loss', patience=10, restore_best_weights=True
+)
+
+history = model_seq2seq.fit(
+    [X_enc_train, X_dec_train], y_train,
+    validation_data=([X_enc_val, X_dec_val], y_val),
+    epochs=50,
+    batch_size=32,
+    callbacks=[early_stop],
+    verbose=1
+)
+
+# Plot training history
+plt.figure(figsize=(10, 4))
+plt.plot(history.history['loss'], label='Train')
+plt.plot(history.history['val_loss'], label='Validation')
+plt.title('Seq2Seq Training Loss')
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.savefig('/mnt/okcomputer/output/lab5_3_seq2seq_history.png', dpi=150)
+plt.show()
+
+# Evaluate Seq2Seq Model
+print("\n" + "=" * 60)
+print("STEP 5: Evaluating Seq2Seq Model")
+print("=" * 60)
+
+y_pred = model_seq2seq.predict([X_enc_test, X_dec_test])
+y_test_inv = scaler.inverse_transform(y_test)
+y_pred_inv = scaler.inverse_transform(y_pred)
+
+print("\nMetrics per horizon step:")
+for i in range(decoder_size):
+    mse = mean_squared_error(y_test_inv[:, i], y_pred_inv[:, i])
+    mae = mean_absolute_error(y_test_inv[:, i], y_pred_inv[:, i])
+    print(f"Step {i+1}: MSE={mse:.4f}, MAE={mae:.4f}")
+
+# Visualize predictions
+fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+axes = axes.flatten()
+
+for idx, step in enumerate([0, 2, 4, 6]):
+    axes[idx].plot(y_test_inv[:50, step], label='Actual', linewidth=2)
+    axes[idx].plot(y_pred_inv[:50, step], label='Predicted', linewidth=2, alpha=0.8)
+    axes[idx].set_title(f'Seq2Seq Horizon Step {step+1}')
+    axes[idx].legend()
+    axes[idx].grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.savefig('/mnt/okcomputer/output/lab5_3_seq2seq_predictions.png', dpi=150)
+plt.show()
+
+# Save model
+model_seq2seq.save('/mnt/okcomputer/output/lab5_3_seq2seq_model.h5')
+
+print("\n" + "=" * 60)
+print("Lab 5.3 Complete!")
+print("=" * 60)
+```
+
+---
+
+# Part 6: Anomaly Detection

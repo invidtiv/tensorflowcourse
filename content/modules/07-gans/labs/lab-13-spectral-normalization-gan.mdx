@@ -1,0 +1,330 @@
+---
+title: "Spectral Normalization GAN"
+module: 7
+labNumber: 13
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Spectral Normalization GAN
+
+## Objectives
+- Implement Spectral Normalization for GANs
+- Constrain Lipschitz constant through spectral norm
+- Apply to both generator and discriminator
+- Compare with other stabilization techniques
+
+## Complete Implementation
+
+```python
+"""
+Lab 7.12: Spectral Normalization GAN (SNGAN)
+==============================================
+GAN with Spectral Normalization for training stability.
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+from tensorflow import keras
+from tensorflow.keras import layers
+import os
+
+os.makedirs('sngan_output', exist_ok=True)
+
+# =============================================================================
+# Part 1: Spectral Normalization Layer
+# =============================================================================
+
+class SpectralNormalization(layers.Wrapper):
+    """
+    Spectral Normalization wrapper for Dense and Conv2D layers.
+    
+    Constrains the spectral norm (largest singular value) of the weight matrix
+    to be 1, enforcing the Lipschitz constraint.
+    """
+    
+    def __init__(self, layer, iteration=1, **kwargs):
+        super().__init__(layer, **kwargs)
+        self.iteration = iteration
+    
+    def build(self, input_shape):
+        super().build(input_shape)
+        
+        if hasattr(self.layer, 'kernel'):
+            # Get the weight tensor
+            self.w = self.layer.kernel
+            self.w_shape = self.w.shape.as_list()
+            
+            # Initialize u vector for power iteration
+            # u is a random vector with shape (1, output_dim)
+            self.u = self.add_weight(
+                shape=(1, self.w_shape[-1]),
+                initializer='random_normal',
+                trainable=False,
+                name='sn_u',
+                dtype=tf.float32
+            )
+    
+    def call(self, inputs, training=None):
+        if not hasattr(self.layer, 'kernel'):
+            return self.layer(inputs)
+        
+        # Get the weight matrix
+        w = self.layer.kernel
+        
+        # Reshape for different layer types
+        if len(self.w_shape) == 2:  # Dense layer
+            w_matrix = w
+        else:  # Conv2D layer
+            # Reshape conv kernel to 2D
+            w_matrix = tf.reshape(w, [-1, self.w_shape[-1]])
+        
+        # Power iteration to estimate spectral norm
+        u_hat = self.u
+        for _ in range(self.iteration):
+            # v_hat = l2_normalize(w^T * u)
+            v_hat = tf.nn.l2_normalize(tf.matmul(u_hat, w_matrix, transpose_b=True))
+            # u_hat = l2_normalize(w * v)
+            u_hat = tf.nn.l2_normalize(tf.matmul(v_hat, w_matrix))
+        
+        # Calculate spectral norm: sigma = u^T * w * v
+        sigma = tf.matmul(tf.matmul(v_hat, w_matrix), u_hat, transpose_b=True)
+        
+        # Normalize weight
+        w_norm = w / sigma
+        
+        # Assign normalized weight to layer
+        self.layer.kernel = w_norm
+        
+        # Update u for next iteration
+        self.u.assign(u_hat)
+        
+        return self.layer(inputs)
+
+# =============================================================================
+# Part 2: Build SN-Generator
+# =============================================================================
+
+def build_sn_generator(latent_dim=100):
+    """Build generator with spectral normalization."""
+    noise = keras.Input(shape=(latent_dim,))
+    
+    x = layers.Dense(7 * 7 * 256)(noise)
+    x = layers.Reshape((7, 7, 256))(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.ReLU()(x)
+    
+    x = layers.Conv2DTranspose(128, 5, strides=2, padding='same', use_bias=False)(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.ReLU()(x)
+    
+    x = layers.Conv2DTranspose(64, 5, strides=2, padding='same', use_bias=False)(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.ReLU()(x)
+    
+    # Use spectral normalization on output layer
+    x = SpectralNormalization(
+        layers.Conv2D(1, 5, padding='same', activation='tanh')
+    )(x)
+    
+    model = keras.Model(noise, x, name='SN_Generator')
+    return model
+
+# =============================================================================
+# Part 3: Build SN-Discriminator
+# =============================================================================
+
+def build_sn_discriminator():
+    """Build discriminator with spectral normalization."""
+    img = keras.Input(shape=(28, 28, 1))
+    
+    # Apply SN to all conv layers
+    x = SpectralNormalization(
+        layers.Conv2D(64, 5, strides=2, padding='same')
+    )(img)
+    x = layers.LeakyReLU(0.2)(x)
+    x = layers.Dropout(0.3)(x)
+    
+    x = SpectralNormalization(
+        layers.Conv2D(128, 5, strides=2, padding='same')
+    )(x)
+    x = layers.LeakyReLU(0.2)(x)
+    x = layers.Dropout(0.3)(x)
+    
+    x = SpectralNormalization(
+        layers.Conv2D(256, 5, strides=2, padding='same')
+    )(x)
+    x = layers.LeakyReLU(0.2)(x)
+    x = layers.Dropout(0.3)(x)
+    
+    x = layers.Flatten()(x)
+    
+    # Use SN on output layer
+    x = SpectralNormalization(layers.Dense(1))(x)
+    
+    model = keras.Model(img, x, name='SN_Discriminator')
+    return model
+
+# =============================================================================
+# Part 4: SNGAN Training Class (Hinge Loss)
+# =============================================================================
+
+class SNGAN(keras.Model):
+    """
+    Spectral Normalization GAN using hinge loss.
+    
+    SNGAN combines spectral normalization with hinge loss for
+    improved training stability.
+    """
+    
+    def __init__(self, generator, discriminator, latent_dim):
+        super().__init__()
+        self.generator = generator
+        self.discriminator = discriminator
+        self.latent_dim = latent_dim
+        
+        # Use Adam optimizer
+        self.g_optimizer = keras.optimizers.Adam(0.0001, beta_1=0.0, beta_2=0.9)
+        self.d_optimizer = keras.optimizers.Adam(0.0001, beta_1=0.0, beta_2=0.9)
+    
+    def compile(self):
+        super().compile()
+    
+    @tf.function
+    def train_step(self, real_images):
+        batch_size = tf.shape(real_images)[0]
+        noise = tf.random.normal([batch_size, self.latent_dim])
+        
+        # ======================================================================
+        # Train Discriminator (Hinge Loss)
+        # ======================================================================
+        with tf.GradientTape() as tape_d:
+            fake_images = self.generator(noise, training=True)
+            
+            real_pred = self.discriminator(real_images, training=True)
+            fake_pred = self.discriminator(fake_images, training=True)
+            
+            # Hinge loss for discriminator
+            d_loss = tf.reduce_mean(tf.nn.relu(1.0 - real_pred)) + \
+                     tf.reduce_mean(tf.nn.relu(1.0 + fake_pred))
+        
+        grads_d = tape_d.gradient(d_loss, self.discriminator.trainable_variables)
+        self.d_optimizer.apply_gradients(
+            zip(grads_d, self.discriminator.trainable_variables)
+        )
+        
+        # ======================================================================
+        # Train Generator (Hinge Loss)
+        # ======================================================================
+        noise = tf.random.normal([batch_size, self.latent_dim])
+        
+        with tf.GradientTape() as tape_g:
+            fake_images = self.generator(noise, training=True)
+            fake_pred = self.discriminator(fake_images, training=True)
+            
+            # Hinge loss for generator
+            g_loss = -tf.reduce_mean(fake_pred)
+        
+        grads_g = tape_g.gradient(g_loss, self.generator.trainable_variables)
+        self.g_optimizer.apply_gradients(
+            zip(grads_g, self.generator.trainable_variables)
+        )
+        
+        return {'d_loss': d_loss, 'g_loss': g_loss}
+
+# =============================================================================
+# Part 5: Train SNGAN
+# =============================================================================
+
+# Load MNIST
+(train_images, _), (_, _) = keras.datasets.mnist.load_data()
+train_images = train_images.reshape(-1, 28, 28, 1).astype('float32')
+train_images = (train_images - 127.5) / 127.5
+
+# Build models
+LATENT_DIM = 100
+generator = build_sn_generator(LATENT_DIM)
+discriminator = build_sn_discriminator()
+
+print("=== SN-Generator ===")
+generator.summary()
+print("\n=== SN-Discriminator ===")
+discriminator.summary()
+
+# Create SNGAN
+sngan = SNGAN(generator, discriminator, LATENT_DIM)
+sngan.compile()
+
+# Prepare dataset
+dataset = tf.data.Dataset.from_tensor_slices(train_images)
+dataset = dataset.shuffle(60000).batch(64, drop_remainder=True)
+
+# Callback
+class SNGAN_Callback(keras.callbacks.Callback):
+    def __init__(self, latent_dim):
+        self.latent_dim = latent_dim
+        self.seed = tf.random.normal([16, latent_dim])
+    
+    def on_epoch_end(self, epoch, logs=None):
+        if (epoch + 1) % 10 == 0:
+            generated = self.model.generator(self.seed, training=False)
+            
+            fig, axes = plt.subplots(4, 4, figsize=(8, 8))
+            for i, ax in enumerate(axes.flat):
+                ax.imshow(generated[i, :, :, 0] * 0.5 + 0.5, cmap='gray')
+                ax.axis('off')
+            plt.suptitle(f'SNGAN Generated Images - Epoch {epoch+1}')
+            plt.tight_layout()
+            plt.savefig(f'sngan_output/sngan_epoch_{epoch+1:03d}.png', dpi=150)
+            plt.close()
+            
+            print(f"Epoch {epoch+1}: D Loss: {logs['d_loss']:.4f}, "
+                  f"G Loss: {logs['g_loss']:.4f}")
+
+# Train
+print("\nStarting SNGAN training...")
+history = sngan.fit(
+    dataset,
+    epochs=100,
+    callbacks=[SNGAN_Callback(LATENT_DIM)],
+    verbose=0
+)
+
+# =============================================================================
+# Part 6: Visualize Results
+# =============================================================================
+
+# Plot losses
+plt.figure(figsize=(10, 5))
+plt.plot(history.history['d_loss'], label='Discriminator', color='blue')
+plt.plot(history.history['g_loss'], label='Generator', color='red')
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
+plt.title('SNGAN Training Losses')
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.savefig('sngan_output/training_losses.png', dpi=150)
+plt.show()
+
+# Generate final samples
+noise = tf.random.normal([64, LATENT_DIM])
+generated = generator(noise, training=False)
+
+fig, axes = plt.subplots(8, 8, figsize=(10, 10))
+for i, ax in enumerate(axes.flat):
+    ax.imshow(generated[i, :, :, 0] * 0.5 + 0.5, cmap='gray')
+    ax.axis('off')
+plt.suptitle('SNGAN Generated Images')
+plt.tight_layout()
+plt.savefig('sngan_output/final_generated.png', dpi=150)
+plt.show()
+
+# Save models
+generator.save('sngan_output/sngan_generator.h5')
+discriminator.save('sngan_output/sngan_discriminator.h5')
+
+print("\n=== SNGAN Training Complete ===")
+```
+
+---

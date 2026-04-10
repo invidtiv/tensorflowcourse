@@ -1,0 +1,1339 @@
+---
+title: "Convolutional Neural Networks"
+module: 3
+moduleId: "03-cnns"
+description: "Learn convolution mathematics, receptive fields, classic architectures (LeNet to Vision Transformers), and transfer learning."
+shortTitle: "CNNs"
+duration: "2 weeks"
+difficulty: "beginner"
+icon: "eye"
+color: "#ec4899"
+prerequisites:
+  - "2"
+objectives:
+  - "Understand convolution operations and receptive fields"
+  - "Implement CNNs from scratch and with Keras"
+  - "Master architecture evolution: LeNet to ResNet to ViT"
+  - "Apply feature visualization and transfer learning"
+  - "Build image classifiers on real datasets"
+source: "content/modules/03-cnns/theory.md"
+generatedBy: "scripts/convert-theory.mjs"
+lastConverted: "2026-04-10T18:28:36.967Z"
+---
+## Module Overview
+
+Convolutional Neural Networks (CNNs) represent one of the most significant breakthroughs in deep learning, enabling machines to achieve superhuman performance in visual perception tasks. This module provides a comprehensive theoretical foundation spanning mathematical principles, architectural evolution, and modern advances in computer vision.
+
+**Learning Objectives:**
+- Master the mathematical foundations of convolution operations in multiple dimensions
+- Understand the theoretical basis for parameter sharing and sparse connectivity
+- Analyze receptive field calculations and their architectural implications
+- Explore the feature hierarchy from low-level edges to high-level semantic concepts
+- Trace the evolution of CNN architectures from LeNet to modern EfficientNet
+- Comprehend gradient flow dynamics in deep networks and ResNet's solutions
+- Apply transfer learning theory for efficient model adaptation
+- Evaluate modern architectures including Vision Transformers
+
+---
+
+# Part 1: Mathematical Foundations of Convolution
+
+## 1.1 The Convolution Operation: Definition and Properties
+
+### 1.1.1 Mathematical Definition
+
+Convolution is a fundamental mathematical operation that combines two functions to produce a third function, expressing how the shape of one is modified by the other. In the context of neural networks, we apply convolution between an input signal (image) and a kernel (filter).
+
+**Continuous 1D Convolution:**
+
+For continuous functions $f$ and $g$, the convolution is defined as:
+
+$$(f * g)(t) = \int_{-\infty}^{\infty} f(\tau) \cdot g(t - \tau) \, d\tau$$
+
+**Discrete 1D Convolution:**
+
+For discrete sequences (more relevant for digital signal processing and neural networks):
+
+$$(f * g)[n] = \sum_{m=-\infty}^{\infty} f[m] \cdot g[n - m]$$
+
+In practice, both sequences are finite, so we have:
+
+$$(f * g)[n] = \sum_{m=0}^{N-1} f[m] \cdot g[n - m]$$
+
+where $N$ is the length of the filter/kernel.
+
+### 1.1.2 2D Convolution for Image Processing
+
+For a 2D input image $I$ of dimensions $H \times W$ and a 2D kernel $K$ of dimensions $k_h \times k_w$:
+
+$$(I * K)[i, j] = \sum_{m=0}^{k_h-1} \sum_{n=0}^{k_w-1} I[i+m, j+n] \cdot K[m, n]$$
+
+More precisely, with proper indexing:
+
+$$(I * K)[i, j] = \sum_{m=-\lfloor k_h/2 \rfloor}^{\lfloor k_h/2 \rfloor} \sum_{n=-\lfloor k_w/2 \rfloor}^{\lfloor k_w/2 \rfloor} I[i-m, j-n] \cdot K[m, n]$$
+
+**Example Calculation:**
+
+Consider a 4×4 input and a 2×2 kernel:
+
+```python
+Input I:          Kernel K:
+[1  2  3  4]      [a  b]
+[5  6  7  8]      [c  d]
+[9  10 11 12]
+[13 14 15 16]
+```
+
+The convolution at position (0,0) with no padding:
+$$(I * K)[0,0] = 1 \cdot a + 2 \cdot b + 5 \cdot c + 6 \cdot d$$
+
+### 1.1.3 3D Convolution for Volumetric Data and Video
+
+For 3D data (e.g., video with time dimension, volumetric medical images, or RGB images treated as 3D):
+
+$$(I * K)[i, j, k] = \sum_{m=0}^{k_d-1} \sum_{n=0}^{k_h-1} \sum_{p=0}^{k_w-1} I[i+m, j+n, k+p] \cdot K[m, n, p]$$
+
+**Applications of 3D Convolution:**
+- **Video Analysis:** Temporal dimension + spatial dimensions
+- **Medical Imaging:** CT/MRI volumetric scans
+- **RGB Images:** When treating color channels as depth (though typically handled differently)
+
+### 1.1.4 Convolution Properties
+
+| Property | Mathematical Expression | Neural Network Implication |
+|----------|------------------------|---------------------------|
+| **Commutativity** | $f * g = g * f$ | Order of operations doesn't matter |
+| **Associativity** | $(f * g) * h = f * (g * h)$ | Cascaded convolutions equivalent to single larger kernel |
+| **Distributivity** | $f * (g + h) = f * g + f * h$ | Parallel convolutions can be combined |
+| **Linearity** | $a(f * g) = (af) * g = f * (ag)$ | Scaling propagates through layers |
+
+### 1.1.5 Convolution in the Frequency Domain
+
+By the Convolution Theorem:
+
+$$\mathcal{F}\{f * g\} = \mathcal{F}\{f\} \cdot \mathcal{F}\{g\}$$
+
+where $\mathcal{F}$ denotes the Fourier Transform. This means:
+- Convolution in spatial domain = Point-wise multiplication in frequency domain
+- Large kernels can sometimes be computed more efficiently via FFT for very large inputs
+
+---
+
+## 1.2 Cross-Correlation vs. Convolution in Deep Learning
+
+### 1.2.1 The Critical Distinction
+
+**True Mathematical Convolution:**
+$$(I * K)[i, j] = \sum_{m} \sum_{n} I[i-m, j-n] \cdot K[m, n]$$
+
+**Cross-Correlation (what most CNNs actually implement):**
+$$(I \star K)[i, j] = \sum_{m} \sum_{n} I[i+m, j+n] \cdot K[m, n]$$
+
+The key difference: **Convolution flips the kernel both horizontally and vertically**, while cross-correlation does not.
+
+### 1.2.2 Why Deep Learning Uses Cross-Correlation
+
+Despite the name "convolutional neural networks," most implementations actually use **cross-correlation**:
+
+1. **Learned Filters:** Since kernels are learned from data, the network can learn the flipped version if needed
+2. **Computational Efficiency:** Avoiding the flip operation saves computation
+3. **Equivalence for Learning:** For a learned kernel $K$, there exists an equivalent $K'$ such that cross-correlation with $K$ equals convolution with $K'$
+
+### 1.2.3 Mathematical Equivalence
+
+If we define the flipped kernel:
+$$K_{flipped}[m, n] = K[-m, -n]$$
+
+Then:
+$$(I * K)[i, j] = (I \star K_{flipped})[i, j]$$
+
+Since $K$ is learned, the network automatically learns the appropriate orientation.
+
+### 1.2.4 When the Distinction Matters
+
+| Scenario | Importance |
+|----------|-----------|
+| Hand-designed filters (Sobel, Gaussian) | Critical - must use proper convolution |
+| Pre-trained model weights | Important for weight transfer |
+| Signal processing applications | Critical for phase preservation |
+| Standard CNN training | Negligible - learned weights compensate |
+
+<div class="my-6 rounded-xl border border-white/[0.08] bg-surface-1/30 px-4 py-3 callout callout-tip" data-callout-type="tip" data-callout-label="Key Insight">
+  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neon-cyan mb-1">Key Insight</div>
+  <div class="text-text-secondary leading-relaxed">The distinction becomes important when: - Using hand-crafted filters (e.g., edge detectors) - Analyzing filter responses theoretically - Implementing specific signal processing operations</div>
+</div>
+
+---
+
+## 1.3 Stride, Padding, and Output Dimension Calculations
+
+### 1.3.1 Output Dimension Formulas
+
+For an input of size $W_{in} \times H_{in}$, kernel size $K$, padding $P$, and stride $S$:
+
+$$W_{out} = \left\lfloor \frac{W_{in} + 2P - K}{S} \right\rfloor + 1$$
+
+$$H_{out} = \left\lfloor \frac{H_{in} + 2P - K}{S} \right\rfloor + 1$$
+
+### 1.3.2 Types of Padding Strategies
+
+| Padding Type | Formula | Output Size | Use Case |
+|-------------|---------|-------------|----------|
+| **Valid** | $P = 0$ | $\lfloor (W-K)/S \rfloor + 1$ | No padding, reduces dimensions |
+| **Same** | $P = \lfloor (K-1)/2 \rfloor$ | $\lceil W/S \rceil$ | Preserves spatial dimensions (when S=1) |
+| **Full** | $P = K-1$ | $W + K - 1$ | Maximum padding, increases dimensions |
+
+### 1.3.3 Transposed Convolution (Deconvolution)
+
+Used for upsampling in tasks like image generation and segmentation:
+
+$$W_{out} = (W_{in} - 1) \times S + K - 2P$$
+
+**Important Note:** "Deconvolution" is a misnomer. Transposed convolution is not the mathematical inverse of convolution but rather an operation that produces larger outputs.
+
+---
+
+## 1.4 Dilated (Atrous) Convolution
+
+Dilated convolution introduces gaps in the kernel, expanding the receptive field without increasing parameters:
+
+$$(I *_d K)[i, j] = \sum_{m=0}^{k_h-1} \sum_{n=0}^{k_w-1} I[i + d \cdot m, j + d \cdot n] \cdot K[m, n]$$
+
+where $d$ is the dilation rate.
+
+**Effective Kernel Size:** $K_{effective} = K + (K-1)(d-1)$
+
+**Applications:**
+- Semantic segmentation (DeepLab)
+- Audio generation (WaveNet)
+- Dense prediction tasks
+
+---
+
+# Part 2: Receptive Field Theory
+
+## 2.1 Definition and Importance
+
+The **receptive field (RF)** of a neuron in a CNN is the region of the input image that affects that neuron's activation. Understanding receptive fields is crucial for:
+- Designing architectures for specific tasks
+- Understanding what features neurons can detect
+- Debugging network behavior
+
+## 2.2 Receptive Field Calculation
+
+### 2.2.1 Single Layer Receptive Field
+
+For a single convolutional layer:
+$$RF_{out} = K$$
+where $K$ is the kernel size.
+
+### 2.2.2 Multi-Layer Receptive Field
+
+For a network with $L$ layers, where layer $l$ has kernel size $k_l$ and stride $s_l$:
+
+$$RF_l = RF_{l-1} + (k_l - 1) \times \prod_{i=1}^{l-1} s_i$$
+
+Or recursively:
+$$RF_l = RF_{l-1} + (k_l - 1) \times j_{l-1}$$
+
+where $j_{l-1}$ is the cumulative stride (jump) up to layer $l-1$:
+$$j_l = j_{l-1} \times s_l$$
+
+### 2.2.3 Complete Receptive Field Formula
+
+For a complete network:
+
+$$RF = 1 + \sum_{l=1}^{L} (k_l - 1) \prod_{i=1}^{l-1} s_i$$
+
+### 2.2.4 Example Calculation: VGG-like Architecture
+
+Consider a network with:
+- Layer 1: Conv 3×3, stride 1
+- Layer 2: Conv 3×3, stride 1
+- Layer 3: MaxPool 2×2, stride 2
+- Layer 4: Conv 3×3, stride 1
+- Layer 5: Conv 3×3, stride 1
+
+**Step-by-step calculation:**
+
+| Layer | Kernel | Stride | Cumulative Stride | RF Contribution | Total RF |
+|-------|--------|--------|-------------------|-----------------|----------|
+| Input | - | - | 1 | - | 1 |
+| Conv1 | 3 | 1 | 1 | (3-1)×1 = 2 | 1+2 = 3 |
+| Conv2 | 3 | 1 | 1 | (3-1)×1 = 2 | 3+2 = 5 |
+| Pool | 2 | 2 | 2 | (2-1)×1 = 1 | 5+1 = 6 |
+| Conv3 | 3 | 1 | 2 | (3-1)×2 = 4 | 6+4 = 10 |
+| Conv4 | 3 | 1 | 2 | (3-1)×2 = 4 | 10+4 = 14 |
+
+**Final Receptive Field: 14×14**
+
+### 2.2.5 Receptive Field Visualization
+
+```python
+Layer 1 (RF=3):     Layer 2 (RF=5):     Layer 3 (RF=6):
+  [X X X]             [X X X X X]         [X X X X X X]
+  [X O X]             [X X X X X]         [X X X X X X]
+  [X X X]             [X X O X X]         [X X X X X X]
+                      [X X X X X]         [X X X O X X]
+                      [X X X X X]         [X X X X X X]
+                                          [X X X X X X]
+```
+
+### 2.2.6 Effective Receptive Field
+
+Research (Luo et al., 2016) shows that the **effective receptive field** (where gradients actually flow) is typically smaller than the theoretical receptive field and follows a Gaussian distribution:
+
+- Center pixels have much higher influence
+- Edge pixels contribute minimally
+- The effective RF grows with $\sqrt{n}$ for $n$ layers (much slower than linear)
+
+**Implications:**
+- Very deep networks may not effectively use their full theoretical receptive field
+- Skip connections help propagate information from distant regions
+- Dilated convolutions can increase effective RF more efficiently
+
+---
+
+## 2.3 Receptive Field Design Principles
+
+### 2.3.1 Task-Specific RF Requirements
+
+| Task | Typical RF Requirement | Architecture Strategy |
+|------|----------------------|----------------------|
+| Edge Detection | 5-11 pixels | Few shallow layers |
+| Texture Classification | 21-45 pixels | Moderate depth |
+| Object Detection | 100-300 pixels | Deep networks or dilated conv |
+| Scene Understanding | 400+ pixels | Very deep, dilated, or attention |
+
+### 2.3.2 RF Growth Strategies
+
+1. **Stacked Small Kernels:** Multiple 3×3 convolutions achieve large RF with fewer parameters
+   - Two 3×3 layers: RF = 5, parameters = 18
+   - One 5×5 layer: RF = 5, parameters = 25
+   - **Savings: 28% fewer parameters**
+
+2. **Dilated Convolutions:** Exponentially increase RF without losing resolution
+   - RF grows as $O(2^n)$ with $n$ dilated layers
+
+3. **Pooling:** Reduces spatial dimensions while increasing RF
+   - 2×2 pooling doubles the RF
+
+---
+
+# Part 3: Translation Equivariance and Invariance
+
+## 3.1 Foundational Concepts
+
+### 3.1.1 Equivariance Definition
+
+A function $f$ is **equivariant** to transformation $T$ if:
+
+$$f(T(x)) = T'(f(x))$$
+
+For CNNs with translation $T_{\Delta}$:
+
+$$\text{Conv}(T_{\Delta}(I)) = T_{\Delta}(\text{Conv}(I))$$
+
+**Meaning:** If we shift the input, the output shifts by the same amount.
+
+### 3.1.2 Invariance Definition
+
+A function $f$ is **invariant** to transformation $T$ if:
+
+$$f(T(x)) = f(x)$$
+
+**Meaning:** The output doesn't change regardless of input transformation.
+
+### 3.1.3 Visual Comparison
+
+```python
+Equivariance:                    Invariance:
+Input → [Translate] → CNN      Input → [Translate] → CNN
+  ↓                              ↓
+CNN → [Translate] → Output     CNN → [Same Output]
+```
+
+## 3.2 CNN Layer-wise Properties
+
+| Layer Type | Translation Property | Explanation |
+|-----------|---------------------|-------------|
+| **Convolution** | Equivariant | Shifting input shifts output identically |
+| **ReLU/Activation** | Equivariant | Point-wise operation preserves structure |
+| **Pooling** | Approximately Invariant | Reduces sensitivity to small shifts |
+| **Fully Connected** | Neither | Loses spatial information |
+| **Global Pooling** | Invariant | Aggregates across all positions |
+
+## 3.3 Mathematical Proof of Translation Equivariance
+
+**Theorem:** Convolution is translation-equivariant.
+
+**Proof:**
+
+Let $T_{\Delta}$ be a translation operator: $(T_{\Delta}I)[i,j] = I[i-\Delta_i, j-\Delta_j]$
+
+Then:
+$$\begin{aligned}
+(\text{Conv}(T_{\Delta}I))[i,j] &= \sum_{m,n} (T_{\Delta}I)[i+m, j+n] \cdot K[m,n] \\
+&= \sum_{m,n} I[i+m-\Delta_i, j+n-\Delta_j] \cdot K[m,n] \\
+&= (T_{\Delta}(\text{Conv}(I)))[i,j]
+\end{aligned}$$
+
+**Q.E.D.**
+
+## 3.4 Building Translation Invariance
+
+### 3.4.1 Pooling Creates Approximate Invariance
+
+Max pooling provides approximate translation invariance:
+
+$$\text{MaxPool}(I)[i,j] = \max_{m,n \in \text{pool}} I[i\cdot s + m, j\cdot s + n]$$
+
+Small translations within the pool region don't affect the output.
+
+### 3.4.2 Global Pooling for Complete Invariance
+
+Global Average Pooling (GAP):
+$$\text{GAP}(I) = \frac{1}{H \times W} \sum_{i=1}^{H} \sum_{j=1}^{W} I[i,j]$$
+
+Completely removes spatial information, achieving full translation invariance.
+
+## 3.5 Beyond Translation: Other Symmetries
+
+| Transformation | CNN Property | Enhancement Technique |
+|---------------|-------------|----------------------|
+| **Rotation** | Not inherent | Group CNNs, data augmentation |
+| **Scale** | Not inherent | Multi-scale training, FPN |
+| **Reflection** | Not inherent | Data augmentation |
+| **Deformation** | Limited | Deformable convolutions |
+
+### 3.5.1 Group Equivariant CNNs
+
+Extending equivariance to rotations using group theory:
+
+$$f(g \cdot x) = g \cdot f(x) \quad \forall g \in G$$
+
+where $G$ is a symmetry group (e.g., 90° rotations).
+
+---
+
+# Part 4: Feature Hierarchy in CNNs
+
+## 4.1 The Hierarchical Feature Learning Hypothesis
+
+CNNs learn a hierarchical representation where:
+- **Early layers:** Low-level features (edges, colors, textures)
+- **Middle layers:** Mid-level features (shapes, patterns, parts)
+- **Late layers:** High-level features (objects, semantic concepts)
+
+This mirrors the hierarchical processing in the human visual cortex (Hubel & Wiesel, 1962).
+
+## 4.2 Layer-wise Feature Analysis
+
+### 4.2.1 Layer 1-2: Edge and Color Detectors
+
+**What they learn:**
+- Oriented edge detectors (Gabor-like filters)
+- Color blobs and gradients
+- Simple textures
+
+**Visualization characteristics:**
+- Filters resemble oriented bars and color patches
+- Responses are highly localized
+- Strong activation on intensity discontinuities
+
+**Mathematical interpretation:**
+First-layer filters approximate derivative operators:
+$$K_{edge} \approx \frac{\partial I}{\partial x} \text{ or } \frac{\partial I}{\partial y}$$
+
+### 4.2.2 Layers 3-5: Texture and Pattern Detectors
+
+**What they learn:**
+- Combinations of edges forming textures
+- Simple geometric patterns
+- Basic object parts (corners, curves)
+
+**Visualization characteristics:**
+- More complex patterns than layer 1
+- Larger receptive fields
+- Responses to specific texture types
+
+### 4.2.3 Layers 6+: Object Parts and Semantic Features
+
+**What they learn:**
+- Complete object parts (wheels, eyes, doors)
+- Semantic concepts
+- Object categories
+
+**Visualization characteristics:**
+- Highly abstract representations
+- Class-specific activations
+- Global context integration
+
+## 4.3 Feature Evolution Visualization
+
+```python
+Input Image → Layer 1 → Layer 2 → Layer 3 → Layer 4 → Layer 5
+     ↓           ↓         ↓         ↓         ↓         ↓
+   [Photo]   [Edges]  [Textures] [Patterns] [Parts]  [Objects]
+
+RF Size:      3×3      5×5       11×11     23×23    47×47
+Abstraction:  Low      Low-Med   Medium    Med-High  High
+```
+
+## 4.4 Quantitative Analysis of Feature Hierarchy
+
+### 4.4.1 Activation Statistics by Layer
+
+| Layer | Mean Activation | Activation Sparsity | RF Size |
+|-------|----------------|---------------------|---------|
+| Conv1 | High (~0.3) | Low (~40%) | 3-5 |
+| Conv2-3 | Medium (~0.2) | Medium (~60%) | 7-15 |
+| Conv4-5 | Lower (~0.1) | High (~80%) | 30-100+ |
+
+### 4.4.2 Feature Selectivity
+
+**Selectivity Index** (measures how selective a neuron is to specific features):
+
+$$SI = \frac{\mu_{max} - \mu_{mean}}{\mu_{max} + \mu_{mean}}$$
+
+where $\mu_{max}$ is the maximum mean response and $\mu_{mean}$ is the average response across all stimuli.
+
+Higher layers show higher selectivity indices, indicating more specialized feature detection.
+
+## 4.5 Theoretical Framework: Hierarchical Compositional Models
+
+The feature hierarchy can be understood through compositional models:
+
+$$\text{Feature}_l = \phi_l(\text{Feature}_{l-1}) = \phi_l(\phi_{l-1}(...\phi_1(\text{Input})...))$$
+
+where each $\phi_l$ is a non-linear transformation.
+
+**Compositional Efficiency:**
+- $n$ features at layer $l$ can compose $O(n^2)$ features at layer $l+1$
+- Exponential growth in representational capacity with depth
+
+---
+
+# Part 5: Architecture Evolution Analysis
+
+## 5.1 Historical Progression Overview
+
+| Year | Architecture | Key Innovation | ImageNet Top-5 Error |
+|------|-------------|----------------|---------------------|
+| 1998 | LeNet-5 | Gradient-based learning | - |
+| 2012 | AlexNet | Deep learning + GPU | 16.4% |
+| 2014 | VGGNet | Deep, uniform architecture | 7.3% |
+| 2014 | GoogLeNet | Inception modules | 6.7% |
+| 2015 | ResNet | Skip connections | 3.6% |
+| 2016 | DenseNet | Dense connections | 3.5% |
+| 2017 | SENet | Channel attention | 2.3% |
+| 2019 | EfficientNet | Compound scaling | 2.9% (B7) |
+
+## 5.2 LeNet (1998) - The Foundation
+
+### 5.2.1 Architecture Details
+
+```python
+Input: 32×32 grayscale
+├─ Conv1: 6@5×5 → Tanh → AvgPool 2×2
+├─ Conv2: 16@5×5 → Tanh → AvgPool 2×2
+├─ FC: 120 → Tanh
+├─ FC: 84 → Tanh
+└─ Output: 10 (softmax)
+```
+
+### 5.2.2 Key Innovations
+
+1. **Gradient-Based Learning:** End-to-end training with backpropagation
+2. **Convolution + Pooling:** Standard template still used today
+3. **Feature Hierarchy:** Automatic feature learning
+
+### 5.2.3 Design Principles (Still Relevant)
+
+- Alternating convolution and subsampling
+- Increasing feature maps with depth
+- Final classification with fully connected layers
+
+## 5.3 AlexNet (2012) - The Deep Learning Revolution
+
+### 5.3.1 Architecture Details
+
+```python
+Input: 224×224 RGB
+├─ Conv1: 96@11×11, stride 4 → ReLU → LRN → MaxPool 3×3, stride 2
+├─ Conv2: 256@5×5 → ReLU → LRN → MaxPool 3×3, stride 2
+├─ Conv3: 384@3×3 → ReLU
+├─ Conv4: 384@3×3 → ReLU
+├─ Conv5: 256@3×3 → ReLU → MaxPool 3×3, stride 2
+├─ FC6: 4096 → ReLU → Dropout(0.5)
+├─ FC7: 4096 → ReLU → Dropout(0.5)
+└─ FC8: 1000 (softmax)
+```
+
+### 5.3.2 Key Innovations
+
+| Innovation | Impact |
+|-----------|--------|
+| **ReLU Activation** | 6× faster training than tanh |
+| **GPU Training** | Enabled deeper networks |
+| **Dropout** | Reduced overfitting significantly |
+| **Data Augmentation** | 10× training data effectively |
+| **Local Response Normalization** | Improved generalization |
+
+### 5.3.3 Training Details
+
+- **Optimizer:** SGD with momentum (0.9)
+- **Learning Rate:** 0.01, reduced by 10× when validation error plateaus
+- **Batch Size:** 128
+- **Training Time:** 5-6 days on 2× GTX 580
+
+## 5.4 VGGNet (2014) - Depth and Simplicity
+
+### 5.4.1 The VGG Principle
+
+<div class="my-6 rounded-xl border border-white/[0.08] bg-surface-1/30 px-4 py-3 callout callout-tip" data-callout-type="tip" data-callout-label="Key Insight">
+  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neon-cyan mb-1">Key Insight</div>
+  <div class="text-text-secondary leading-relaxed">Use only 3×3 convolutions, but stack many of them.</div>
+</div>
+
+**Why 3×3?**
+- Two 3×3 layers = 5×5 receptive field
+- Three 3×3 layers = 7×7 receptive field
+- Fewer parameters: $3 \times 3^2 = 27$ vs $7^2 = 49$
+- More non-linearities (better expressiveness)
+
+### 5.4.2 VGG-16 Architecture
+
+```python
+Input: 224×224 RGB
+├─ Block 1: 2× Conv 64@3×3 → MaxPool
+├─ Block 2: 2× Conv 128@3×3 → MaxPool
+├─ Block 3: 3× Conv 256@3×3 → MaxPool
+├─ Block 4: 3× Conv 512@3×3 → MaxPool
+├─ Block 5: 3× Conv 512@3×3 → MaxPool
+├─ FC: 4096 → ReLU → Dropout
+├─ FC: 4096 → ReLU → Dropout
+└─ FC: 1000 (softmax)
+```
+
+### 5.4.3 Parameter Count Analysis
+
+| Layer Type | Parameters | Percentage |
+|-----------|-----------|------------|
+| Conv Layers | 14.7M | 10.6% |
+| FC Layers | 123.6M | 89.4% |
+| **Total** | **138.4M** | **100%** |
+
+**Key Observation:** FC layers dominate parameters despite being only 3 layers!
+
+## 5.5 GoogLeNet/Inception (2014) - Multi-Scale Processing
+
+### 5.5.1 Inception Module Design
+
+The Inception module processes input at multiple scales simultaneously:
+
+```python
+                    Input
+                      │
+        ┌─────────────┼─────────────┐
+        │             │             │
+    1×1 Conv    3×3 Conv      5×5 Conv
+        │        (after 1×1)   (after 1×1)
+        │             │             │
+        └─────────────┼─────────────┘
+                      │
+                MaxPool 3×3
+                      │
+                Concatenate
+```
+
+### 5.5.2 1×1 Convolution: Dimensionality Reduction
+
+**Purpose:** Reduce channels before expensive convolutions
+
+Example:
+- Input: 28×28×192
+- 1×1 Conv (64 filters): 28×28×64
+- 3×3 Conv: 28×28×128
+
+Without 1×1: 192 × 3 × 3 × 128 = 221,184 ops
+With 1×1: 64 × 3 × 3 × 128 + 192 × 1 × 1 × 64 = 86,016 ops
+**Savings: 61%**
+
+## 5.6 ResNet (2015) - Training Very Deep Networks
+
+### 5.6.1 The Degradation Problem
+
+**Observation:** As network depth increases beyond 20 layers:
+- Training error increases (not just test error!)
+- Not caused by overfitting
+- Not caused by vanishing gradients (BatchNorm helps)
+
+**Hypothesis:** Deep networks are harder to optimize because they must learn identity mappings for layers that don't add value.
+
+### 5.6.2 Residual Learning Framework
+
+Instead of learning $H(x)$ directly, learn the residual $F(x) = H(x) - x$:
+
+$$y = F(x, \{W_i\}) + x$$
+
+If identity is optimal, simply learn $F(x) = 0$ (easier than learning identity).
+
+### 5.6.3 Skip Connection Mathematics
+
+**Forward Pass:**
+$$y_l = h(x_l) + F(x_l, W_l)$$
+$$x_{l+1} = f(y_l)$$
+
+where $F$ is the residual function (typically 2-3 conv layers).
+
+**Backward Pass:**
+$$\frac{\partial L}{\partial x_l} = \frac{\partial L}{\partial x_{l+1}} \cdot \frac{\partial x_{l+1}}{\partial y_l} \cdot \frac{\partial y_l}{\partial x_l}$$
+
+With identity shortcut:
+$$\frac{\partial L}{\partial x_l} = \frac{\partial L}{\partial x_{l+1}} \cdot (1 + \frac{\partial F}{\partial x_l})$$
+
+**Key Property:** Gradient can flow directly through the skip connection!
+
+### 5.6.4 Gradient Flow Analysis
+
+For a network with $L$ residual blocks:
+
+$$x_L = x_0 + \sum_{l=0}^{L-1} F(x_l, W_l)$$
+
+**Gradient:**
+$$\frac{\partial L}{\partial x_0} = \frac{\partial L}{\partial x_L} \cdot \left(1 + \sum_{l=0}^{L-1} \frac{\partial F(x_l, W_l)}{\partial x_0}\right)$$
+
+The "1" term ensures gradients cannot completely vanish!
+
+### 5.6.5 ResNet Architecture Variants
+
+| Variant | Layers | Params | Top-1 Error |
+|---------|--------|--------|-------------|
+| ResNet-18 | 18 | 11.7M | 30.2% |
+| ResNet-34 | 34 | 21.8M | 26.7% |
+| ResNet-50 | 50 | 25.6M | 24.0% |
+| ResNet-101 | 101 | 44.5M | 22.4% |
+| ResNet-152 | 152 | 60.2M | 21.3% |
+
+### 5.6.6 Bottleneck Design (ResNet-50+)
+
+```python
+Input
+  │
+  ├─ 1×1 Conv (64 filters) ─┐
+  │    (reduce)             │
+  ├─ 3×3 Conv (64 filters)  │
+  │    (process)            │
+  ├─ 1×1 Conv (256 filters) │
+  │    (expand)             │
+  │                         │
+  └─ Skip Connection ───────┘
+            │
+         Output
+```
+
+**Why Bottleneck?**
+- Reduces computation: 3×3 conv on 64 channels vs 256 channels
+- Maintains representational power
+- Enables deeper networks
+
+## 5.7 DenseNet (2016) - Feature Reuse
+
+### 5.7.1 Dense Connectivity
+
+Each layer receives feature maps from ALL preceding layers:
+
+$$x_l = H_l([x_0, x_1, ..., x_{l-1}])$$
+
+where $[...]$ denotes concatenation.
+
+### 5.7.2 Growth Rate
+
+**Growth rate ($k$):** Number of new feature maps each layer produces.
+
+For a DenseNet with $L$ layers:
+- Total feature maps: $k_0 + k \times L$
+- Where $k_0$ is input channels
+
+Typical $k$ values: 12, 24, 32, 48
+
+### 5.7.3 DenseNet vs ResNet Comparison
+
+| Aspect | ResNet | DenseNet |
+|--------|--------|----------|
+| Connection | Additive | Concatenative |
+| Feature Maps | Constant | Growing |
+| Parameters | Higher | Lower |
+| Feature Reuse | Limited | Maximum |
+| Memory | Lower | Higher |
+
+## 5.8 EfficientNet (2019) - Compound Scaling
+
+### 5.8.1 The Scaling Problem
+
+Traditional approaches scale networks by:
+- **Depth:** More layers
+- **Width:** More channels per layer
+- **Resolution:** Higher input resolution
+
+**Problem:** Arbitrary scaling is suboptimal.
+
+### 5.8.2 Compound Scaling Formula
+
+EfficientNet uses a compound coefficient $\phi$ to uniformly scale all dimensions:
+
+$$d = \alpha^\phi, \quad w = \beta^\phi, \quad r = \gamma^\phi$$
+
+Subject to constraint:
+$$\alpha \cdot \beta^2 \cdot \gamma^2 \approx 2$$
+
+**Found values:** $\alpha = 1.2$, $\beta = 1.1$, $\gamma = 1.15$
+
+### 5.8.3 EfficientNet Scaling Variants
+
+| Model | $\phi$ | Resolution | Params | Top-1 Acc |
+|-------|--------|-----------|--------|-----------|
+| B0 | 1.0 | 224 | 5.3M | 77.3% |
+| B1 | 1.1 | 240 | 7.8M | 79.1% |
+| B2 | 1.2 | 260 | 9.2M | 80.1% |
+| B3 | 1.4 | 300 | 12M | 81.6% |
+| B4 | 1.8 | 380 | 19M | 82.9% |
+| B5 | 2.2 | 456 | 30M | 83.6% |
+| B6 | 2.6 | 528 | 43M | 84.0% |
+| B7 | 3.0 | 600 | 66M | 84.3% |
+
+### 5.8.4 Mobile Inverted Bottleneck (MBConv)
+
+The building block of EfficientNet:
+
+```python
+Input
+  │
+  ├─ 1×1 Conv (expand) ─┐
+  │    + Swish           │
+  ├─ Depthwise 3×3       │
+  │    + Swish           │
+  ├─ SE Block (optional) │
+  ├─ 1×1 Conv (project)  │
+  │                      │
+  └─ Skip (if same size)─┘
+```
+
+**SE Block (Squeeze-and-Excitation):**
+1. Global Average Pool (squeeze)
+2. FC → ReLU → FC → Sigmoid (excitation)
+3. Channel-wise multiplication
+
+---
+
+# Part 6: Transfer Learning Theory
+
+## 6.1 Fundamental Concepts
+
+### 6.1.1 Definition
+
+Transfer learning leverages knowledge learned from a source task/domain to improve learning in a target task/domain.
+
+**Formal Definition:**
+Given:
+- Source domain $D_S$ with task $T_S$
+- Target domain $D_T$ with task $T_T$
+
+Transfer learning aims to improve performance on $T_T$ using knowledge from $D_S$ and $T_S$, where $D_S \neq D_T$ or $T_S \neq T_T$.
+
+### 6.1.2 Why Transfer Learning Works
+
+1. **Feature Reusability:** Low-level features (edges, textures) are universal
+2. **Reduced Data Requirements:** Need less target data
+3. **Faster Convergence:** Start from good initialization
+4. **Better Generalization:** Pre-trained on diverse data
+
+## 6.2 Types of Transfer Learning
+
+| Type | Source Data | Target Data | Approach |
+|------|-------------|-------------|----------|
+| **Inductive** | Available | Available | Different tasks |
+| **Transductive** | Available | Limited | Same task, different domain |
+| **Unsupervised** | Unlabeled | Unlabeled | Learn representations |
+
+### 6.2.1 Inductive Transfer Learning
+
+**Scenario:** Different tasks, typically same domain
+
+**Examples:**
+- ImageNet → CIFAR-10 classification
+- ImageNet → Medical image classification
+- ImageNet → Object detection
+
+## 6.3 Fine-Tuning Strategies
+
+### 6.3.1 Feature Extraction (Frozen Backbone)
+
+```python
+# Strategy: Freeze all pre-trained layers
+for param in model.parameters():
+    param.requires_grad = False
+
+# Only train new classifier
+model.fc = nn.Linear(512, num_classes)
+```
+
+**When to use:**
+- Very small target dataset
+- Very different from source domain
+- Limited compute resources
+
+### 6.3.2 Fine-Tuning All Layers
+
+```python
+# Strategy: Unfreeze all layers
+for param in model.parameters():
+    param.requires_grad = True
+
+# Use lower learning rate for pre-trained layers
+optimizer = optim.SGD([
+    {'params': model.backbone.parameters(), 'lr': 1e-4},
+    {'params': model.fc.parameters(), 'lr': 1e-3}
+])
+```
+
+**When to use:**
+- Large target dataset
+- Similar to source domain
+- Sufficient compute resources
+
+### 6.3.3 Progressive Unfreezing
+
+```python
+# Strategy: Gradually unfreeze layers
+# Phase 1: Train only classifier
+freeze_all_except(model.fc)
+
+# Phase 2: Unfreeze top layers
+unfreeze_layers(model, ['layer4', 'layer3'])
+
+# Phase 3: Unfreeze all
+unfreeze_all(model)
+```
+
+**When to use:**
+- Medium-sized datasets
+- Want to balance stability and adaptation
+
+### 6.3.4 Discriminative Learning Rates
+
+Different learning rates for different layers:
+
+$$lr_l = lr_{base} \times decay^{L-l}$$
+
+where $l$ is layer index and $L$ is total layers.
+
+**Rationale:** Early layers need less modification (generic features), later layers need more (task-specific).
+
+## 6.4 Layer-wise Transferability Analysis
+
+### 6.4.1 Transferability by Layer Depth
+
+| Layer | Transferability | Reason |
+|-------|----------------|--------|
+| Conv1-2 | Very High | Generic features (edges, colors) |
+| Conv3-4 | High | Generic patterns, textures |
+| Conv5 | Medium | Some object parts |
+| FC layers | Low | Task-specific |
+
+### 6.4.2 Quantitative Transferability Metrics
+
+**Transferability Gap:**
+$$TG = Acc_{target}(random) - Acc_{target}(transfer)$$
+
+Negative TG indicates successful transfer.
+
+## 6.5 Domain Adaptation Theory
+
+### 6.5.1 Domain Shift Problem
+
+When source and target distributions differ:
+$$P_S(X, Y) \neq P_T(X, Y)$$
+
+Types of shift:
+- **Covariate shift:** $P_S(X) \neq P_T(X)$
+- **Concept shift:** $P_S(Y|X) \neq P_T(Y|X)$
+- **Label shift:** $P_S(Y) \neq P_T(Y)$
+
+### 6.5.2 Domain Adaptation Techniques
+
+| Technique | Approach |
+|-----------|----------|
+| **Fine-tuning** | Adapt all parameters |
+| **Domain Confusion** | Make features domain-invariant |
+| **Adversarial Training** | Train domain discriminator |
+| **Batch Normalization Adaptation** | Adapt BN statistics |
+
+---
+
+# Part 7: Data Augmentation Theory
+
+## 7.1 Theoretical Foundation
+
+### 7.1.1 Data Augmentation as Regularization
+
+Data augmentation increases effective dataset size without collecting new data:
+
+$$L_{aug}(\theta) = \mathbb{E}_{x \sim D, T \sim \mathcal{T}}[L(f(T(x); \theta), y)]$$
+
+where $\mathcal{T}$ is the set of augmentation transformations.
+
+### 7.1.2 Invariance Learning
+
+Data augmentation encodes prior knowledge about invariances:
+
+$$f(x) = f(T(x)) \quad \forall T \in \mathcal{T}$$
+
+## 7.2 Geometric Augmentations
+
+### 7.2.1 Translation
+
+Shift image by $(\Delta x, \Delta y)$:
+
+$$I'(x, y) = I(x - \Delta x, y - \Delta y)$$
+
+**Typical range:** ±10-20% of image dimensions
+
+### 7.2.2 Rotation
+
+Rotate by angle $\theta$:
+
+$$\begin{bmatrix} x' \\ y' \end{bmatrix} = \begin{bmatrix} \cos\theta & -\sin\theta \\ \sin\theta & \cos\theta \end{bmatrix} \begin{bmatrix} x \\ y \end{bmatrix}$$
+
+**Typical range:** ±15-30° for natural images
+
+### 7.2.3 Scaling
+
+Scale by factor $s$:
+
+$$I'(x, y) = I(x/s, y/s)$$
+
+**Typical range:** 0.8-1.2×
+
+### 7.2.4 Horizontal Flip
+
+$$I'(x, y) = I(W - x, y)$$
+
+**Most common augmentation** - doubles effective data for many tasks.
+
+## 7.3 Photometric Augmentations
+
+### 7.3.1 Brightness and Contrast
+
+**Brightness:** $I' = I + \Delta_b$
+
+**Contrast:** $I' = (I - \mu) \times (1 + \Delta_c) + \mu$
+
+### 7.3.2 Color Jitter
+
+Adjust hue, saturation, value:
+
+$$I_{HSV}' = (H + \Delta_h, S \times (1 + \Delta_s), V \times (1 + \Delta_v))$$
+
+### 7.3.3 Gaussian Noise
+
+$$I' = I + \epsilon, \quad \epsilon \sim \mathcal{N}(0, \sigma^2)$$
+
+## 7.4 Advanced Augmentation Techniques
+
+### 7.4.1 Mixup
+
+Create virtual training examples by linear interpolation:
+
+$$\tilde{x} = \lambda x_i + (1 - \lambda) x_j$$
+$$\tilde{y} = \lambda y_i + (1 - \lambda) y_j$$
+
+where $\lambda \sim \text{Beta}(\alpha, \alpha)$, typically $\alpha = 0.2$
+
+**Effect:** Encourages linear behavior between classes, improves generalization.
+
+### 7.4.2 Cutout/Random Erasing
+
+Randomly mask rectangular regions:
+
+```python
+Before:              After Cutout:
+[████████]          [██    ██]
+[████████]    →     [████████]
+[████████]          [██    ██]
+```
+
+**Benefit:** Forces network to use multiple features, not rely on single discriminative region.
+
+### 7.4.3 CutMix
+
+Combines Cutout and Mixup:
+
+$$\tilde{x} = M \odot x_i + (1 - M) \odot x_j$$
+
+where $M$ is a binary mask from a random bounding box.
+
+**Advantage:** Regions are filled with actual image content, not zeros.
+
+### 7.4.4 AutoAugment and RandAugment
+
+**AutoAugment:** Use reinforcement learning to find optimal augmentation policies.
+
+**RandAugment:** Simplified approach with uniform sampling:
+1. Choose $N$ transformations uniformly
+2. Apply with magnitude $M$
+
+**Benefit:** No separate search phase needed.
+
+## 7.5 Augmentation Strategies by Task
+
+| Task | Recommended Augmentations |
+|------|--------------------------|
+| **Classification** | Flip, rotate, color jitter, Cutout |
+| **Detection** | Flip, scale, color jitter (careful with bbox) |
+| **Segmentation** | Flip, rotate, scale, elastic deformation |
+| **Medical** | Elastic deformation, intensity, noise |
+
+---
+
+# Part 8: Modern Architectures
+
+## 8.1 Vision Transformers (ViT) - Introduction
+
+### 8.1.1 The Transformer Revolution
+
+Originally designed for NLP ("Attention Is All You Need", 2017), Transformers have revolutionized computer vision.
+
+### 8.1.2 ViT Architecture Overview
+
+```python
+Input Image (H × W × C)
+    │
+    ├─ Patch Embedding (P × P patches)
+    │   → N patches of dimension D
+    │
+    ├─ Add Position Embedding
+    │
+    ├─ [CLS] Token (optional)
+    │
+    └─ Transformer Encoder (L layers)
+            │
+        ├─ Multi-Head Self-Attention
+        ├─ MLP Block
+        └─ Layer Norm
+            │
+    MLP Head (Classification)
+```
+
+### 8.1.3 Patch Embedding
+
+Divide image into fixed-size patches:
+
+$$N = \frac{H \times W}{P^2}$$
+
+Each patch flattened and linearly projected:
+
+$$z_0 = [x_{class}; x_p^1E; x_p^2E; ...; x_p^NE] + E_{pos}$$
+
+where $E \in \mathbb{R}^{(P^2 \cdot C) \times D}$
+
+### 8.1.4 Self-Attention in Images
+
+**Multi-Head Self-Attention:**
+
+$$\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)V$$
+
+For images:
+- $Q, K, V$ computed from patch embeddings
+- Attention captures global relationships immediately
+- No inductive bias for locality (unlike CNNs)
+
+### 8.1.5 ViT vs CNN Comparison
+
+| Aspect | CNN | ViT |
+|--------|-----|-----|
+| Inductive Bias | Strong (locality, translation) | Weak (must learn) |
+| Receptive Field | Grows with depth | Global from first layer |
+| Data Efficiency | Better with small data | Requires large data |
+| Computational | $O(n)$ with efficient kernels | $O(n^2)$ for attention |
+| Interpretability | Feature maps | Attention maps |
+
+### 8.1.6 Hybrid Approaches
+
+**CNN + Transformer:**
+- Use CNN feature maps as input to transformer
+- Reduces sequence length
+- Maintains some inductive bias
+
+Example: CvT, CoAtNet, Swin Transformer
+
+## 8.2 Swin Transformer - Hierarchical Vision Transformer
+
+### 8.2.1 Key Innovations
+
+1. **Hierarchical Feature Maps:** Like CNNs, produces multi-scale features
+2. **Shifted Window Attention:** Reduces computation from $O(n^2)$ to $O(n)$
+3. **Local Attention:** Processes non-overlapping windows
+
+### 8.2.2 Shifted Window Mechanism
+
+```python
+Layer l:              Layer l+1 (shifted):
+┌─┬─┬─┬─┐            ┌───┬───┐
+│ │ │ │ │            │   │   │
+├─┼─┼─┼─┤     →      ├───┼───┤
+│ │ │ │ │            │   │   │
+├─┼─┼─┼─┤            └───┴───┘
+│ │ │ │ │
+└─┴─┴─┴─┘
+```
+
+**Benefit:** Enables cross-window connections while maintaining efficiency.
+
+## 8.3 ConvNeXt - Modernizing CNNs
+
+### 8.3.1 Design Choices from Transformers
+
+ConvNeXt incorporates Transformer design elements into pure CNNs:
+
+| Design Element | ResNet | ConvNeXt |
+|---------------|--------|----------|
+| Stage ratio | [3,4,6,3] | [3,3,9,3] |
+| Patchify stem | 7×7, stride 2 | 4×4, stride 4 |
+| Depthwise conv | No | Yes |
+| Activation | ReLU | GELU |
+| Normalization | BatchNorm | LayerNorm |
+| Downsampling | Strided conv | Patch merging |
+
+### 8.3.2 Performance
+
+ConvNeXt matches or exceeds Swin Transformer performance while maintaining CNN simplicity.
+
+---
+
+# Part 9: Key Insights and Common Pitfalls
+
+## 9.1 Key Insights Summary
+
+### 9.1.1 CNN Design Principles
+
+1. **Depth increases representational capacity** but requires careful gradient management
+2. **Small kernels (3×3) are generally preferred** over larger kernels
+3. **Receptive field must match task requirements** - measure it!
+4. **Skip connections enable training very deep networks** by preserving gradient flow
+5. **Transfer learning is almost always beneficial** for computer vision tasks
+
+### 9.1.2 Training Best Practices
+
+1. **Start with pre-trained models** when possible
+2. **Use appropriate data augmentation** for your domain
+3. **Monitor both training and validation metrics** to detect overfitting
+4. **Use learning rate scheduling** for better convergence
+5. **Experiment with different architectures** - no single best choice
+
+## 9.2 Common Pitfalls
+
+### 9.2.1 Architecture Pitfalls
+
+| Pitfall | Problem | Solution |
+|---------|---------|----------|
+| **Too shallow** | Insufficient capacity | Increase depth gradually |
+| **Too deep without skip** | Vanishing gradients | Use ResNet/DenseNet |
+| **Wrong receptive field** | Can't see necessary context | Calculate and verify RF |
+| **Too many parameters** | Overfitting, slow training | Use efficient architectures |
+
+### 9.2.2 Training Pitfalls
+
+| Pitfall | Problem | Solution |
+|---------|---------|----------|
+| **No data augmentation** | Poor generalization | Apply appropriate augmentations |
+| **Wrong learning rate** | Divergence or slow convergence | Use LR finder, schedules |
+| **Not using pre-trained weights** | Suboptimal results | Transfer learning |
+| **Ignoring class imbalance** | Biased predictions | Use class weights, sampling |
+
+### 9.2.3 Evaluation Pitfalls
+
+| Pitfall | Problem | Solution |
+|---------|---------|----------|
+| **Data leakage** | Overly optimistic results | Strict train/val/test split |
+| **Wrong metrics** | Misleading performance | Choose task-appropriate metrics |
+| **Single run evaluation** | Unreliable results | Cross-validation, multiple seeds |
+
+## 9.3 Debugging Checklist
+
+When CNN training fails:
+
+1. **Verify data:** Visualize inputs and labels
+2. **Check architecture:** Confirm layer dimensions
+3. **Monitor gradients:** Check for vanishing/exploding
+4. **Start simple:** Test with small model first
+5. **Compare baselines:** Validate against known good models
+
+---
+
+# Part 10: Mathematical Appendix
+
+## 10.1 Convolution Derivatives for Backpropagation
+
+### 10.1.1 Gradient w.r.t. Input
+
+Given $Y = X * K$, the gradient:
+
+$$\frac{\partial L}{\partial X} = \frac{\partial L}{\partial Y} * K_{rotated}$$
+
+### 10.1.2 Gradient w.r.t. Kernel
+
+$$\frac{\partial L}{\partial K} = X * \frac{\partial L}{\partial Y}$$
+
+## 10.2 Parameter Count Formulas
+
+### 10.2.1 Convolutional Layer
+
+$$\text{Params} = (k_h \times k_w \times C_{in} + 1) \times C_{out}$$
+
+(+1 for bias term)
+
+### 10.2.2 Fully Connected Layer
+
+$$\text{Params} = (N_{in} + 1) \times N_{out}$$
+
+## 10.3 FLOPs Calculation
+
+### 10.3.1 Convolution FLOPs
+
+$$\text{FLOPs} = 2 \times H_{out} \times W_{out} \times C_{in} \times k_h \times k_w \times C_{out}$$
+
+(Factor of 2 for multiply-add operations)
+
+---
+
+# References and Further Reading
+
+## Foundational Papers
+
+1. **LeCun et al. (1998)** - "Gradient-Based Learning Applied to Document Recognition"
+2. **Krizhevsky et al. (2012)** - "ImageNet Classification with Deep Convolutional Neural Networks"
+3. **Simonyan & Zisserman (2014)** - "Very Deep Convolutional Networks for Large-Scale Image Recognition"
+4. **Szegedy et al. (2015)** - "Going Deeper with Convolutions"
+5. **He et al. (2016)** - "Deep Residual Learning for Image Recognition"
+6. **Huang et al. (2017)** - "Densely Connected Convolutional Networks"
+7. **Tan & Le (2019)** - "EfficientNet: Rethinking Model Scaling"
+8. **Dosovitskiy et al. (2020)** - "An Image is Worth 16x16 Words"
+
+## Recommended Textbooks
+
+1. **"Deep Learning"** - Goodfellow, Bengio, Courville
+2. **"Computer Vision: Algorithms and Applications"** - Szeliski
+3. **"Pattern Recognition and Machine Learning"** - Bishop
+
+---
+
+*End of Module 3 Theoretical Content*
+
+**Document Statistics:**
+- Total Sections: 10 major parts
+- Mathematical Formulas: 80+
+- Tables: 30+
+- Code Examples: 5+
+- Estimated Lecture Hours: 15-18 hours

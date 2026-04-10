@@ -1,0 +1,260 @@
+---
+title: "GRU for Text Classification"
+module: 8
+labNumber: 9
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# GRU for Text Classification
+
+### Objectives
+- Implement GRU from scratch
+- Compare with LSTM performance
+- Understand gating mechanisms
+
+### Complete Implementation
+
+```python
+"""
+Lab 8.8: GRU for Text Classification
+====================================
+Implement GRU (Gated Recurrent Unit) and compare with LSTM.
+"""
+
+import tensorflow as tf
+import numpy as np
+
+# ============================================================
+# PART 1: GRU Cell from Scratch
+# ============================================================
+
+class GRUCell(tf.keras.layers.Layer):
+    """
+    GRU cell implemented from scratch.
+    
+    GRU equations (simplified):
+    z_t = sigmoid(W_z · [h_{t-1}, x_t] + b_z)  # Update gate
+    r_t = sigmoid(W_r · [h_{t-1}, x_t] + b_r)  # Reset gate
+    h~_t = tanh(W · [r_t * h_{t-1}, x_t] + b)  # Candidate activation
+    h_t = (1 - z_t) * h_{t-1} + z_t * h~_t     # Hidden state update
+    
+    GRU has fewer gates than LSTM (2 vs 4), making it faster.
+    """
+    
+    def __init__(self, units, **kwargs):
+        super(GRUCell, self).__init__(**kwargs)
+        self.units = units
+        self.state_size = units
+        self.output_size = units
+    
+    def build(self, input_shape):
+        input_dim = input_shape[-1] + self.units
+        
+        # Update gate
+        self.W_z = self.add_weight(
+            shape=(input_dim, self.units),
+            initializer='glorot_uniform',
+            name='W_z'
+        )
+        self.b_z = self.add_weight(
+            shape=(self.units,),
+            initializer='zeros',
+            name='b_z'
+        )
+        
+        # Reset gate
+        self.W_r = self.add_weight(
+            shape=(input_dim, self.units),
+            initializer='glorot_uniform',
+            name='W_r'
+        )
+        self.b_r = self.add_weight(
+            shape=(self.units,),
+            initializer='zeros',
+            name='b_r'
+        )
+        
+        # Candidate activation
+        self.W_h = self.add_weight(
+            shape=(input_dim, self.units),
+            initializer='glorot_uniform',
+            name='W_h'
+        )
+        self.b_h = self.add_weight(
+            shape=(self.units,),
+            initializer='zeros',
+            name='b_h'
+        )
+        
+        super(GRUCell, self).build(input_shape)
+    
+    def call(self, inputs, states):
+        """
+        Single GRU step.
+        
+        Args:
+            inputs: (batch, input_dim)
+            states: [h_prev]
+            
+        Returns:
+            h_t, [h_t]
+        """
+        h_prev = states[0]
+        
+        # Concatenate input and previous hidden state
+        concat = tf.concat([inputs, h_prev], axis=1)
+        
+        # Update gate
+        z_t = tf.sigmoid(tf.matmul(concat, self.W_z) + self.b_z)
+        
+        # Reset gate
+        r_t = tf.sigmoid(tf.matmul(concat, self.W_r) + self.b_r)
+        
+        # Candidate activation with reset
+        concat_reset = tf.concat([inputs, r_t * h_prev], axis=1)
+        h_tilde = tf.tanh(tf.matmul(concat_reset, self.W_h) + self.b_h)
+        
+        # Update hidden state
+        h_t = (1 - z_t) * h_prev + z_t * h_tilde
+        
+        return h_t, [h_t]
+    
+    def get_initial_state(self, inputs=None, batch_size=None, dtype=None):
+        return [tf.zeros((batch_size, self.units), dtype=dtype)]
+
+
+# ============================================================
+# PART 2: GRU vs LSTM Comparison
+# ============================================================
+
+print("=" * 60)
+print("GRU VS LSTM COMPARISON")
+print("=" * 60)
+
+comparison = """
+GRU (Gated Recurrent Unit):
+- 2 gates: update and reset
+- No separate cell state
+- Faster (fewer parameters)
+- Similar performance to LSTM
+
+LSTM (Long Short-Term Memory):
+- 4 gates: forget, input, output, candidate
+- Separate cell state
+- More parameters
+- Better for very long sequences
+
+When to use:
+- GRU: Speed important, shorter sequences
+- LSTM: Long sequences, maximum accuracy needed
+- Both: Try both and evaluate
+"""
+
+print(comparison)
+
+
+# ============================================================
+# PART 3: Performance Comparison on IMDB
+# ============================================================
+
+# Load IMDB (smaller subset for quick comparison)
+vocab_size = 10000
+max_length = 200
+
+(x_train, y_train), (x_test, y_test) = tf.keras.datasets.imdb.load_data(
+    num_words=vocab_size
+)
+
+# Use subset for quick comparison
+x_train = x_train[:5000]
+y_train = y_train[:5000]
+
+# Pad sequences
+x_train = tf.keras.preprocessing.sequence.pad_sequences(
+    x_train, maxlen=max_length, padding='post'
+)
+x_test = tf.keras.preprocessing.sequence.pad_sequences(
+    x_test[:1000], maxlen=max_length, padding='post'
+)
+y_test = y_test[:1000]
+
+def create_model(rnn_type='gru'):
+    """Create model with specified RNN type."""
+    model = tf.keras.Sequential([
+        tf.keras.layers.Embedding(vocab_size, 128, input_length=max_length),
+        
+        tf.keras.layers.GRU(64, dropout=0.2) if rnn_type == 'gru' 
+        else tf.keras.layers.LSTM(64, dropout=0.2),
+        
+        tf.keras.layers.Dense(64, activation='relu'),
+        tf.keras.layers.Dropout(0.5),
+        tf.keras.layers.Dense(1, activation='sigmoid')
+    ])
+    
+    model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+    
+    return model
+
+# Compare GRU and LSTM
+print("\nTraining comparison (3 epochs each)...")
+
+for rnn_type in ['gru', 'lstm']:
+    print(f"\n{rnn_type.upper()}:")
+    model = create_model(rnn_type)
+    
+    import time
+    start_time = time.time()
+    
+    history = model.fit(
+        x_train, y_train,
+        validation_split=0.2,
+        epochs=3,
+        batch_size=64,
+        verbose=0
+    )
+    
+    elapsed = time.time() - start_time
+    val_acc = max(history.history['val_accuracy'])
+    
+    print(f"  Time: {elapsed:.2f}s")
+    print(f"  Best val accuracy: {val_acc:.4f}")
+    print(f"  Parameters: {model.count_params():,}")
+
+
+# ============================================================
+# EXERCISES
+# ============================================================
+
+print("\n" + "=" * 60)
+print("EXERCISES")
+print("=" * 60)
+
+exercises = """
+Exercise 1: Minimal Gated Unit
+------------------------------
+Implement the Minimal Gated Unit (MGU):
+- Single gate combining update and forget
+- Compare with GRU performance
+- Analyze parameter efficiency
+
+Exercise 2: Peephole Connections
+--------------------------------
+Add peephole connections to GRU:
+- Allow gates to see cell state
+- Compare with standard GRU
+- Implement in LSTM for comparison
+
+Exercise 3: Layer Normalization
+-------------------------------
+Add layer normalization to GRU:
+- Normalize inputs to gates
+- Compare training stability
+- Analyze convergence speed
+"""
+
+print(exercises)
+```
+
+
+---

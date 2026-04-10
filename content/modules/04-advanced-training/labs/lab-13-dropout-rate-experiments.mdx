@@ -1,0 +1,133 @@
+---
+title: "Dropout Rate Experiments"
+module: 4
+labNumber: 13
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Dropout Rate Experiments
+
+```python
+"""
+Lab 4.1: Dropout Rate Experiments
+==================================
+Systematically compare different dropout configurations.
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+
+tf.random.set_seed(42)
+
+(x_train, y_train), (x_test, y_test) = tf.keras.datasets.cifar10.load_data()
+x_train, x_test = x_train / 255.0, x_test / 255.0
+y_train = tf.keras.utils.to_categorical(y_train, 10)
+y_test = tf.keras.utils.to_categorical(y_test, 10)
+
+def create_model_with_dropout(conv_dropout=0.25, fc_dropout=0.5):
+    return tf.keras.Sequential([
+        tf.keras.layers.Conv2D(32, 3, padding='same', input_shape=(32, 32, 3)),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation('relu'),
+        tf.keras.layers.Conv2D(32, 3, padding='same'),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation('relu'),
+        tf.keras.layers.MaxPooling2D(2),
+        tf.keras.layers.Dropout(conv_dropout),
+        
+        tf.keras.layers.Conv2D(64, 3, padding='same'),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation('relu'),
+        tf.keras.layers.Conv2D(64, 3, padding='same'),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation('relu'),
+        tf.keras.layers.MaxPooling2D(2),
+        tf.keras.layers.Dropout(conv_dropout),
+        
+        tf.keras.layers.Flatten(),
+        tf.keras.layers.Dense(128),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation('relu'),
+        tf.keras.layers.Dropout(fc_dropout),
+        tf.keras.layers.Dense(10, activation='softmax')
+    ])
+
+def experiment_dropout_rates():
+    configs = [
+        {'name': 'No Dropout', 'conv': 0.0, 'fc': 0.0},
+        {'name': 'Low Dropout', 'conv': 0.1, 'fc': 0.2},
+        {'name': 'Medium Dropout', 'conv': 0.25, 'fc': 0.5},
+        {'name': 'High Dropout', 'conv': 0.5, 'fc': 0.7},
+        {'name': 'Very High Dropout', 'conv': 0.7, 'fc': 0.9},
+    ]
+    
+    results = {}
+    
+    for config in configs:
+        print(f"\nTraining: {config['name']}")
+        print(f"Conv dropout: {config['conv']}, FC dropout: {config['fc']}")
+        
+        model = create_model_with_dropout(config['conv'], config['fc'])
+        model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+                      loss='categorical_crossentropy', metrics=['accuracy'])
+        
+        history = model.fit(x_train, y_train, batch_size=128, epochs=30,
+                           validation_data=(x_test, y_test), verbose=0)
+        
+        test_loss, test_acc = model.evaluate(x_test, y_test, verbose=0)
+        
+        results[config['name']] = {
+            'history': history.history,
+            'test_accuracy': test_acc,
+            'test_loss': test_loss,
+            'config': config
+        }
+        
+        print(f"  Test Accuracy: {test_acc:.4f}")
+        print(f"  Train-Val Gap: {history.history['accuracy'][-1] - history.history['val_accuracy'][-1]:.4f}")
+    
+    return results
+
+def visualize_dropout_results(results):
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    
+    for name, data in results.items():
+        axes[0, 0].plot(data['history']['accuracy'], label=name, linewidth=2)
+    axes[0, 0].set_title('Training Accuracy', fontweight='bold')
+    axes[0, 0].set_xlabel('Epoch'); axes[0, 0].set_ylabel('Accuracy')
+    axes[0, 0].legend(); axes[0, 0].grid(True, alpha=0.3)
+    
+    for name, data in results.items():
+        axes[0, 1].plot(data['history']['val_accuracy'], label=name, linewidth=2)
+    axes[0, 1].set_title('Validation Accuracy', fontweight='bold')
+    axes[0, 1].set_xlabel('Epoch'); axes[0, 1].set_ylabel('Accuracy')
+    axes[0, 1].legend(); axes[0, 1].grid(True, alpha=0.3)
+    
+    names = list(results.keys())
+    test_accs = [results[n]['test_accuracy'] for n in names]
+    bars = axes[1, 0].bar(names, test_accs, color='skyblue', edgecolor='black')
+    axes[1, 0].set_title('Final Test Accuracy', fontweight='bold')
+    axes[1, 0].set_ylabel('Accuracy')
+    axes[1, 0].tick_params(axis='x', rotation=45)
+    for bar, acc in zip(bars, test_accs):
+        axes[1, 0].text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
+                       f'{acc:.3f}', ha='center', va='bottom')
+    
+    gaps = [results[n]['history']['accuracy'][-1] - results[n]['history']['val_accuracy'][-1] for n in names]
+    bars = axes[1, 1].bar(names, gaps, color='coral', edgecolor='black')
+    axes[1, 1].set_title('Generalization Gap (Train - Val)', fontweight='bold')
+    axes[1, 1].set_ylabel('Accuracy Difference')
+    axes[1, 1].tick_params(axis='x', rotation=45)
+    axes[1, 1].axhline(0, color='black', linestyle='--', alpha=0.5)
+    
+    plt.tight_layout()
+    plt.savefig('dropout_experiments.png', dpi=150)
+    plt.show()
+
+results = experiment_dropout_rates()
+visualize_dropout_results(results)
+```
+
+---

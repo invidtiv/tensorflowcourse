@@ -1,0 +1,114 @@
+---
+title: "Early Stopping and Model Checkpointing"
+module: 4
+labNumber: 15
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Early Stopping and Model Checkpointing
+
+```python
+"""
+Lab 4.3: Early Stopping and Checkpointing Strategies
+=====================================================
+Compare different early stopping and checkpointing approaches.
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+import os
+
+tf.random.set_seed(42)
+
+(x_train, y_train), (x_test, y_test) = tf.keras.datasets.cifar10.load_data()
+x_train, x_test = x_train / 255.0, x_test / 255.0
+y_train = tf.keras.utils.to_categorical(y_train, 10)
+y_test = tf.keras.utils.to_categorical(y_test, 10)
+
+def create_model():
+    return tf.keras.Sequential([
+        tf.keras.layers.Conv2D(32, 3, activation='relu', input_shape=(32, 32, 3)),
+        tf.keras.layers.MaxPooling2D(),
+        tf.keras.layers.Conv2D(64, 3, activation='relu'),
+        tf.keras.layers.MaxPooling2D(),
+        tf.keras.layers.Conv2D(128, 3, activation='relu'),
+        tf.keras.layers.MaxPooling2D(),
+        tf.keras.layers.Flatten(),
+        tf.keras.layers.Dense(256, activation='relu'),
+        tf.keras.layers.Dropout(0.5),
+        tf.keras.layers.Dense(10, activation='softmax')
+    ])
+
+def compare_early_stopping_strategies():
+    strategies = {
+        'No Early Stopping': [],
+        'ES (patience=5)': [tf.keras.callbacks.EarlyStopping(
+            monitor='val_loss', patience=5, restore_best_weights=True)],
+        'ES (patience=10)': [tf.keras.callbacks.EarlyStopping(
+            monitor='val_loss', patience=10, restore_best_weights=True)],
+        'ES (patience=5, min_delta=0.001)': [tf.keras.callbacks.EarlyStopping(
+            monitor='val_loss', patience=5, min_delta=0.001, restore_best_weights=True)],
+        'ES on Accuracy (patience=5)': [tf.keras.callbacks.EarlyStopping(
+            monitor='val_accuracy', patience=5, restore_best_weights=True, mode='max')],
+    }
+    
+    results = {}
+    
+    for name, callbacks in strategies.items():
+        print(f"\nTraining: {name}")
+        
+        model = create_model()
+        model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+                      loss='categorical_crossentropy', metrics=['accuracy'])
+        
+        history = model.fit(x_train, y_train, batch_size=128, epochs=50,
+                           validation_data=(x_test, y_test), callbacks=callbacks, verbose=0)
+        
+        test_loss, test_acc = model.evaluate(x_test, y_test, verbose=0)
+        
+        results[name] = {
+            'history': history.history,
+            'test_accuracy': test_acc,
+            'epochs_trained': len(history.history['loss'])
+        }
+        
+        print(f"  Test Accuracy: {test_acc:.4f}")
+        print(f"  Epochs Trained: {len(history.history['loss'])}")
+    
+    return results
+
+def visualize_early_stopping_results(results):
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    
+    for name, data in results.items():
+        axes[0].plot(data['history']['val_accuracy'], label=name, linewidth=2)
+    axes[0].set_title('Validation Accuracy', fontweight='bold')
+    axes[0].set_xlabel('Epoch'); axes[0].set_ylabel('Accuracy')
+    axes[0].legend(); axes[0].grid(True, alpha=0.3)
+    
+    names = list(results.keys())
+    epochs = [results[n]['epochs_trained'] for n in names]
+    accs = [results[n]['test_accuracy'] for n in names]
+    
+    scatter = axes[1].scatter(epochs, accs, s=200, c=range(len(names)), cmap='viridis',
+                             edgecolors='black', linewidths=2)
+    axes[1].set_xlabel('Epochs Trained')
+    axes[1].set_ylabel('Test Accuracy')
+    axes[1].set_title('Training Efficiency', fontweight='bold')
+    axes[1].grid(True, alpha=0.3)
+    
+    for i, name in enumerate(names):
+        axes[1].annotate(name, (epochs[i], accs[i]),
+                        xytext=(5, 5), textcoords='offset points', fontsize=8)
+    
+    plt.tight_layout()
+    plt.savefig('early_stopping_comparison.png', dpi=150)
+    plt.show()
+
+es_results = compare_early_stopping_strategies()
+visualize_early_stopping_results(es_results)
+```
+
+---

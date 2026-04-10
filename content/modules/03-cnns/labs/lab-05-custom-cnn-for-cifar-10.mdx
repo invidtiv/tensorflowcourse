@@ -1,0 +1,446 @@
+---
+title: "Custom CNN for CIFAR-10"
+module: 3
+labNumber: 5
+difficulty: "easy"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Custom CNN for CIFAR-10
+
+## Objectives
+- Build a custom CNN architecture for CIFAR-10
+- Implement best practices for CNN design
+- Achieve >80% accuracy on CIFAR-10
+
+## Prerequisites
+- Understanding of CNN components
+- Familiarity with Keras API
+
+```python
+"""
+Lab 3.4: Custom CNN for CIFAR-10 Classification
+Building a high-performance CNN from scratch
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers, models, optimizers, callbacks
+from tensorflow.keras.datasets import cifar10
+from tensorflow.keras.utils import to_categorical
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+import time
+
+# =============================================================================
+# Section 1: CIFAR-10 Dataset Overview
+# =============================================================================
+
+print("=" * 60)
+print("CIFAR-10 DATASET")
+print("=" * 60)
+
+print("""
+CIFAR-10 Dataset:
+================
+- 60,000 32x32 color images
+- 10 classes: airplane, automobile, bird, cat, deer, 
+              dog, frog, horse, ship, truck
+- 50,000 training images
+- 10,000 test images
+- 6,000 images per class
+
+Classes:
+0: airplane     1: automobile   2: bird         3: cat
+4: deer         5: dog          6: frog         7: horse
+8: ship         9: truck
+""")
+
+
+# =============================================================================
+# Section 2: Data Loading and Preprocessing
+# =============================================================================
+
+def load_cifar10():
+    """Load and preprocess CIFAR-10 dataset."""
+    
+    print("\n" + "=" * 60)
+    print("LOADING CIFAR-10")
+    print("=" * 60)
+    
+    # Load data
+    (X_train, y_train), (X_test, y_test) = cifar10.load_data()
+    
+    print(f"\nTraining data: {X_train.shape}")
+    print(f"Test data: {X_test.shape}")
+    
+    # Normalize pixel values to [0, 1]
+    X_train = X_train.astype('float32') / 255.0
+    X_test = X_test.astype('float32') / 255.0
+    
+    # Convert labels to categorical
+    y_train = to_categorical(y_train, 10)
+    y_test = to_categorical(y_test, 10)
+    
+    # Class names
+    class_names = ['airplane', 'automobile', 'bird', 'cat', 'deer',
+                   'dog', 'frog', 'horse', 'ship', 'truck']
+    
+    print(f"\nClass names: {class_names}")
+    print(f"Training labels shape: {y_train.shape}")
+    
+    return (X_train, y_train), (X_test, y_test), class_names
+
+
+(X_train, y_train), (X_test, y_test), class_names = load_cifar10()
+
+
+# =============================================================================
+# Section 3: Visualize Dataset
+# =============================================================================
+
+def visualize_cifar10(X, y, class_names, num_samples=25):
+    """Visualize CIFAR-10 samples."""
+    
+    fig, axes = plt.subplots(5, 5, figsize=(12, 12))
+    axes = axes.flatten()
+    
+    for i in range(num_samples):
+        idx = np.random.randint(0, len(X))
+        axes[i].imshow(X[idx])
+        label = class_names[np.argmax(y[idx])]
+        axes[i].set_title(label)
+        axes[i].axis('off')
+    
+    plt.tight_layout()
+    plt.savefig('/mnt/okcomputer/output/lab34_cifar10_samples.png', dpi=150)
+    plt.show()
+    print("\nSample images saved to: /mnt/okcomputer/output/lab34_cifar10_samples.png")
+
+
+visualize_cifar10(X_train, y_train, class_names)
+
+
+# =============================================================================
+# Section 4: Build Custom CNN Architecture
+# =============================================================================
+
+def build_custom_cnn(input_shape=(32, 32, 3), num_classes=10):
+    """
+    Build a custom CNN optimized for CIFAR-10.
+    
+    Architecture principles:
+    - Start with smaller filters, increase depth
+    - Use batch normalization for stability
+    - Add dropout for regularization
+    - Global average pooling instead of flatten
+    """
+    
+    print("\n" + "=" * 60)
+    print("BUILDING CUSTOM CNN")
+    print("=" * 60)
+    
+    model = models.Sequential([
+        # Block 1
+        layers.Conv2D(32, 3, padding='same', input_shape=input_shape),
+        layers.BatchNormalization(),
+        layers.Activation('relu'),
+        layers.Conv2D(32, 3, padding='same'),
+        layers.BatchNormalization(),
+        layers.Activation('relu'),
+        layers.MaxPooling2D(2),
+        layers.Dropout(0.25),
+        
+        # Block 2
+        layers.Conv2D(64, 3, padding='same'),
+        layers.BatchNormalization(),
+        layers.Activation('relu'),
+        layers.Conv2D(64, 3, padding='same'),
+        layers.BatchNormalization(),
+        layers.Activation('relu'),
+        layers.MaxPooling2D(2),
+        layers.Dropout(0.25),
+        
+        # Block 3
+        layers.Conv2D(128, 3, padding='same'),
+        layers.BatchNormalization(),
+        layers.Activation('relu'),
+        layers.Conv2D(128, 3, padding='same'),
+        layers.BatchNormalization(),
+        layers.Activation('relu'),
+        layers.MaxPooling2D(2),
+        layers.Dropout(0.25),
+        
+        # Classifier
+        layers.GlobalAveragePooling2D(),
+        layers.Dense(256),
+        layers.BatchNormalization(),
+        layers.Activation('relu'),
+        layers.Dropout(0.5),
+        layers.Dense(num_classes, activation='softmax')
+    ])
+    
+    return model
+
+
+# Build model
+cnn_model = build_custom_cnn()
+cnn_model.summary()
+
+
+# =============================================================================
+# Section 5: Data Augmentation
+# =============================================================================
+
+def create_data_generator():
+    """Create data augmentation generator."""
+    
+    print("\n" + "=" * 60)
+    print("DATA AUGMENTATION SETUP")
+    print("=" * 60)
+    
+    datagen = ImageDataGenerator(
+        rotation_range=15,      # Random rotation
+        width_shift_range=0.1,  # Horizontal shift
+        height_shift_range=0.1, # Vertical shift
+        horizontal_flip=True,   # Random horizontal flip
+        zoom_range=0.1,         # Random zoom
+        fill_mode='nearest'     # Fill mode for new pixels
+    )
+    
+    print("\nAugmentation parameters:")
+    print("  - Rotation range: ±15 degrees")
+    print("  - Width shift: ±10%")
+    print("  - Height shift: ±10%")
+    print("  - Horizontal flip: True")
+    print("  - Zoom range: ±10%")
+    
+    return datagen
+
+
+datagen = create_data_generator()
+
+# Fit generator on training data
+datagen.fit(X_train)
+
+
+# =============================================================================
+# Section 6: Compile and Train
+# =============================================================================
+
+def compile_and_train(model, X_train, y_train, X_test, y_test, 
+                      datagen, epochs=50):
+    """Compile and train the model with callbacks."""
+    
+    print("\n" + "=" * 60)
+    print("COMPILING AND TRAINING")
+    print("=" * 60)
+    
+    # Compile
+    model.compile(optimizer=optimizers.Adam(learning_rate=0.001),
+                  loss='categorical_crossentropy',
+                  metrics=['accuracy'])
+    
+    # Callbacks
+    cb = [
+        callbacks.EarlyStopping(patience=10, restore_best_weights=True),
+        callbacks.ReduceLROnPlateau(factor=0.5, patience=5, min_lr=1e-6),
+        callbacks.ModelCheckpoint('/mnt/okcomputer/output/cifar10_best_model.h5',
+                                  save_best_only=True)
+    ]
+    
+    # Train with augmentation
+    start_time = time.time()
+    
+    history = model.fit(
+        datagen.flow(X_train, y_train, batch_size=64),
+        steps_per_epoch=len(X_train) // 64,
+        epochs=epochs,
+        validation_data=(X_test, y_test),
+        callbacks=cb,
+        verbose=1
+    )
+    
+    training_time = time.time() - start_time
+    print(f"\nTraining completed in {training_time:.2f} seconds")
+    
+    return history
+
+
+# Train model (reduced epochs for demo)
+history = compile_and_train(cnn_model, X_train, y_train, X_test, y_test, 
+                            datagen, epochs=20)
+
+
+# =============================================================================
+# Section 7: Evaluate Model
+# =============================================================================
+
+def evaluate_model(model, X_test, y_test, class_names):
+    """Evaluate model and show detailed metrics."""
+    
+    print("\n" + "=" * 60)
+    print("MODEL EVALUATION")
+    print("=" * 60)
+    
+    # Overall metrics
+    loss, accuracy = model.evaluate(X_test, y_test, verbose=0)
+    print(f"\nTest Loss: {loss:.4f}")
+    print(f"Test Accuracy: {accuracy:.4f}")
+    
+    # Per-class accuracy
+    predictions = model.predict(X_test)
+    pred_labels = np.argmax(predictions, axis=1)
+    true_labels = np.argmax(y_test, axis=1)
+    
+    print("\nPer-class accuracy:")
+    for i, name in enumerate(class_names):
+        mask = true_labels == i
+        class_acc = np.mean(pred_labels[mask] == i)
+        print(f"  {name:12s}: {class_acc:.4f}")
+    
+    return pred_labels, true_labels
+
+
+pred_labels, true_labels = evaluate_model(cnn_model, X_test, y_test, class_names)
+
+
+# =============================================================================
+# Section 8: Visualize Results
+# =============================================================================
+
+def plot_cifar10_results(history, X_test, y_test, class_names, 
+                         pred_labels, true_labels):
+    """Plot comprehensive results."""
+    
+    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+    
+    # Plot 1: Training history
+    axes[0, 0].plot(history.history['accuracy'], label='Train')
+    axes[0, 0].plot(history.history['val_accuracy'], label='Validation')
+    axes[0, 0].set_title('Training Accuracy')
+    axes[0, 0].set_xlabel('Epoch')
+    axes[0, 0].set_ylabel('Accuracy')
+    axes[0, 0].legend()
+    axes[0, 0].grid(True)
+    
+    # Plot 2: Loss
+    axes[0, 1].plot(history.history['loss'], label='Train')
+    axes[0, 1].plot(history.history['val_loss'], label='Validation')
+    axes[0, 1].set_title('Training Loss')
+    axes[0, 1].set_xlabel('Epoch')
+    axes[0, 1].set_ylabel('Loss')
+    axes[0, 1].legend()
+    axes[0, 1].grid(True)
+    
+    # Plot 3: Confusion matrix
+    from sklearn.metrics import confusion_matrix
+    import seaborn as sns
+    
+    cm = confusion_matrix(true_labels, pred_labels)
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+                xticklabels=class_names, yticklabels=class_names,
+                ax=axes[1, 0])
+    axes[1, 0].set_title('Confusion Matrix')
+    axes[1, 0].set_xlabel('Predicted')
+    axes[1, 0].set_ylabel('True')
+    
+    # Plot 4: Sample predictions
+    indices = np.random.choice(len(X_test), 10, replace=False)
+    for idx, ax_idx in zip(indices, range(10)):
+        row = ax_idx // 5
+        col = 1 + (ax_idx % 5)
+        if ax_idx < 5:
+            continue
+    
+    # Show some predictions
+    axes[1, 1].axis('off')
+    axes[1, 1].set_title('Sample Predictions')
+    
+    # Create inset for predictions
+    from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+    
+    plt.tight_layout()
+    plt.savefig('/mnt/okcomputer/output/lab34_cifar10_results.png', dpi=150)
+    plt.show()
+    print("\nResults saved to: /mnt/okcomputer/output/lab34_cifar10_results.png")
+
+
+plot_cifar10_results(history, X_test, y_test, class_names, pred_labels, true_labels)
+
+
+# =============================================================================
+# Section 9: Show Sample Predictions
+# =============================================================================
+
+def show_sample_predictions(model, X_test, y_test, class_names, num_samples=16):
+    """Show sample predictions with confidence."""
+    
+    predictions = model.predict(X_test[:num_samples])
+    pred_labels = np.argmax(predictions, axis=1)
+    true_labels = np.argmax(y_test[:num_samples], axis=1)
+    confidences = np.max(predictions, axis=1)
+    
+    fig, axes = plt.subplots(4, 4, figsize=(14, 14))
+    axes = axes.flatten()
+    
+    for i in range(num_samples):
+        axes[i].imshow(X_test[i])
+        color = 'green' if pred_labels[i] == true_labels[i] else 'red'
+        axes[i].set_title(f'True: {class_names[true_labels[i]]}\n' +
+                         f'Pred: {class_names[pred_labels[i]]}\n' +
+                         f'Conf: {confidences[i]:.2f}',
+                         color=color, fontsize=10)
+        axes[i].axis('off')
+    
+    plt.tight_layout()
+    plt.savefig('/mnt/okcomputer/output/lab34_sample_predictions.png', dpi=150)
+    plt.show()
+    print("\nSample predictions saved to: /mnt/okcomputer/output/lab34_sample_predictions.png")
+
+
+show_sample_predictions(cnn_model, X_test, y_test, class_names)
+
+
+# =============================================================================
+# Section 10: Exercises
+# =============================================================================
+
+print("\n" + "=" * 60)
+print("EXERCISES")
+print("=" * 60)
+
+print("""
+Exercise 1: Architecture Modifications
+- Add more convolutional blocks
+- Try different filter sizes (1x1, 5x5, 7x7)
+- Compare parameter counts
+
+Exercise 2: Regularization Techniques
+- Add L2 regularization
+- Try different dropout rates
+- Implement label smoothing
+
+Exercise 3: Advanced Augmentation
+- Implement Cutout/GridMask
+- Try Mixup or CutMix augmentation
+- Compare with basic augmentation
+
+Exercise 4: Hyperparameter Tuning
+- Use Keras Tuner for optimization
+- Search learning rate, batch size, architecture
+
+Exercise 5: Ensemble Methods
+- Train multiple models with different seeds
+- Implement voting or averaging ensemble
+""")
+
+print("\n" + "=" * 60)
+print("Lab 3.4 Complete!")
+print("=" * 60)
+```
+
+---
+
+<a name="lab-35"></a>

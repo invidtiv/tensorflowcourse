@@ -1,0 +1,136 @@
+{
+  "version": 1,
+  "passingScore": 80,
+  "questions": [
+    {
+      "id": "m2-q1",
+      "type": "multiple-choice",
+      "difficulty": "easy",
+      "topic": "Activation Functions",
+      "question": "Which activation function suffers most severely from the vanishing gradient problem in deep networks?",
+      "options": [
+        {
+          "text": "ReLU",
+          "correct": false
+        },
+        {
+          "text": "Sigmoid",
+          "correct": true
+        },
+        {
+          "text": "Leaky ReLU",
+          "correct": false
+        },
+        {
+          "text": "GELU",
+          "correct": false
+        }
+      ],
+      "explanation": "Sigmoid saturates at both ends, squashing gradients toward zero. ReLU and its variants mitigate this by having a constant gradient on the positive side."
+    },
+    {
+      "id": "m2-q2",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Universal Approximation",
+      "question": "The Universal Approximation Theorem states that a feedforward network with at least one hidden layer can approximate any continuous function. What does it NOT guarantee?",
+      "options": [
+        {
+          "text": "That such a network exists in principle",
+          "correct": false
+        },
+        {
+          "text": "That training will find the approximating network",
+          "correct": true
+        },
+        {
+          "text": "That arbitrary precision is theoretically possible",
+          "correct": false
+        },
+        {
+          "text": "That non-linear activations are required",
+          "correct": false
+        }
+      ],
+      "explanation": "The theorem is an existence result. It does not guarantee that optimization (gradient descent) will actually find such a network, or how wide it must be."
+    },
+    {
+      "id": "m2-q3",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Backpropagation",
+      "question": "Backpropagation computes gradients by applying which calculus rule?",
+      "options": [
+        {
+          "text": "The product rule only",
+          "correct": false
+        },
+        {
+          "text": "The chain rule",
+          "correct": true
+        },
+        {
+          "text": "Integration by parts",
+          "correct": false
+        },
+        {
+          "text": "Taylor expansion",
+          "correct": false
+        }
+      ],
+      "explanation": "Backpropagation is a systematic application of the chain rule in reverse topological order over the computation graph."
+    },
+    {
+      "id": "m2-q4",
+      "type": "multiple-choice",
+      "difficulty": "easy",
+      "topic": "Loss Functions",
+      "question": "Which loss function is most appropriate for multi-class classification with mutually exclusive classes?",
+      "options": [
+        {
+          "text": "Mean Squared Error",
+          "correct": false
+        },
+        {
+          "text": "Binary Cross-Entropy",
+          "correct": false
+        },
+        {
+          "text": "Categorical Cross-Entropy",
+          "correct": true
+        },
+        {
+          "text": "Huber Loss",
+          "correct": false
+        }
+      ],
+      "explanation": "Categorical cross-entropy (combined with softmax) is the standard choice for single-label multi-class classification."
+    },
+    {
+      "id": "m2-q5",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "Gradient Flow",
+      "question": "Which technique does NOT directly help stabilize gradient flow in deep networks?",
+      "options": [
+        {
+          "text": "Batch Normalization",
+          "correct": false
+        },
+        {
+          "text": "Residual (skip) connections",
+          "correct": false
+        },
+        {
+          "text": "Xavier/He initialization",
+          "correct": false
+        },
+        {
+          "text": "Increasing the mini-batch size arbitrarily",
+          "correct": true
+        }
+      ],
+      "explanation": "Simply enlarging the batch size does not address gradient vanishing or exploding; normalization, skip connections, and proper init do."
+    }
+  ]
+}

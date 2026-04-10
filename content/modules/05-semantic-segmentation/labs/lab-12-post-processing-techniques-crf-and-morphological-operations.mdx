@@ -1,0 +1,544 @@
+---
+title: "Post-processing Techniques - CRF and Morphological Operations"
+module: 5
+labNumber: 12
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Post-processing Techniques - CRF and Morphological Operations
+
+## Objectives
+- Apply Conditional Random Fields (CRF) for segmentation refinement
+- Use morphological operations to clean up predictions
+- Implement connected component analysis
+- Compare post-processing techniques
+
+## Complete Implementation
+
+```python
+"""
+Lab 5.11: Post-processing Techniques - CRF and Morphological Operations
+Refining segmentation results with post-processing
+"""
+
+import tensorflow as tf
+from tensorflow import keras
+import numpy as np
+import matplotlib.pyplot as plt
+import cv2
+
+tf.random.set_seed(42)
+np.random.seed(42)
+
+print(f"TensorFlow version: {tf.__version__}")
+
+# =============================================================================
+# Section 1: Generate Sample Predictions
+# =============================================================================
+
+def generate_noisy_predictions(image_size=(128, 128), num_samples=5):
+    """
+    Generate synthetic noisy segmentation predictions.
+    
+    Simulates real-world model outputs with:
+    - Jagged boundaries
+    - Small holes in regions
+    - Isolated noise pixels
+    """
+    print("\n" + "="*60)
+    print("GENERATING NOISY PREDICTIONS")
+    print("="*60)
+    
+    images = []
+    clean_masks = []
+    noisy_masks = []
+    
+    for _ in range(num_samples):
+        # Image
+        img = np.random.rand(image_size[0], image_size[1], 3).astype(np.float32) * 0.3 + 0.3
+        
+        # Clean mask (ground truth)
+        clean_mask = np.zeros((image_size[0], image_size[1]), dtype=np.float32)
+        
+        # Add main region
+        center = (np.random.randint(30, image_size[0]-30), 
+                  np.random.randint(30, image_size[1]-30))
+        radius = np.random.randint(20, 35)
+        
+        y, x = np.ogrid[:image_size[0], :image_size[1]]
+        dist = np.sqrt((x - center[1])**2 + (y - center[0])**2)
+        clean_mask[dist <= radius] = 1.0
+        
+        # Add texture to image based on mask
+        img[clean_mask > 0.5] += np.random.rand(np.sum(clean_mask > 0.5), 3) * 0.4
+        img = np.clip(img, 0, 1)
+        
+        # Create noisy prediction
+        noisy_mask = clean_mask.copy()
+        
+        # Add boundary noise
+        boundary = cv2.Canny((noisy_mask * 255).astype(np.uint8), 50, 150)
+        boundary_coords = np.where(boundary > 0)
+        num_noise_points = len(boundary_coords[0]) // 3
+        noise_indices = np.random.choice(len(boundary_coords[0]), num_noise_points, replace=False)
+        
+        for idx in noise_indices:
+            y, x = boundary_coords[0][idx], boundary_coords[1][idx]
+            noisy_mask[max(0, y-2):min(image_size[0], y+3), 
+                      max(0, x-2):min(image_size[1], x+3)] = np.random.rand() > 0.5
+        
+        # Add small holes
+        num_holes = np.random.randint(3, 8)
+        for _ in range(num_holes):
+            hy = np.random.randint(0, image_size[0])
+            hx = np.random.randint(0, image_size[1])
+            if noisy_mask[hy, hx] > 0.5:
+                size = np.random.randint(2, 5)
+                noisy_mask[max(0, hy-size):min(image_size[0], hy+size+1),
+                          max(0, hx-size):min(image_size[1], hx+size+1)] = 0
+        
+        # Add isolated noise pixels
+        num_noise_pixels = np.random.randint(10, 30)
+        for _ in range(num_noise_pixels):
+            ny = np.random.randint(0, image_size[0])
+            nx = np.random.randint(0, image_size[1])
+            noisy_mask[ny, nx] = np.random.rand() > 0.5
+        
+        images.append(img)
+        clean_masks.append(clean_mask)
+        noisy_masks.append(noisy_mask)
+    
+    return (np.array(images), np.array(clean_masks), 
+            np.array(noisy_masks))
+
+
+# Generate data
+images, clean_masks, noisy_masks = generate_noisy_predictions(num_samples=6)
+
+# Visualize
+fig, axes = plt.subplots(3, 6, figsize=(18, 9))
+for i in range(6):
+    axes[0, i].imshow(images[i])
+    axes[0, i].set_title('Image')
+    axes[0, i].axis('off')
+    
+    axes[1, i].imshow(clean_masks[i], cmap='gray')
+    axes[1, i].set_title('Ground Truth')
+    axes[1, i].axis('off')
+    
+    axes[2, i].imshow(noisy_masks[i], cmap='gray')
+    axes[2, i].set_title('Noisy Prediction')
+    axes[2, i].axis('off')
+
+plt.tight_layout()
+plt.savefig('/mnt/okcomputer/output/noisy_predictions.png', dpi=150)
+plt.show()
+print("Noisy predictions saved to /mnt/okcomputer/output/noisy_predictions.png")
+
+# =============================================================================
+# Section 2: Morphological Operations
+# =============================================================================
+
+def apply_morphological_operations(mask, kernel_size=5):
+    """
+    Apply morphological operations to clean up segmentation.
+    
+    Operations:
+    1. Closing: Fill small holes
+    2. Opening: Remove small noise
+    3. Dilation/Erosion: Adjust boundary
+    
+    Args:
+        mask: Binary mask (0-1 or 0-255)
+        kernel_size: Size of morphological kernel
+    
+    Returns:
+        Processed mask
+    """
+    # Convert to uint8
+    if mask.max() <= 1.0:
+        mask_uint8 = (mask * 255).astype(np.uint8)
+    else:
+        mask_uint8 = mask.astype(np.uint8)
+    
+    # Create kernel
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
+    
+    # Closing: Dilation followed by Erosion (fills holes)
+    mask_closed = cv2.morphologyEx(mask_uint8, cv2.MORPH_CLOSE, kernel)
+    
+    # Opening: Erosion followed by Dilation (removes noise)
+    mask_opened = cv2.morphologyEx(mask_closed, cv2.MORPH_OPEN, kernel)
+    
+    return mask_opened / 255.0
+
+
+# Apply morphological operations
+print("\n" + "="*60)
+print("APPLYING MORPHOLOGICAL OPERATIONS")
+print("="*60)
+
+morph_results = []
+for mask in noisy_masks:
+    processed = apply_morphological_operations(mask, kernel_size=5)
+    morph_results.append(processed)
+
+morph_results = np.array(morph_results)
+
+# Visualize
+fig, axes = plt.subplots(2, 6, figsize=(18, 6))
+for i in range(6):
+    axes[0, i].imshow(noisy_masks[i], cmap='gray')
+    axes[0, i].set_title('Noisy')
+    axes[0, i].axis('off')
+    
+    axes[1, i].imshow(morph_results[i], cmap='gray')
+    axes[1, i].set_title('After Morphology')
+    axes[1, i].axis('off')
+
+plt.tight_layout()
+plt.savefig('/mnt/okcomputer/output/morphological_results.png', dpi=150)
+plt.show()
+print("Morphological results saved")
+
+# =============================================================================
+# Section 3: Connected Component Analysis
+# =============================================================================
+
+def connected_component_filtering(mask, min_area=100, max_components=None):
+    """
+    Filter connected components by area.
+    
+    Args:
+        mask: Binary mask
+        min_area: Minimum area to keep
+        max_components: Maximum number of components to keep (None = all)
+    
+    Returns:
+        Filtered mask
+    """
+    # Convert to uint8
+    if mask.max() <= 1.0:
+        mask_uint8 = (mask * 255).astype(np.uint8)
+    else:
+        mask_uint8 = mask.astype(np.uint8)
+    
+    # Find connected components
+    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(
+        mask_uint8, connectivity=8
+    )
+    
+    # Create output mask
+    filtered_mask = np.zeros_like(mask_uint8)
+    
+    # Filter by area (skip background label 0)
+    component_areas = [(i, stats[i, cv2.CC_STAT_AREA]) for i in range(1, num_labels)]
+    component_areas.sort(key=lambda x: x[1], reverse=True)
+    
+    kept_components = 0
+    for label, area in component_areas:
+        if area >= min_area:
+            filtered_mask[labels == label] = 255
+            kept_components += 1
+            
+            if max_components and kept_components >= max_components:
+                break
+    
+    return filtered_mask / 255.0, kept_components
+
+
+# Apply connected component filtering
+print("\n" + "="*60)
+print("CONNECTED COMPONENT FILTERING")
+print("="*60)
+
+cc_results = []
+for mask in noisy_masks:
+    processed, num_components = connected_component_filtering(
+        mask, min_area=50, max_components=2
+    )
+    cc_results.append(processed)
+
+cc_results = np.array(cc_results)
+
+# Visualize
+fig, axes = plt.subplots(2, 6, figsize=(18, 6))
+for i in range(6):
+    axes[0, i].imshow(noisy_masks[i], cmap='gray')
+    axes[0, i].set_title('Noisy')
+    axes[0, i].axis('off')
+    
+    axes[1, i].imshow(cc_results[i], cmap='gray')
+    axes[1, i].set_title('After CC Filter')
+    axes[1, i].axis('off')
+
+plt.tight_layout()
+plt.savefig('/mnt/okcomputer/output/cc_filtering.png', dpi=150)
+plt.show()
+print("Connected component results saved")
+
+# =============================================================================
+# Section 4: Conditional Random Fields (CRF) - Simplified Implementation
+# =============================================================================
+
+def crf_refinement(image, mask, num_iterations=5, sxy=3, srgb=10, compat=3):
+    """
+    Simplified CRF refinement for segmentation.
+    
+    CRF models pixel relationships to refine boundaries.
+    This is a simplified version for demonstration.
+    
+    Args:
+        image: Input image (H, W, 3)
+        mask: Initial segmentation mask (H, W)
+        num_iterations: Number of CRF iterations
+        sxy: Spatial standard deviation
+        srgb: Color standard deviation
+        compat: Compatibility factor
+    
+    Returns:
+        Refined mask
+    """
+    from scipy.ndimage import gaussian_filter
+    
+    h, w = mask.shape
+    
+    # Initialize with mask probabilities
+    prob_fg = mask.astype(np.float32)
+    prob_bg = 1 - prob_fg
+    
+    for _ in range(num_iterations):
+        # Compute pairwise potentials (simplified bilateral filter)
+        # Spatial term
+        spatial_weight = np.exp(-((np.arange(h)[:, None] - h//2)**2 + 
+                                   (np.arange(w) - w//2)**2) / (2 * sxy**2))
+        
+        # Color term
+        if len(image.shape) == 3:
+            color_diff = np.zeros((h, w))
+            for c in range(3):
+                color_diff += (image[:, :, c] - image[h//2, w//2, c])**2
+            color_weight = np.exp(-color_diff / (2 * srgb**2))
+        else:
+            color_weight = 1.0
+        
+        # Combine weights
+        pairwise = spatial_weight * color_weight
+        
+        # Message passing (simplified)
+        msg_fg = gaussian_filter(prob_fg, sigma=sxy/2)
+        msg_bg = gaussian_filter(prob_bg, sigma=sxy/2)
+        
+        # Update beliefs
+        unary_fg = np.log(prob_fg + 1e-6)
+        unary_bg = np.log(prob_bg + 1e-6)
+        
+        # Combine unary and pairwise
+        belief_fg = np.exp(unary_fg + compat * msg_fg)
+        belief_bg = np.exp(unary_bg + compat * msg_bg)
+        
+        # Normalize
+        Z = belief_fg + belief_bg
+        prob_fg = belief_fg / Z
+        prob_bg = belief_bg / Z
+    
+    return (prob_fg > 0.5).astype(np.float32)
+
+
+# Apply CRF refinement
+print("\n" + "="*60)
+print("CRF REFINEMENT")
+print("="*60)
+
+crf_results = []
+for img, mask in zip(images, noisy_masks):
+    refined = crf_refinement(img, mask, num_iterations=5)
+    crf_results.append(refined)
+
+crf_results = np.array(crf_results)
+
+# Visualize
+fig, axes = plt.subplots(2, 6, figsize=(18, 6))
+for i in range(6):
+    axes[0, i].imshow(noisy_masks[i], cmap='gray')
+    axes[0, i].set_title('Noisy')
+    axes[0, i].axis('off')
+    
+    axes[1, i].imshow(crf_results[i], cmap='gray')
+    axes[1, i].set_title('After CRF')
+    axes[1, i].axis('off')
+
+plt.tight_layout()
+plt.savefig('/mnt/okcomputer/output/crf_results.png', dpi=150)
+plt.show()
+print("CRF results saved")
+
+# =============================================================================
+# Section 5: Combined Post-processing Pipeline
+# =============================================================================
+
+def postprocess_segmentation(image, mask, config=None):
+    """
+    Complete post-processing pipeline.
+    
+    Args:
+        image: Input image
+        mask: Raw prediction mask
+        config: Post-processing configuration
+    
+    Returns:
+        Processed mask
+    """
+    if config is None:
+        config = {
+            'morphology': {'enabled': True, 'kernel_size': 5},
+            'connected_components': {'enabled': True, 'min_area': 50},
+            'crf': {'enabled': False, 'iterations': 5}
+        }
+    
+    result = mask.copy()
+    
+    # Morphological operations
+    if config['morphology']['enabled']:
+        result = apply_morphological_operations(
+            result, 
+            kernel_size=config['morphology']['kernel_size']
+        )
+    
+    # Connected component filtering
+    if config['connected_components']['enabled']:
+        result, _ = connected_component_filtering(
+            result,
+            min_area=config['connected_components']['min_area']
+        )
+    
+    # CRF refinement
+    if config['crf']['enabled']:
+        result = crf_refinement(
+            image, 
+            result,
+            num_iterations=config['crf']['iterations']
+        )
+    
+    return result
+
+
+# Apply combined pipeline
+print("\n" + "="*60)
+print("COMBINED POST-PROCESSING PIPELINE")
+print("="*60)
+
+config = {
+    'morphology': {'enabled': True, 'kernel_size': 5},
+    'connected_components': {'enabled': True, 'min_area': 50},
+    'crf': {'enabled': True, 'iterations': 5}
+}
+
+combined_results = []
+for img, mask in zip(images, noisy_masks):
+    processed = postprocess_segmentation(img, mask, config)
+    combined_results.append(processed)
+
+combined_results = np.array(combined_results)
+
+# Visualize comparison
+fig, axes = plt.subplots(5, 6, figsize=(18, 15))
+for i in range(6):
+    axes[0, i].imshow(images[i])
+    axes[0, i].set_title('Image')
+    axes[0, i].axis('off')
+    
+    axes[1, i].imshow(clean_masks[i], cmap='gray')
+    axes[1, i].set_title('Ground Truth')
+    axes[1, i].axis('off')
+    
+    axes[2, i].imshow(noisy_masks[i], cmap='gray')
+    axes[2, i].set_title('Raw Prediction')
+    axes[2, i].axis('off')
+    
+    axes[3, i].imshow(morph_results[i], cmap='gray')
+    axes[3, i].set_title('Morphology Only')
+    axes[3, i].axis('off')
+    
+    axes[4, i].imshow(combined_results[i], cmap='gray')
+    axes[4, i].set_title('Full Pipeline')
+    axes[4, i].axis('off')
+
+plt.tight_layout()
+plt.savefig('/mnt/okcomputer/output/postprocessing_comparison.png', dpi=150)
+plt.show()
+print("Full comparison saved to /mnt/okcomputer/output/postprocessing_comparison.png")
+
+# =============================================================================
+# Section 6: Quantitative Evaluation
+# =============================================================================
+
+def evaluate_segmentation(y_true, y_pred, smooth=1e-6):
+    """Compute segmentation metrics."""
+    y_true_f = y_true.flatten()
+    y_pred_f = y_pred.flatten()
+    
+    # Dice coefficient
+    intersection = np.sum(y_true_f * y_pred_f)
+    dice = (2. * intersection + smooth) / (np.sum(y_true_f) + np.sum(y_pred_f) + smooth)
+    
+    # IoU
+    union = np.sum(y_true_f) + np.sum(y_pred_f) - intersection
+    iou = (intersection + smooth) / (union + smooth)
+    
+    # Accuracy
+    accuracy = np.mean(y_true_f == y_pred_f)
+    
+    return {'dice': dice, 'iou': iou, 'accuracy': accuracy}
+
+
+print("\n" + "="*60)
+print("QUANTITATIVE EVALUATION")
+print("="*60)
+
+methods = {
+    'Raw Prediction': noisy_masks,
+    'Morphology': morph_results,
+    'CC Filtering': cc_results,
+    'CRF': crf_results,
+    'Full Pipeline': combined_results
+}
+
+print(f"\n{'Method':<20} {'Dice':<10} {'IoU':<10} {'Accuracy':<10}")
+print("-" * 55)
+
+for name, predictions in methods.items():
+    metrics = {'dice': [], 'iou': [], 'accuracy': []}
+    
+    for pred, true in zip(predictions, clean_masks):
+        m = evaluate_segmentation(true, pred)
+        for k in metrics:
+            metrics[k].append(m[k])
+    
+    mean_dice = np.mean(metrics['dice'])
+    mean_iou = np.mean(metrics['iou'])
+    mean_acc = np.mean(metrics['accuracy'])
+    
+    print(f"{name:<20} {mean_dice:<10.4f} {mean_iou:<10.4f} {mean_acc:<10.4f}")
+
+# =============================================================================
+# Summary
+# =============================================================================
+
+print("\n" + "="*60)
+print("LAB 5.11 SUMMARY")
+print("="*60)
+print("""
+Key Takeaways:
+1. Morphological operations clean up small noise and fill holes
+2. Connected component filtering removes small isolated regions
+3. CRF refines boundaries using image appearance
+4. Combined pipeline provides best results
+5. Post-processing can significantly improve metrics
+
+Next: Lab 5.12 will cover ensemble methods for segmentation.
+""")
+```
+
+---

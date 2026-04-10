@@ -1,0 +1,266 @@
+---
+title: "VAE for Anomaly Detection"
+module: 9
+labNumber: 17
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# VAE for Anomaly Detection
+
+### Complete Implementation
+
+```python
+"""
+Lab 6.2: Variational Autoencoder for Anomaly Detection
+Topic: Probabilistic Anomaly Detection
+"""
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers, Model
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics import roc_curve, auc, precision_score, recall_score, f1_score
+
+np.random.seed(42)
+tf.random.set_seed(42)
+
+# Generate Data
+print("=" * 60)
+print("STEP 1: Generating Data")
+print("=" * 60)
+
+def generate_data_with_anomalies(n_points=2000, anomaly_ratio=0.05):
+    t = np.arange(n_points)
+    normal_signal = 50 + 10 * np.sin(2 * np.pi * t / 100) + np.random.normal(0, 2, n_points)
+    n_anomalies = int(n_points * anomaly_ratio)
+    anomaly_indices = np.random.choice(n_points, n_anomalies, replace=False)
+    data = normal_signal.copy()
+    labels = np.zeros(n_points)
+    for idx in anomaly_indices:
+        data[idx] += np.random.choice([-1, 1]) * np.random.uniform(15, 25)
+        labels[idx] = 1
+    return data, labels
+
+data, labels = generate_data_with_anomalies(2000, anomaly_ratio=0.05)
+print(f"Generated {len(data)} data points")
+print(f"Anomalies: {int(labels.sum())}")
+
+# Create Windows
+print("\n" + "=" * 60)
+print("STEP 2: Creating Windows")
+print("=" * 60)
+
+def create_windows(data, window_size):
+    X = []
+    for i in range(len(data) - window_size + 1):
+        X.append(data[i:(i + window_size)])
+    return np.array(X)
+
+window_size = 60
+X = create_windows(data, window_size)
+X = X.reshape(X.shape[0], X.shape[1], 1)
+windowed_labels = labels[window_size-1:]
+
+# Split
+train_size = int(0.6 * len(X))
+val_size = int(0.2 * len(X))
+X_train = X[:train_size]
+X_val = X[train_size:train_size + val_size]
+X_test = X[train_size + val_size:]
+y_val = windowed_labels[train_size:train_size + val_size]
+y_test = windowed_labels[train_size + val_size:]
+
+# Filter training data
+normal_train_mask = windowed_labels[:train_size] == 0
+X_train_normal = X_train[normal_train_mask]
+print(f"X_train_normal: {X_train_normal.shape}")
+
+# Build VAE
+print("\n" + "=" * 60)
+print("STEP 3: Building VAE")
+print("=" * 60)
+
+class Sampling(layers.Layer):
+    def call(self, inputs):
+        z_mean, z_log_var = inputs
+        batch = tf.shape(z_mean)[0]
+        dim = tf.shape(z_mean)[1]
+        epsilon = tf.random.normal(shape=(batch, dim))
+        return z_mean + tf.exp(0.5 * z_log_var) * epsilon
+
+def build_vae(window_size, n_features=1, latent_dim=8):
+    # Encoder
+    inputs = layers.Input(shape=(window_size, n_features))
+    x = layers.LSTM(32, return_sequences=True)(inputs)
+    x = layers.LSTM(16, return_sequences=False)(x)
+    z_mean = layers.Dense(latent_dim)(x)
+    z_log_var = layers.Dense(latent_dim)(x)
+    z = Sampling()([z_mean, z_log_var])
+    encoder = Model(inputs, [z_mean, z_log_var, z])
+    # Decoder
+    decoder_inputs = layers.Input(shape=(latent_dim,))
+    x = layers.RepeatVector(window_size)(decoder_inputs)
+    x = layers.LSTM(16, return_sequences=True)(x)
+    x = layers.LSTM(32, return_sequences=True)(x)
+    outputs = layers.TimeDistributed(layers.Dense(n_features))(x)
+    decoder = Model(decoder_inputs, outputs)
+    # Full VAE
+    z_mean, z_log_var, z = encoder(inputs)
+    reconstructed = decoder(z)
+    vae = Model(inputs, reconstructed)
+    # Loss
+    reconstruction_loss = tf.reduce_mean(
+        tf.reduce_sum(tf.square(inputs - reconstructed), axis=(1, 2))
+    )
+    kl_loss = -0.5 * tf.reduce_mean(
+        tf.reduce_sum(1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var), axis=1)
+    )
+    vae_loss = reconstruction_loss + 0.001 * kl_loss
+    vae.add_loss(vae_loss)
+    vae.compile(optimizer='adam')
+    return vae, encoder, decoder
+
+vae, encoder, decoder = build_vae(window_size)
+vae.summary()
+
+# Train VAE
+print("\n" + "=" * 60)
+print("STEP 4: Training VAE")
+print("=" * 60)
+
+early_stop = keras.callbacks.EarlyStopping(
+    monitor='val_loss', patience=10, restore_best_weights=True
+)
+
+history = vae.fit(
+    X_train_normal, X_train_normal,
+    validation_data=(X_val, X_val),
+    epochs=50,
+    batch_size=32,
+    callbacks=[early_stop],
+    verbose=1
+)
+
+plt.figure(figsize=(10, 4))
+plt.plot(history.history['loss'], label='Train')
+plt.plot(history.history['val_loss'], label='Validation')
+plt.title('VAE Training Loss')
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.savefig('/mnt/okcomputer/output/lab6_2_vae_history.png', dpi=150)
+plt.show()
+
+# Calculate Anomaly Score
+print("\n" + "=" * 60)
+print("STEP 5: Calculating Anomaly Score")
+print("=" * 60)
+
+X_test_pred = vae.predict(X_test)
+reconstruction_error = np.mean(np.abs(X_test - X_test_pred), axis=(1, 2))
+print(f"Mean reconstruction error: {reconstruction_error.mean():.4f}")
+
+# Determine threshold
+X_val_pred = vae.predict(X_val)
+val_error = np.mean(np.abs(X_val - X_val_pred), axis=(1, 2))
+normal_val_error = val_error[y_val == 0]
+threshold = np.percentile(normal_val_error, 95)
+print(f"Threshold: {threshold:.4f}")
+
+# Predict
+y_pred = (reconstruction_error > threshold).astype(int)
+
+# Metrics
+precision = precision_score(y_test, y_pred)
+recall = recall_score(y_test, y_pred)
+f1 = f1_score(y_test, y_pred)
+
+print(f"\nPrecision: {precision:.4f}")
+print(f"Recall: {recall:.4f}")
+print(f"F1 Score: {f1:.4f}")
+
+# ROC Curve
+fpr, tpr, _ = roc_curve(y_test, reconstruction_error)
+roc_auc = auc(fpr, tpr)
+
+plt.figure(figsize=(10, 4))
+plt.plot(fpr, tpr, color='blue', lw=2, label=f'ROC (AUC = {roc_auc:.3f})')
+plt.plot([0, 1], [0, 1], color='gray', linestyle='--')
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('VAE ROC Curve')
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.savefig('/mnt/okcomputer/output/lab6_2_vae_roc.png', dpi=150)
+plt.show()
+
+# Save models
+vae.save('/mnt/okcomputer/output/lab6_2_vae.h5')
+encoder.save('/mnt/okcomputer/output/lab6_2_encoder.h5')
+decoder.save('/mnt/okcomputer/output/lab6_2_decoder.h5')
+
+print("\n" + "=" * 60)
+print("Lab 6.2 Complete!")
+print("=" * 60)
+```
+
+---
+
+# Summary and Key Takeaways
+
+## Module 9 Complete Labs Summary
+
+### Part 1: Time Series Preprocessing (3 Labs)
+- **Lab 1.1**: Basic preprocessing, technical indicators, normalization
+- **Lab 1.2**: Seasonal decomposition, ADF test, detrending methods
+- **Lab 1.3**: Multivariate data, correlation analysis, feature engineering
+
+### Part 2: Windowing Implementations (3 Labs)
+- **Lab 2.1**: Sliding windows, TensorFlow Dataset, train/val/test split
+- **Lab 2.2**: Multivariate windowing, different target configurations
+- **Lab 2.3**: Expanding windows, rolling statistics, combined strategies
+
+### Part 3: 1D CNN for Forecasting (2 Labs)
+- **Lab 3.1**: Basic 1D CNN, dilated convolutions for stock prediction
+- **Lab 3.2**: Multivariate CNN for energy demand prediction
+
+### Part 4: LSTM Forecasting (3 Labs)
+- **Lab 4.1**: Basic LSTM for univariate forecasting
+- **Lab 4.2**: LSTM with attention mechanism
+- **Lab 4.3**: Bidirectional LSTM for weather forecasting
+
+### Part 5: Multi-step Forecasting (3 Labs)
+- **Lab 5.1**: Direct multi-step forecasting
+- **Lab 5.2**: Recursive multi-step forecasting
+- **Lab 5.3**: Seq2Seq encoder-decoder architecture
+
+### Part 6: Anomaly Detection (2 Labs)
+- **Lab 6.1**: LSTM Autoencoder for sensor data anomaly detection
+- **Lab 6.2**: Variational Autoencoder for probabilistic anomaly detection
+
+## Files Generated
+
+All labs save their outputs to `/mnt/okcomputer/output/`:
+- Data files: `.csv`, `.npy`
+- Model files: `.h5`
+- Scaler files: `.pkl`
+- Visualization files: `.png`
+
+## Troubleshooting Tips
+
+| Issue | Solution |
+|-------|----------|
+| NaN values after windowing | Check window size vs data length, use `.dropna()` |
+| Poor model performance | Try different window sizes, add more features, tune hyperparameters |
+| Overfitting | Add dropout, reduce model complexity, use early stopping |
+| Slow training | Use TensorFlow Dataset API, reduce batch size, use GPU |
+
+## Next Steps
+
+1. Experiment with different architectures (GRU, Transformer)
+2. Try ensemble methods combining CNN and LSTM
+3. Implement online learning for streaming data
+4. Explore attention mechanisms for interpretability

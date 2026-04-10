@@ -1,0 +1,397 @@
+---
+title: "Using Pretrained GloVe Embeddings"
+module: 8
+labNumber: 15
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Using Pretrained GloVe Embeddings
+
+### Objectives
+- Load pretrained GloVe embeddings
+- Integrate with TensorFlow models
+- Compare with random initialization
+
+### Complete Implementation
+
+```python
+"""
+Lab 8.14: Using Pretrained GloVe Embeddings
+===========================================
+Load and use pretrained GloVe embeddings in TensorFlow.
+"""
+
+import tensorflow as tf
+import numpy as np
+import os
+
+# ============================================================
+# PART 1: Download and Load GloVe
+# ============================================================
+
+print("=" * 60)
+print("PRETRAINED GLOVE EMBEDDINGS")
+print("=" * 60)
+
+def download_glove(glove_dir='glove', embedding_dim=100):
+    """
+    Download GloVe embeddings.
+    
+    Args:
+        glove_dir: Directory to save embeddings
+        embedding_dim: GloVe dimension (50, 100, 200, 300)
+        
+    Returns:
+        Path to downloaded file
+    """
+    import urllib.request
+    import zipfile
+    
+    os.makedirs(glove_dir, exist_ok=True)
+    
+    glove_file = f'glove.6B.{embedding_dim}d.txt'
+    glove_path = os.path.join(glove_dir, glove_file)
+    
+    if not os.path.exists(glove_path):
+        print(f"Downloading GloVe {embedding_dim}d embeddings...")
+        url = f'http://nlp.stanford.edu/data/glove.6B.zip'
+        zip_path = os.path.join(glove_dir, 'glove.6B.zip')
+        
+        urllib.request.urlretrieve(url, zip_path)
+        
+        print("Extracting...")
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extract(glove_file, glove_dir)
+        
+        os.remove(zip_path)
+        print("Done!")
+    else:
+        print(f"GloVe embeddings already downloaded.")
+    
+    return glove_path
+
+
+def load_glove_embeddings(glove_path):
+    """
+    Load GloVe embeddings from file.
+    
+    Args:
+        glove_path: Path to GloVe file
+        
+    Returns:
+        Dictionary of {word: embedding_vector}
+    """
+    embeddings_index = {}
+    
+    print(f"Loading GloVe embeddings from {glove_path}...")
+    
+    with open(glove_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            values = line.split()
+            word = values[0]
+            coefs = np.asarray(values[1:], dtype='float32')
+            embeddings_index[word] = coefs
+    
+    print(f"Loaded {len(embeddings_index)} word vectors.")
+    
+    return embeddings_index
+
+
+# For demonstration, create synthetic GloVe-like embeddings
+def create_synthetic_glove(vocab_size=10000, embedding_dim=100):
+    """
+    Create synthetic embeddings for demonstration.
+    """
+    print("Creating synthetic GloVe-like embeddings...")
+    
+    embeddings_index = {}
+    
+    # Common words with meaningful embeddings
+    words = ['the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been',
+             'good', 'bad', 'great', 'terrible', 'excellent', 'poor',
+             'happy', 'sad', 'joy', 'sorrow', 'love', 'hate',
+             'king', 'queen', 'man', 'woman', 'prince', 'princess',
+             'big', 'small', 'large', 'tiny', 'huge', 'little',
+             'fast', 'slow', 'quick', 'rapid', 'swift', 'speedy']
+    
+    for word in words:
+        # Create embedding with some structure
+        embedding = np.random.randn(embedding_dim).astype('float32')
+        embeddings_index[word] = embedding
+    
+    # Add random words
+    for i in range(vocab_size - len(words)):
+        word = f'word_{i}'
+        embedding = np.random.randn(embedding_dim).astype('float32')
+        embeddings_index[word] = embedding
+    
+    print(f"Created {len(embeddings_index)} synthetic embeddings.")
+    
+    return embeddings_index
+
+
+# ============================================================
+# PART 2: Create Embedding Matrix
+# ============================================================
+
+def create_embedding_matrix(word_index, embeddings_index, embedding_dim):
+    """
+    Create embedding matrix from pretrained embeddings.
+    
+    Args:
+        word_index: {word: index} mapping from tokenizer
+        embeddings_index: {word: vector} from GloVe
+        embedding_dim: Embedding dimension
+        
+    Returns:
+        Embedding matrix (vocab_size, embedding_dim)
+    """
+    vocab_size = len(word_index) + 1  # +1 for index 0 (padding)
+    
+    # Initialize with random values
+    embedding_matrix = np.random.randn(vocab_size, embedding_dim).astype('float32') * 0.01
+    
+    # Fill in pretrained embeddings
+    found = 0
+    for word, idx in word_index.items():
+        if word in embeddings_index:
+            embedding_matrix[idx] = embeddings_index[word]
+            found += 1
+    
+    print(f"Found embeddings for {found}/{len(word_index)} words "
+          f"({100*found/len(word_index):.1f}%)")
+    
+    return embedding_matrix
+
+
+# ============================================================
+# PART 3: IMDB Sentiment with GloVe
+# ============================================================
+
+print("\n" + "=" * 60)
+print("IMDB SENTIMENT WITH GLOVE")
+print("=" * 60)
+
+# Load IMDB dataset
+print("\nLoading IMDB dataset...")
+vocab_size = 10000
+max_length = 200
+embedding_dim = 100
+
+(x_train, y_train), (x_test, y_test) = tf.keras.datasets.imdb.load_data(
+    num_words=vocab_size
+)
+
+# Get word index
+word_index = tf.keras.datasets.imdb.get_word_index()
+
+# Adjust word index (IMDB dataset offset by 3)
+word_index = {k: v + 3 for k, v in word_index.items()}
+word_index['<PAD>'] = 0
+word_index['<START>'] = 1
+word_index['<UNK>'] = 2
+word_index['<UNUSED>'] = 3
+
+# Create synthetic embeddings for demo
+embeddings_index = create_synthetic_glove(vocab_size, embedding_dim)
+
+# Create embedding matrix
+embedding_matrix = create_embedding_matrix(word_index, embeddings_index, embedding_dim)
+
+print(f"Embedding matrix shape: {embedding_matrix.shape}")
+
+# Pad sequences
+x_train = tf.keras.preprocessing.sequence.pad_sequences(
+    x_train, maxlen=max_length, padding='post'
+)
+x_test = tf.keras.preprocessing.sequence.pad_sequences(
+    x_test, maxlen=max_length, padding='post'
+)
+
+
+# ============================================================
+# PART 4: Models Comparison
+# ============================================================
+
+def create_model_with_pretrained(embedding_matrix, max_length, trainable=False):
+    """
+    Create model with pretrained embeddings.
+    
+    Args:
+        embedding_matrix: Pretrained embedding matrix
+        max_length: Maximum sequence length
+        trainable: Whether to fine-tune embeddings
+        
+    Returns:
+        Compiled model
+    """
+    vocab_size, embedding_dim = embedding_matrix.shape
+    
+    model = tf.keras.Sequential([
+        # Embedding layer with pretrained weights
+        tf.keras.layers.Embedding(
+            vocab_size, embedding_dim,
+            weights=[embedding_matrix],
+            input_length=max_length,
+            trainable=trainable,
+            mask_zero=True
+        ),
+        
+        tf.keras.layers.LSTM(64, dropout=0.2),
+        tf.keras.layers.Dense(64, activation='relu'),
+        tf.keras.layers.Dropout(0.5),
+        tf.keras.layers.Dense(1, activation='sigmoid')
+    ])
+    
+    model.compile(
+        optimizer='adam',
+        loss='binary_crossentropy',
+        metrics=['accuracy']
+    )
+    
+    return model
+
+
+def create_model_with_random(vocab_size, embedding_dim, max_length):
+    """
+    Create model with random embeddings (baseline).
+    """
+    model = tf.keras.Sequential([
+        tf.keras.layers.Embedding(
+            vocab_size, embedding_dim,
+            input_length=max_length,
+            mask_zero=True
+        ),
+        tf.keras.layers.LSTM(64, dropout=0.2),
+        tf.keras.layers.Dense(64, activation='relu'),
+        tf.keras.layers.Dropout(0.5),
+        tf.keras.layers.Dense(1, activation='sigmoid')
+    ])
+    
+    model.compile(
+        optimizer='adam',
+        loss='binary_crossentropy',
+        metrics=['accuracy']
+    )
+    
+    return model
+
+
+# Compare models (using subset for speed)
+print("\nComparing models...")
+
+x_sub = x_train[:2000]
+y_sub = y_train[:2000]
+x_test_sub = x_test[:500]
+y_test_sub = y_test[:500]
+
+models = {
+    'Random Embeddings': create_model_with_random(vocab_size, embedding_dim, max_length),
+    'Pretrained (Frozen)': create_model_with_pretrained(embedding_matrix, max_length, trainable=False),
+    'Pretrained (Trainable)': create_model_with_pretrained(embedding_matrix, max_length, trainable=True)
+}
+
+results = {}
+
+for name, model in models.items():
+    print(f"\nTraining: {name}")
+    
+    history = model.fit(
+        x_sub, y_sub,
+        validation_split=0.2,
+        epochs=5,
+        batch_size=64,
+        verbose=0
+    )
+    
+    # Evaluate
+    _, test_acc = model.evaluate(x_test_sub, y_test_sub, verbose=0)
+    results[name] = {
+        'val_acc': max(history.history['val_accuracy']),
+        'test_acc': test_acc
+    }
+    
+    print(f"  Best val acc: {results[name]['val_acc']:.4f}")
+    print(f"  Test acc: {results[name]['test_acc']:.4f}")
+
+
+# ============================================================
+# PART 5: Results Summary
+# ============================================================
+
+print("\n" + "=" * 60)
+print("RESULTS SUMMARY")
+print("=" * 60)
+
+print("\nModel Comparison:")
+for name, metrics in results.items():
+    print(f"\n{name}:")
+    print(f"  Validation Accuracy: {metrics['val_acc']:.4f}")
+    print(f"  Test Accuracy: {metrics['test_acc']:.4f}")
+
+pretrained_benefits = """
+
+Pretrained Embedding Benefits:
+1. Better initialization (semantic knowledge)
+2. Faster convergence
+3. Better performance with less data
+4. Handles OOV words better
+
+When to use:
+- Small training datasets
+- Need fast convergence
+- General domain tasks
+
+When NOT to use:
+- Very large training dataset
+- Domain-specific vocabulary
+- Need full control over embeddings
+"""
+
+print(pretrained_benefits)
+
+
+# ============================================================
+# EXERCISES
+# ============================================================
+
+print("\n" + "=" * 60)
+print("EXERCISES")
+print("=" * 60)
+
+exercises = """
+Exercise 1: Different Embedding Dimensions
+------------------------------------------
+Compare GloVe dimensions:
+- Test 50d, 100d, 200d, 300d
+- Analyze speed vs accuracy trade-off
+- Find optimal for your task
+
+Exercise 2: Domain Adaptation
+-----------------------------
+Adapt pretrained embeddings:
+- Continue training on domain corpus
+- Use different learning rates
+- Compare with frozen embeddings
+
+Exercise 3: OOV Handling
+------------------------
+Improve OOV word handling:
+- Use subword embeddings
+- Character-level fallback
+- Random with small norm
+
+Exercise 4: Embedding Visualization
+-----------------------------------
+Visualize embeddings:
+- PCA/t-SNE projection
+- Word analogy tests
+- Clustering analysis
+"""
+
+print(exercises)
+```
+
+
+---

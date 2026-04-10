@@ -1,0 +1,240 @@
+---
+title: "Lab 17"
+module: 2
+labNumber: 17
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-07-part7.md"
+---
+```python
+"""
+Lab 2.10: Visualizing Gradients During Training
+Advanced visualization of training dynamics.
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+
+print("=" * 60)
+print("LAB 2.10: Visualizing Gradients During Training")
+print("=" * 60)
+
+# ============================================================
+# STEP 1: Setup Model and Data
+# ============================================================
+print("\n[STEP 1] Setting up model and data...")
+
+# Generate data
+np.random.seed(42)
+X_train = np.random.randn(1000, 20).astype(np.float32)
+y_train = (X_train[:, 0] * 2 + X_train[:, 1] * -1 + 
+           np.random.randn(1000) * 0.1).astype(np.float32).reshape(-1, 1)
+
+# Create model
+model = tf.keras.Sequential([
+    tf.keras.layers.Dense(64, activation='relu', input_shape=(20,), name='layer1'),
+    tf.keras.layers.Dense(32, activation='relu', name='layer2'),
+    tf.keras.layers.Dense(16, activation='relu', name='layer3'),
+    tf.keras.layers.Dense(1, name='output')
+])
+
+optimizer = tf.keras.optimizers.Adam(learning_rate=0.01)
+loss_fn = tf.keras.losses.MeanSquaredError()
+
+print("Model created with 4 layers")
+
+# ============================================================
+# STEP 2: Custom Training with Gradient Tracking
+# ============================================================
+print("\n[STEP 2] Training with gradient tracking...")
+
+epochs = 50
+batch_size = 32
+
+# Tracking variables
+history = {
+    'loss': [],
+    'layer1_grad_norm': [],
+    'layer2_grad_norm': [],
+    'layer3_grad_norm': [],
+    'output_grad_norm': [],
+    'layer1_weight_mean': [],
+    'layer2_weight_mean': [],
+    'layer3_weight_mean': [],
+    'output_weight_mean': []
+}
+
+for epoch in range(epochs):
+    epoch_loss = 0.0
+    num_batches = 0
+    
+    # Track gradients for this epoch
+    epoch_grad_norms = {'layer1': [], 'layer2': [], 'layer3': [], 'output': []}
+    
+    for i in range(0, len(X_train), batch_size):
+        X_batch = X_train[i:i+batch_size]
+        y_batch = y_train[i:i+batch_size]
+        
+        with tf.GradientTape() as tape:
+            y_pred = model(X_batch, training=True)
+            loss = loss_fn(y_batch, y_pred)
+        
+        # Compute gradients
+        gradients = tape.gradient(loss, model.trainable_variables)
+        
+        # Track gradient norms
+        for j, (var, grad) in enumerate(zip(model.trainable_variables, gradients)):
+            if 'kernel' in var.name:
+                layer_name = var.name.split('/')[0]
+                grad_norm = tf.norm(grad).numpy()
+                epoch_grad_norms[layer_name].append(grad_norm)
+        
+        # Apply gradients
+        optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+        
+        epoch_loss += loss.numpy()
+        num_batches += 1
+    
+    # Record history
+    history['loss'].append(epoch_loss / num_batches)
+    
+    for layer_name in ['layer1', 'layer2', 'layer3', 'output']:
+        if epoch_grad_norms[layer_name]:
+            avg_grad_norm = np.mean(epoch_grad_norms[layer_name])
+            history[f'{layer_name}_grad_norm'].append(avg_grad_norm)
+    
+    # Record weight statistics
+    for layer in model.layers:
+        if hasattr(layer, 'kernel'):
+            history[f'{layer.name}_weight_mean'].append(
+                tf.reduce_mean(tf.abs(layer.kernel)).numpy()
+            )
+    
+    if epoch % 10 == 0:
+        print(f"Epoch {epoch}: Loss = {history['loss'][-1]:.4f}")
+
+print("\nTraining completed!")
+
+# ============================================================
+# STEP 3: Visualize Gradient Flow
+# ============================================================
+print("\n[STEP 3] Visualizing gradient flow...")
+
+fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+
+# Loss curve
+ax1 = axes[0, 0]
+ax1.plot(history['loss'], linewidth=2, color='blue')
+ax1.set_xlabel('Epoch')
+ax1.set_ylabel('Loss (MSE)')
+ax1.set_title('Training Loss', fontweight='bold')
+ax1.grid(True, alpha=0.3)
+
+# Gradient norms by layer
+ax2 = axes[0, 1]
+for layer_name in ['layer1', 'layer2', 'layer3', 'output']:
+    ax2.plot(history[f'{layer_name}_grad_norm'], 
+             label=layer_name, linewidth=2, marker='o', markersize=3)
+ax2.set_xlabel('Epoch')
+ax2.set_ylabel('Gradient Norm')
+ax2.set_title('Gradient Norms by Layer', fontweight='bold')
+ax2.legend()
+ax2.grid(True, alpha=0.3)
+ax2.set_yscale('log')
+
+# Weight magnitudes
+ax3 = axes[1, 0]
+for layer_name in ['layer1', 'layer2', 'layer3', 'output']:
+    ax3.plot(history[f'{layer_name}_weight_mean'], 
+             label=layer_name, linewidth=2)
+ax3.set_xlabel('Epoch')
+ax3.set_ylabel('Mean Absolute Weight')
+ax3.set_title('Weight Magnitudes During Training', fontweight='bold')
+ax3.legend()
+ax3.grid(True, alpha=0.3)
+
+# Gradient flow heatmap
+ax4 = axes[1, 1]
+grad_data = np.array([
+    history['layer1_grad_norm'],
+    history['layer2_grad_norm'],
+    history['layer3_grad_norm'],
+    history['output_grad_norm']
+])
+im = ax4.imshow(grad_data, aspect='auto', cmap='viridis')
+ax4.set_yticks(range(4))
+ax4.set_yticklabels(['Layer 1', 'Layer 2', 'Layer 3', 'Output'])
+ax4.set_xlabel('Epoch')
+ax4.set_title('Gradient Flow Heatmap', fontweight='bold')
+plt.colorbar(im, ax=ax4, label='Gradient Norm')
+
+plt.suptitle('Gradient Visualization During Training', fontsize=14, fontweight='bold')
+plt.tight_layout()
+plt.savefig('/mnt/okcomputer/output/gradient_visualization.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+print("\nGradient visualization saved!")
+
+# ============================================================
+# STEP 4: Weight Distribution Evolution
+# ============================================================
+print("\n[STEP 4] Visualizing weight distribution evolution...")
+
+# Get initial and final weights
+initial_weights = {}
+final_weights = {}
+
+for layer in model.layers:
+    if hasattr(layer, 'kernel'):
+        initial_weights[layer.name] = layer.kernel.numpy().flatten()
+
+# Re-initialize model to get initial weights
+model_init = tf.keras.Sequential([
+    tf.keras.layers.Dense(64, activation='relu', input_shape=(20,)),
+    tf.keras.layers.Dense(32, activation='relu'),
+    tf.keras.layers.Dense(16, activation='relu'),
+    tf.keras.layers.Dense(1)
+])
+
+for layer in model_init.layers:
+    if hasattr(layer, 'kernel'):
+        initial_weights[layer.name] = layer.kernel.numpy().flatten()
+
+for layer in model.layers:
+    if hasattr(layer, 'kernel'):
+        final_weights[layer.name] = layer.kernel.numpy().flatten()
+
+# Plot weight distributions
+fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+axes = axes.flatten()
+
+for idx, layer_name in enumerate(['layer1', 'layer2', 'layer3', 'output']):
+    ax = axes[idx]
+    ax.hist(initial_weights[layer_name], bins=50, alpha=0.5, 
+            label='Initial', color='blue', density=True)
+    ax.hist(final_weights[layer_name], bins=50, alpha=0.5, 
+            label='Final', color='red', density=True)
+    ax.set_xlabel('Weight Value')
+    ax.set_ylabel('Density')
+    ax.set_title(f'{layer_name} Weight Distribution', fontweight='bold')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+
+plt.suptitle('Weight Distribution Evolution', fontsize=14, fontweight='bold')
+plt.tight_layout()
+plt.savefig('/mnt/okcomputer/output/weight_distributions.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+print("\n" + "=" * 60)
+print("LAB 2.10 COMPLETED SUCCESSFULLY!")
+print("=" * 60)
+print("\nKEY TAKEAWAYS:")
+print("1. Gradient norms reveal learning dynamics per layer")
+print("2. Early layers often have smaller gradients (vanishing)")
+print("3. Weight distributions evolve during training")
+print("4. Visualizing gradients helps diagnose training issues")
+print("5. Layer-wise analysis enables targeted improvements")
+```
+
+---

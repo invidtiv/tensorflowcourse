@@ -1,0 +1,384 @@
+---
+title: "Word-Level Tokenization"
+module: 8
+labNumber: 2
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Word-Level Tokenization
+
+### Objectives
+- Understand word tokenization concepts
+- Implement custom word tokenizer
+- Use TensorFlow's TextVectorization layer
+
+### Prerequisites
+- TensorFlow 2.x installed
+- Basic understanding of text preprocessing
+
+### Complete Implementation
+
+```python
+"""
+Lab 8.1: Word-Level Tokenization
+================================
+Learn different approaches to word-level tokenization in TensorFlow.
+"""
+
+import tensorflow as tf
+import numpy as np
+import re
+from collections import Counter
+
+# ============================================================
+# PART 1: Custom Word Tokenizer (From Scratch)
+# ============================================================
+
+class CustomWordTokenizer:
+    """
+    Custom word tokenizer demonstrating tokenization concepts.
+    """
+    
+    def __init__(self, num_words=None, oov_token='<OOV>'):
+        self.num_words = num_words
+        self.oov_token = oov_token
+        self.word_index = {}
+        self.index_word = {}
+        self.word_counts = Counter()
+        
+    def fit_on_texts(self, texts):
+        """
+        Build vocabulary from texts.
+        
+        Args:
+            texts: List of strings
+        """
+        # Tokenize all texts and count word frequencies
+        for text in texts:
+            tokens = self._tokenize(text)
+            self.word_counts.update(tokens)
+        
+        # Build word index (reserve 0 for padding, 1 for OOV)
+        self.word_index = {self.oov_token: 1}
+        self.index_word = {1: self.oov_token}
+        
+        # Sort by frequency and take top num_words
+        sorted_words = self.word_counts.most_common(self.num_words)
+        
+        for idx, (word, count) in enumerate(sorted_words, start=2):
+            self.word_index[word] = idx
+            self.index_word[idx] = word
+            
+    def _tokenize(self, text):
+        """
+        Tokenize text into words.
+        
+        Strategy:
+        1. Convert to lowercase
+        2. Remove special characters
+        3. Split on whitespace
+        """
+        # Convert to lowercase
+        text = text.lower()
+        
+        # Remove special characters (keep alphanumeric and spaces)
+        text = re.sub(r'[^a-z0-9\s]', '', text)
+        
+        # Split on whitespace
+        tokens = text.split()
+        
+        return tokens
+    
+    def texts_to_sequences(self, texts):
+        """
+        Convert texts to sequences of integers.
+        """
+        sequences = []
+        for text in texts:
+            tokens = self._tokenize(text)
+            sequence = []
+            for token in tokens:
+                if token in self.word_index:
+                    sequence.append(self.word_index[token])
+                else:
+                    sequence.append(self.word_index[self.oov_token])
+            sequences.append(sequence)
+        return sequences
+    
+    def sequences_to_texts(self, sequences):
+        """
+        Convert sequences back to texts.
+        """
+        texts = []
+        for sequence in sequences:
+            words = []
+            for idx in sequence:
+                if idx in self.index_word:
+                    words.append(self.index_word[idx])
+                else:
+                    words.append(self.oov_token)
+            texts.append(' '.join(words))
+        return texts
+
+
+# ============================================================
+# PART 2: Demonstration with Sample Data
+# ============================================================
+
+# Sample corpus
+sample_texts = [
+    "The quick brown fox jumps over the lazy dog.",
+    "Machine learning is fascinating and powerful.",
+    "Deep learning models can understand language.",
+    "Natural language processing is a subset of AI.",
+    "Tokenization is the first step in NLP pipelines.",
+    "Neural networks learn patterns from data.",
+    "The fox was quick and the dog was lazy.",
+    "AI and machine learning are transforming industries."
+]
+
+print("=" * 60)
+print("CUSTOM WORD TOKENIZER DEMONSTRATION")
+print("=" * 60)
+
+# Create and fit tokenizer
+tokenizer = CustomWordTokenizer(num_words=50)
+tokenizer.fit_on_texts(sample_texts)
+
+print("\n1. Vocabulary (Word Index):")
+print("-" * 40)
+for word, idx in list(tokenizer.word_index.items())[:15]:
+    print(f"  {word}: {idx}")
+
+print(f"\nTotal vocabulary size: {len(tokenizer.word_index)}")
+
+# Convert texts to sequences
+sequences = tokenizer.texts_to_sequences(sample_texts)
+
+print("\n2. Sample Texts to Sequences:")
+print("-" * 40)
+for i, (text, seq) in enumerate(zip(sample_texts[:3], sequences[:3])):
+    print(f"\nText {i+1}: {text}")
+    print(f"Sequence: {seq}")
+
+# Convert back to text
+reconstructed = tokenizer.sequences_to_texts(sequences[:3])
+print("\n3. Sequences back to Text:")
+print("-" * 40)
+for orig, recon in zip(sample_texts[:3], reconstructed):
+    print(f"Original: {orig}")
+    print(f"Reconstructed: {recon}\n")
+
+
+# ============================================================
+# PART 3: TensorFlow TextVectorization Layer
+# ============================================================
+
+print("\n" + "=" * 60)
+print("TENSORFLOW TEXTVECTORIZATION LAYER")
+print("=" * 60)
+
+# Create TextVectorization layer
+max_tokens = 1000  # Maximum vocabulary size
+sequence_length = 20  # Pad/truncate to this length
+
+vectorize_layer = tf.keras.layers.TextVectorization(
+    max_tokens=max_tokens,
+    output_mode='int',
+    output_sequence_length=sequence_length,
+    standardize='lower_and_strip_punctuation'
+)
+
+# Adapt to text (build vocabulary)
+vectorize_layer.adapt(sample_texts)
+
+print(f"\nVocabulary size: {vectorize_layer.vocabulary_size()}")
+
+# Get vocabulary
+vocab = vectorize_layer.get_vocabulary()
+print(f"\nFirst 20 vocabulary tokens:")
+print(vocab[:20])
+
+# Vectorize sample texts
+vectorized = vectorize_layer(sample_texts)
+
+print("\nVectorized texts (first 3):")
+for i, (text, vec) in enumerate(zip(sample_texts[:3], vectorized[:3])):
+    print(f"\nText {i+1}: {text}")
+    print(f"Vectorized: {vec.numpy()}")
+
+
+# ============================================================
+# PART 4: Padding and Truncation
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PADDING AND TRUNCATION")
+print("=" * 60)
+
+# Using tf.keras.preprocessing.sequence.pad_sequences
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+
+# Variable length sequences
+variable_sequences = [
+    [1, 2, 3],
+    [1, 2, 3, 4, 5, 6, 7],
+    [1],
+    [1, 2, 3, 4, 5]
+]
+
+print("\nOriginal sequences:")
+for seq in variable_sequences:
+    print(f"  {seq} (length: {len(seq)})")
+
+# Pad sequences (post-padding)
+padded_post = pad_sequences(variable_sequences, 
+                            maxlen=5, 
+                            padding='post', 
+                            truncating='post')
+
+print("\nPadded (post, maxlen=5):")
+for seq in padded_post:
+    print(f"  {seq}")
+
+# Pad sequences (pre-padding)
+padded_pre = pad_sequences(variable_sequences, 
+                           maxlen=5, 
+                           padding='pre', 
+                           truncating='pre')
+
+print("\nPadded (pre, maxlen=5):")
+for seq in padded_pre:
+    print(f"  {seq}")
+
+
+# ============================================================
+# PART 5: Complete Pipeline Example
+# ============================================================
+
+print("\n" + "=" * 60)
+print("COMPLETE TOKENIZATION PIPELINE")
+print("=" * 60)
+
+def create_text_pipeline(max_tokens=10000, sequence_length=100):
+    """
+    Create a complete text preprocessing pipeline.
+    """
+    # Text vectorization layer
+    vectorize_layer = tf.keras.layers.TextVectorization(
+        max_tokens=max_tokens,
+        output_mode='int',
+        output_sequence_length=sequence_length,
+        standardize='lower_and_strip_punctuation'
+    )
+    
+    return vectorize_layer
+
+# Create dataset
+text_dataset = tf.data.Dataset.from_tensor_slices(sample_texts)
+
+# Create pipeline
+pipeline = create_text_pipeline(max_tokens=100, sequence_length=10)
+pipeline.adapt(text_dataset)
+
+# Apply to dataset
+def preprocess_text(text):
+    return pipeline(text)
+
+processed_dataset = text_dataset.map(preprocess_text)
+
+print("\nProcessed dataset samples:")
+for text, processed in zip(sample_texts[:3], processed_dataset.take(3)):
+    print(f"\nOriginal: {text}")
+    print(f"Processed: {processed.numpy()}")
+
+
+# ============================================================
+# EXERCISES
+# ============================================================
+
+print("\n" + "=" * 60)
+print("EXERCISES")
+print("=" * 60)
+
+exercises = """
+Exercise 1: Custom Tokenization Rules
+-------------------------------------
+Modify the CustomWordTokenizer to:
+- Keep contractions together (e.g., "don't" as one token)
+- Remove stop words
+- Apply stemming (use PorterStemmer from nltk)
+
+Exercise 2: N-gram Tokenization
+-------------------------------
+Extend the tokenizer to support n-grams:
+- Generate bigrams and trigrams
+- Add them to the vocabulary
+- Compare performance with unigrams
+
+Exercise 3: Case Preservation
+-----------------------------
+Modify the tokenizer to:
+- Preserve case information as features
+- Track all-caps words separately
+- Add case embeddings to the model
+"""
+
+print(exercises)
+
+
+# ============================================================
+# SOLUTIONS
+# ============================================================
+
+print("\n" + "=" * 60)
+print("SOLUTION TO EXERCISE 1: Handling Contractions")
+print("=" * 60)
+
+class AdvancedTokenizer(CustomWordTokenizer):
+    """
+    Advanced tokenizer with contraction handling.
+    """
+    
+    # Common English contractions
+    CONTRACTIONS = {
+        "n't": "not",
+        "'re": "are",
+        "'s": "is",
+        "'d": "would",
+        "'ll": "will",
+        "'ve": "have",
+        "'m": "am"
+    }
+    
+    def _tokenize(self, text):
+        """Tokenize with contraction handling."""
+        text = text.lower()
+        
+        # Handle contractions before removing punctuation
+        for contraction, expansion in self.CONTRACTIONS.items():
+            text = text.replace(contraction, f" {expansion}")
+        
+        # Remove remaining special characters
+        text = re.sub(r'[^a-z0-9\s]', '', text)
+        
+        return text.split()
+
+# Test advanced tokenizer
+advanced_texts = [
+    "I don't like this movie.",
+    "You're going to love it!",
+    "It's a wonderful day."
+]
+
+advanced_tokenizer = AdvancedTokenizer(num_words=100)
+advanced_tokenizer.fit_on_texts(advanced_texts)
+
+print("\nAdvanced tokenization with contractions:")
+for text in advanced_texts:
+    tokens = advanced_tokenizer._tokenize(text)
+    print(f"  '{text}' -> {tokens}")
+
+
+---

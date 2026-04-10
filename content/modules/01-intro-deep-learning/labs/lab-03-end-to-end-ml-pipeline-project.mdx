@@ -1,0 +1,454 @@
+---
+title: "End-to-End ML Pipeline Project"
+module: 1
+labNumber: 3
+difficulty: "easy"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# End-to-End ML Pipeline Project
+
+## Complete Linear Regression Pipeline with TensorBoard
+
+### Objectives
+- Build a complete ML pipeline from data loading to model evaluation
+- Implement TensorBoard visualization
+- Apply best practices for ML workflows
+
+### Complete Code
+
+```python
+"""
+Lab 4: End-to-End ML Pipeline Project
+======================================
+Complete linear regression pipeline with TensorBoard visualization.
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+from datetime import datetime
+import os
+
+print("=" * 70)
+print("Lab 4: End-to-End ML Pipeline Project")
+print("=" * 70)
+print(f"TensorFlow version: {tf.__version__}")
+
+# Create log directory for TensorBoard
+log_dir = "logs/fit/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+os.makedirs(log_dir, exist_ok=True)
+print(f"TensorBoard logs: {log_dir}")
+
+# =============================================================================
+# PART 1: Data Generation
+# =============================================================================
+
+print("\n" + "=" * 70)
+print("PART 1: Data Generation")
+print("=" * 70)
+
+def generate_data(n_samples=1000, noise_std=2.0, seed=42):
+    """
+    Generate synthetic linear regression data.
+    
+    Model: y = w1*x1 + w2*x2 + w3*x3 + b + noise
+    """
+    np.random.seed(seed)
+    
+    # True parameters
+    true_weights = np.array([2.5, -1.0, 0.5])
+    true_bias = 3.0
+    
+    # Generate features
+    X = np.random.randn(n_samples, 3)
+    
+    # Generate target with noise
+    y = X @ true_weights + true_bias + np.random.randn(n_samples) * noise_std
+    
+    return X, y, true_weights, true_bias
+
+# Generate data
+X_train, y_train, true_w, true_b = generate_data(n_samples=800, noise_std=2.0)
+X_test, y_test, _, _ = generate_data(n_samples=200, noise_std=2.0, seed=43)
+
+print(f"\nTrue parameters:")
+print(f"  Weights: {true_w}")
+print(f"  Bias: {true_b}")
+print(f"\nTraining data shape: X={X_train.shape}, y={y_train.shape}")
+print(f"Test data shape: X={X_test.shape}, y={y_test.shape}")
+
+# Convert to TensorFlow datasets
+train_dataset = tf.data.Dataset.from_tensor_slices((X_train, y_train))
+train_dataset = train_dataset.shuffle(buffer_size=100).batch(32)
+
+test_dataset = tf.data.Dataset.from_tensor_slices((X_test, y_test))
+test_dataset = test_dataset.batch(32)
+
+# =============================================================================
+# PART 2: Model Definition
+# =============================================================================
+
+print("\n" + "=" * 70)
+print("PART 2: Model Definition")
+print("=" * 70)
+
+class LinearRegressionModel(tf.keras.Model):
+    """Custom Linear Regression Model."""
+    
+    def __init__(self, n_features):
+        super(LinearRegressionModel, self).__init__()
+        self.weights_var = tf.Variable(
+            tf.random.normal([n_features, 1], stddev=0.1),
+            name='weights'
+        )
+        self.bias_var = tf.Variable(
+            tf.zeros([1]),
+            name='bias'
+        )
+    
+    def call(self, inputs):
+        """Forward pass."""
+        return tf.matmul(inputs, self.weights_var) + self.bias_var
+
+# Alternative: Using Keras Sequential API
+def create_sequential_model(n_features):
+    """Create model using Sequential API."""
+    model = tf.keras.Sequential([
+        tf.keras.layers.Dense(1, input_shape=(n_features,), use_bias=True)
+    ])
+    return model
+
+# Alternative: Using Keras Functional API
+def create_functional_model(n_features):
+    """Create model using Functional API."""
+    inputs = tf.keras.Input(shape=(n_features,))
+    outputs = tf.keras.layers.Dense(1)(inputs)
+    model = tf.keras.Model(inputs=inputs, outputs=outputs)
+    return model
+
+# Create model (using custom model)
+model = LinearRegressionModel(n_features=3)
+
+# Test forward pass
+sample_input = tf.constant(X_train[:5], dtype=tf.float32)
+sample_output = model(sample_input)
+print(f"\nSample input shape: {sample_input.shape}")
+print(f"Sample output shape: {sample_output.shape}")
+
+# =============================================================================
+# PART 3: Loss Function and Metrics
+# =============================================================================
+
+print("\n" + "=" * 70)
+print("PART 3: Loss Function and Metrics")
+print("=" * 70)
+
+def mean_squared_error(y_true, y_pred):
+    """Custom MSE loss."""
+    return tf.reduce_mean(tf.square(y_true - y_pred))
+
+def mean_absolute_error(y_true, y_pred):
+    """Custom MAE metric."""
+    return tf.reduce_mean(tf.abs(y_true - y_pred))
+
+def r_squared(y_true, y_pred):
+    """R-squared metric."""
+    ss_res = tf.reduce_sum(tf.square(y_true - y_pred))
+    ss_tot = tf.reduce_sum(tf.square(y_true - tf.reduce_mean(y_true)))
+    return 1 - ss_res / ss_tot
+
+# Test loss and metrics
+sample_y = tf.constant(y_train[:5], dtype=tf.float32)[:, tf.newaxis]
+mse = mean_squared_error(sample_y, sample_output)
+mae = mean_absolute_error(sample_y, sample_output)
+print(f"\nSample MSE: {mse:.4f}")
+print(f"Sample MAE: {mae:.4f}")
+
+# =============================================================================
+# PART 4: Training Loop with TensorBoard
+# =============================================================================
+
+print("\n" + "=" * 70)
+print("PART 4: Training Loop with TensorBoard")
+print("=" * 70)
+
+# Training hyperparameters
+learning_rate = 0.01
+n_epochs = 100
+
+# Optimizer
+optimizer = tf.keras.optimizers.SGD(learning_rate=learning_rate)
+
+# TensorBoard writers
+train_summary_writer = tf.summary.create_file_writer(log_dir + '/train')
+test_summary_writer = tf.summary.create_file_writer(log_dir + '/test')
+
+# Training history
+history = {
+    'train_loss': [],
+    'train_mae': [],
+    'test_loss': [],
+    'test_mae': [],
+    'weights': [],
+    'bias': []
+}
+
+print(f"\nTraining for {n_epochs} epochs...")
+print(f"{'Epoch':<10} {'Train Loss':<15} {'Train MAE':<15} {'Test Loss':<15} {'Test MAE':<15}")
+print("-" * 70)
+
+for epoch in range(n_epochs):
+    # Training
+    epoch_losses = []
+    epoch_maes = []
+    
+    for X_batch, y_batch in train_dataset:
+        with tf.GradientTape() as tape:
+            y_pred = model(X_batch, training=True)
+            loss = mean_squared_error(y_batch[:, tf.newaxis], y_pred)
+        
+        gradients = tape.gradient(loss, model.trainable_variables)
+        optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+        
+        epoch_losses.append(loss.numpy())
+        mae = mean_absolute_error(y_batch[:, tf.newaxis], y_pred)
+        epoch_maes.append(mae.numpy())
+    
+    train_loss = np.mean(epoch_losses)
+    train_mae = np.mean(epoch_maes)
+    
+    # Evaluation on test set
+    test_preds = model(X_test, training=False)
+    test_loss = mean_squared_error(y_test[:, tf.newaxis], test_preds).numpy()
+    test_mae = mean_absolute_error(y_test[:, tf.newaxis], test_preds).numpy()
+    
+    # Record history
+    history['train_loss'].append(train_loss)
+    history['train_mae'].append(train_mae)
+    history['test_loss'].append(test_loss)
+    history['test_mae'].append(test_mae)
+    history['weights'].append(model.weights_var.numpy().flatten())
+    history['bias'].append(model.bias_var.numpy()[0])
+    
+    # TensorBoard logging
+    with train_summary_writer.as_default():
+        tf.summary.scalar('loss', train_loss, step=epoch)
+        tf.summary.scalar('mae', train_mae, step=epoch)
+        tf.summary.histogram('weights', model.weights_var, step=epoch)
+        tf.summary.histogram('bias', model.bias_var, step=epoch)
+    
+    with test_summary_writer.as_default():
+        tf.summary.scalar('loss', test_loss, step=epoch)
+        tf.summary.scalar('mae', test_mae, step=epoch)
+    
+    # Print progress
+    if epoch % 10 == 0 or epoch == n_epochs - 1:
+        print(f"{epoch:<10} {train_loss:<15.4f} {train_mae:<15.4f} {test_loss:<15.4f} {test_mae:<15.4f}")
+
+print("\nTraining complete!")
+
+# =============================================================================
+# PART 5: Results and Evaluation
+# =============================================================================
+
+print("\n" + "=" * 70)
+print("PART 5: Results and Evaluation")
+print("=" * 70)
+
+print(f"\nTrue parameters:")
+print(f"  Weights: {true_w}")
+print(f"  Bias: {true_b}")
+
+print(f"\nLearned parameters:")
+print(f"  Weights: {model.weights_var.numpy().flatten()}")
+print(f"  Bias: {model.bias_var.numpy()[0]:.4f}")
+
+# Final metrics
+final_train_preds = model(X_train, training=False)
+final_test_preds = model(X_test, training=False)
+
+train_r2 = r_squared(y_train[:, tf.newaxis], final_train_preds).numpy()
+test_r2 = r_squared(y_test[:, tf.newaxis], final_test_preds).numpy()
+
+print(f"\nFinal Metrics:")
+print(f"  Train R²: {train_r2:.4f}")
+print(f"  Test R²: {test_r2:.4f}")
+print(f"  Train MAE: {history['train_mae'][-1]:.4f}")
+print(f"  Test MAE: {history['test_mae'][-1]:.4f}")
+
+# =============================================================================
+# PART 6: Visualization
+# =============================================================================
+
+print("\n" + "=" * 70)
+print("PART 6: Visualization")
+print("=" * 70)
+
+fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+
+# Plot 1: Training and test loss
+axes[0, 0].plot(history['train_loss'], 'b-', linewidth=2, label='Train Loss')
+axes[0, 0].plot(history['test_loss'], 'r-', linewidth=2, label='Test Loss')
+axes[0, 0].set_xlabel('Epoch')
+axes[0, 0].set_ylabel('MSE Loss')
+axes[0, 0].set_title('Training and Test Loss')
+axes[0, 0].legend()
+axes[0, 0].grid(True, alpha=0.3)
+
+# Plot 2: Training and test MAE
+axes[0, 1].plot(history['train_mae'], 'b-', linewidth=2, label='Train MAE')
+axes[0, 1].plot(history['test_mae'], 'r-', linewidth=2, label='Test MAE')
+axes[0, 1].set_xlabel('Epoch')
+axes[0, 1].set_ylabel('MAE')
+axes[0, 1].set_title('Training and Test MAE')
+axes[0, 1].legend()
+axes[0, 1].grid(True, alpha=0.3)
+
+# Plot 3: Weight convergence
+weights_history = np.array(history['weights'])
+for i in range(3):
+    axes[0, 2].plot(weights_history[:, i], linewidth=2, label=f'w{i+1}')
+    axes[0, 2].axhline(y=true_w[i], linestyle='--', alpha=0.5)
+axes[0, 2].set_xlabel('Epoch')
+axes[0, 2].set_ylabel('Weight Value')
+axes[0, 2].set_title('Weight Convergence')
+axes[0, 2].legend()
+axes[0, 2].grid(True, alpha=0.3)
+
+# Plot 4: Bias convergence
+axes[1, 0].plot(history['bias'], 'g-', linewidth=2, label='Learned bias')
+axes[1, 0].axhline(y=true_b, color='r', linestyle='--', linewidth=2, label='True bias')
+axes[1, 0].set_xlabel('Epoch')
+axes[1, 0].set_ylabel('Bias Value')
+axes[1, 0].set_title('Bias Convergence')
+axes[1, 0].legend()
+axes[1, 0].grid(True, alpha=0.3)
+
+# Plot 5: Predictions vs Actual
+axes[1, 1].scatter(y_test, final_test_preds.numpy().flatten(), alpha=0.5)
+min_val = min(y_test.min(), final_test_preds.numpy().min())
+max_val = max(y_test.max(), final_test_preds.numpy().max())
+axes[1, 1].plot([min_val, max_val], [min_val, max_val], 'r--', linewidth=2, label='Perfect fit')
+axes[1, 1].set_xlabel('Actual Values')
+axes[1, 1].set_ylabel('Predicted Values')
+axes[1, 1].set_title(f'Predictions vs Actual (R²={test_r2:.3f})')
+axes[1, 1].legend()
+axes[1, 1].grid(True, alpha=0.3)
+
+# Plot 6: Residuals
+residuals = y_test - final_test_preds.numpy().flatten()
+axes[1, 2].scatter(final_test_preds.numpy().flatten(), residuals, alpha=0.5)
+axes[1, 2].axhline(y=0, color='r', linestyle='--', linewidth=2)
+axes[1, 2].set_xlabel('Predicted Values')
+axes[1, 2].set_ylabel('Residuals')
+axes[1, 2].set_title('Residual Plot')
+axes[1, 2].grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.savefig('lab4_complete_pipeline.png', dpi=150, bbox_inches='tight')
+print("\nVisualization saved as 'lab4_complete_pipeline.png'")
+plt.show()
+
+# =============================================================================
+# PART 7: TensorBoard Instructions
+# =============================================================================
+
+print("\n" + "=" * 70)
+print("PART 7: TensorBoard Instructions")
+print("=" * 70)
+
+print(f"""
+To view TensorBoard:
+====================
+
+1. In a terminal, run:
+   tensorboard --logdir={log_dir}
+
+2. Open your browser and go to:
+   http://localhost:6006
+
+3. You can view:
+   - SCALARS: Loss and metrics over time
+   - HISTOGRAMS: Weight and bias distributions
+   - GRAPHS: Model computation graph
+   - HPARAMS: Hyperparameter tuning (if configured)
+
+TensorBoard Features Demonstrated:
+====================================
+- tf.summary.scalar(): Log scalar values (loss, metrics)
+- tf.summary.histogram(): Log weight distributions
+- Multiple writers for train/test comparison
+- Step-based logging for time series visualization
+""")
+
+# =============================================================================
+# PART 8: Save and Load Model
+# =============================================================================
+
+print("\n" + "=" * 70)
+print("PART 8: Save and Load Model")
+print("=" * 70)
+
+# Save model weights
+model_save_path = "linear_regression_model"
+model.save_weights(model_save_path)
+print(f"\nModel weights saved to: {model_save_path}")
+
+# Create new model and load weights
+new_model = LinearRegressionModel(n_features=3)
+new_model.load_weights(model_save_path)
+
+# Verify loaded model
+loaded_preds = new_model(X_test, training=False)
+print(f"Loaded model predictions match: {np.allclose(final_test_preds.numpy(), loaded_preds.numpy())}")
+
+# =============================================================================
+# PART 9: Summary and Best Practices
+# =============================================================================
+
+print("\n" + "=" * 70)
+print("PART 9: Summary and Best Practices")
+print("=" * 70)
+
+print("""
+ML Pipeline Best Practices:
+============================
+
+1. DATA PREPARATION:
+   - Split data into train/validation/test sets
+   - Normalize/standardize features
+   - Use tf.data for efficient data pipelines
+
+2. MODEL DEFINITION:
+   - Use appropriate Keras API (Sequential, Functional, or Subclassing)
+   - Initialize weights properly
+   - Add regularization if needed
+
+3. TRAINING:
+   - Use appropriate optimizer and learning rate
+   - Implement early stopping to prevent overfitting
+   - Log metrics for monitoring
+
+4. EVALUATION:
+   - Use multiple metrics (not just loss)
+   - Check for overfitting (train vs test gap)
+   - Visualize predictions and residuals
+
+5. TENSORBOARD:
+   - Log scalars for metrics
+   - Log histograms for weight monitoring
+   - Compare different runs
+
+6. MODEL SAVING:
+   - Save best model based on validation metric
+   - Save complete model or just weights
+   - Version your models
+""")
+
+print("\n" + "=" * 70)
+print("Lab 4 Complete!")
+print("=" * 70)
+```
+
+---

@@ -1,0 +1,461 @@
+---
+title: "Transfer Learning with VGG16"
+module: 3
+labNumber: 11
+difficulty: "easy"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Transfer Learning with VGG16
+
+## Objectives
+- Use pretrained VGG16 for transfer learning
+- Implement feature extraction approach
+- Fine-tune the model for custom dataset
+
+## Prerequisites
+- Understanding of CNN architectures
+- Knowledge of model freezing/unfreezing
+
+```python
+"""
+Lab 3.10: Transfer Learning with VGG16
+Leveraging pretrained models for custom tasks
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers, models, optimizers
+from tensorflow.keras.applications import VGG16
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.datasets import cifar10
+from tensorflow.keras.utils import to_categorical
+import time
+
+# =============================================================================
+# Section 1: Transfer Learning Theory
+# =============================================================================
+
+print("=" * 60)
+print("TRANSFER LEARNING WITH VGG16")
+print("=" * 60)
+
+print("""
+Transfer Learning Concepts:
+==========================
+
+Why Transfer Learning?
+- Pretrained models learned from millions of images (ImageNet)
+- Saves training time and computational resources
+- Works well with small datasets
+- Better generalization
+
+Approaches:
+1. Feature Extraction:
+   - Freeze all convolutional layers
+   - Train only the classifier (top layers)
+   - Fast, good for very small datasets
+
+2. Fine-tuning:
+   - Unfreeze some/all convolutional layers
+   - Train with very small learning rate
+   - Better for larger datasets
+
+3. Full Training:
+   - Train entire model from pretrained weights
+   - Requires large dataset
+
+VGG16 Architecture:
+- 16 weight layers (13 conv + 3 FC)
+- Pretrained on ImageNet (1000 classes)
+- Input: 224x224 RGB images
+""")
+
+
+# =============================================================================
+# Section 2: Load Pretrained VGG16
+# =============================================================================
+
+print("\n" + "=" * 60)
+print("LOADING PRETRAINED VGG16")
+print("=" * 60)
+
+# Load VGG16 without top layers
+base_model = VGG16(weights='imagenet', 
+                   include_top=False, 
+                   input_shape=(32, 32, 3))
+
+print(f"\nBase model loaded: {len(base_model.layers)} layers")
+print(f"Total parameters: {base_model.count_params():,}")
+
+# Display architecture
+print("\nArchitecture:")
+for i, layer in enumerate(base_model.layers):
+    print(f"  {i+1:2d}. {layer.name:20s} - {str(layer.output_shape):30s}")
+
+
+# =============================================================================
+# Section 3: Feature Extraction Approach
+# =============================================================================
+
+def build_feature_extraction_model(base_model, num_classes=10):
+    """
+    Build model for feature extraction approach.
+    Freeze all convolutional layers and add custom classifier.
+    """
+    
+    print("\n" + "=" * 60)
+    print("BUILDING FEATURE EXTRACTION MODEL")
+    print("=" * 60)
+    
+    # Freeze base model layers
+    base_model.trainable = False
+    
+    print(f"\nFrozen layers: {len(base_model.layers)}")
+    print(f"Trainable parameters: {base_model.count_params():,}")
+    
+    # Add custom classifier
+    inputs = keras.Input(shape=(32, 32, 3))
+    
+    # Use base model for feature extraction
+    x = base_model(inputs, training=False)
+    
+    # Global average pooling
+    x = layers.GlobalAveragePooling2D()(x)
+    
+    # Dense layers
+    x = layers.Dense(256, activation='relu')(x)
+    x = layers.Dropout(0.5)(x)
+    x = layers.Dense(128, activation='relu')(x)
+    x = layers.Dropout(0.5)(x)
+    outputs = layers.Dense(num_classes, activation='softmax')(x)
+    
+    model = models.Model(inputs, outputs)
+    
+    print(f"\nTotal model parameters: {model.count_params():,}")
+    print(f"Trainable parameters: {sum([keras.backend.count_params(w) for w in model.trainable_weights]):,}")
+    
+    return model
+
+
+# Build feature extraction model
+feature_model = build_feature_extraction_model(base_model)
+
+
+# =============================================================================
+# Section 4: Prepare CIFAR-10 Dataset
+# =============================================================================
+
+def prepare_cifar10():
+    """Load and preprocess CIFAR-10 for VGG16."""
+    
+    print("\n" + "=" * 60)
+    print("PREPARING CIFAR-10 DATASET")
+    print("=" * 60)
+    
+    # Load data
+    (X_train, y_train), (X_test, y_test) = cifar10.load_data()
+    
+    # Convert to float32
+    X_train = X_train.astype('float32')
+    X_test = X_test.astype('float32')
+    
+    # Preprocess for VGG16 (ImageNet normalization)
+    X_train = keras.applications.vgg16.preprocess_input(X_train)
+    X_test = keras.applications.vgg16.preprocess_input(X_test)
+    
+    # Convert labels to categorical
+    y_train = to_categorical(y_train, 10)
+    y_test = to_categorical(y_test, 10)
+    
+    # Class names
+    class_names = ['airplane', 'automobile', 'bird', 'cat', 'deer',
+                   'dog', 'frog', 'horse', 'ship', 'truck']
+    
+    print(f"\nTraining samples: {len(X_train)}")
+    print(f"Test samples: {len(X_test)}")
+    print(f"Classes: {class_names}")
+    
+    return (X_train, y_train), (X_test, y_test), class_names
+
+
+(X_train, y_train), (X_test, y_test), class_names = prepare_cifar10()
+
+
+# =============================================================================
+# Section 5: Train Feature Extraction Model
+# =============================================================================
+
+def train_feature_extraction(model, X_train, y_train, X_test, y_test, epochs=10):
+    """Train feature extraction model."""
+    
+    print("\n" + "=" * 60)
+    print("TRAINING FEATURE EXTRACTION MODEL")
+    print("=" * 60)
+    
+    # Compile
+    model.compile(optimizer=optimizers.Adam(learning_rate=0.001),
+                  loss='categorical_crossentropy',
+                  metrics=['accuracy'])
+    
+    # Callbacks
+    callbacks = [
+        keras.callbacks.EarlyStopping(patience=5, restore_best_weights=True),
+        keras.callbacks.ReduceLROnPlateau(factor=0.5, patience=3)
+    ]
+    
+    # Train (using subset for speed)
+    start_time = time.time()
+    
+    history = model.fit(X_train[:10000], y_train[:10000],
+                       batch_size=64,
+                       epochs=epochs,
+                       validation_data=(X_test[:2000], y_test[:2000]),
+                       callbacks=callbacks,
+                       verbose=1)
+    
+    training_time = time.time() - start_time
+    
+    # Evaluate
+    test_loss, test_acc = model.evaluate(X_test, y_test, verbose=0)
+    
+    print(f"\nTraining time: {training_time:.2f} seconds")
+    print(f"Test accuracy: {test_acc:.4f}")
+    
+    return history
+
+
+history_feature = train_feature_extraction(feature_model, X_train, y_train, X_test, y_test, epochs=10)
+
+
+# =============================================================================
+# Section 6: Fine-tuning Approach
+# =============================================================================
+
+def build_finetuning_model(base_model, num_classes=10, num_unfreeze_layers=4):
+    """
+    Build model for fine-tuning approach.
+    Unfreeze last few layers for fine-tuning.
+    """
+    
+    print("\n" + "=" * 60)
+    print("BUILDING FINE-TUNING MODEL")
+    print("=" * 60)
+    
+    # First, freeze all layers
+    base_model.trainable = False
+    
+    # Unfreeze last N layers
+    for layer in base_model.layers[-num_unfreeze_layers:]:
+        layer.trainable = True
+    
+    print(f"\nUnfrozen layers: {num_unfreeze_layers}")
+    
+    # Count trainable parameters
+    trainable_count = sum([keras.backend.count_params(w) 
+                          for w in base_model.trainable_weights])
+    print(f"Trainable parameters in base: {trainable_count:,}")
+    
+    # Build model
+    inputs = keras.Input(shape=(32, 32, 3))
+    x = base_model(inputs, training=True)  # Training=True for fine-tuning
+    x = layers.GlobalAveragePooling2D()(x)
+    x = layers.Dense(256, activation='relu')(x)
+    x = layers.Dropout(0.5)(x)
+    outputs = layers.Dense(num_classes, activation='softmax')(x)
+    
+    model = models.Model(inputs, outputs)
+    
+    total_trainable = sum([keras.backend.count_params(w) for w in model.trainable_weights])
+    print(f"Total trainable parameters: {total_trainable:,}")
+    
+    return model
+
+
+# Build fine-tuning model
+finetune_model = build_finetuning_model(base_model, num_unfreeze_layers=4)
+
+
+# =============================================================================
+# Section 7: Train Fine-tuning Model
+# =============================================================================
+
+def train_finetuning(model, X_train, y_train, X_test, y_test, epochs=10):
+    """Train with fine-tuning (lower learning rate)."""
+    
+    print("\n" + "=" * 60)
+    print("FINE-TUNING MODEL")
+    print("=" * 60)
+    
+    # Use lower learning rate for fine-tuning
+    model.compile(optimizer=optimizers.Adam(learning_rate=0.0001),
+                  loss='categorical_crossentropy',
+                  metrics=['accuracy'])
+    
+    callbacks = [
+        keras.callbacks.EarlyStopping(patience=5, restore_best_weights=True),
+        keras.callbacks.ReduceLROnPlateau(factor=0.5, patience=3, min_lr=1e-6)
+    ]
+    
+    start_time = time.time()
+    
+    history = model.fit(X_train[:10000], y_train[:10000],
+                       batch_size=64,
+                       epochs=epochs,
+                       validation_data=(X_test[:2000], y_test[:2000]),
+                       callbacks=callbacks,
+                       verbose=1)
+    
+    training_time = time.time() - start_time
+    
+    test_loss, test_acc = model.evaluate(X_test, y_test, verbose=0)
+    
+    print(f"\nTraining time: {training_time:.2f} seconds")
+    print(f"Test accuracy: {test_acc:.4f}")
+    
+    return history
+
+
+history_finetune = train_finetuning(finetune_model, X_train, y_train, X_test, y_test, epochs=10)
+
+
+# =============================================================================
+# Section 8: Compare Approaches
+# =============================================================================
+
+def compare_approaches(history_feature, history_finetune):
+    """Compare feature extraction vs fine-tuning."""
+    
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    
+    # Accuracy
+    axes[0].plot(history_feature.history['val_accuracy'], 
+                label='Feature Extraction', marker='o')
+    axes[0].plot(history_finetune.history['val_accuracy'], 
+                label='Fine-tuning', marker='s')
+    axes[0].set_title('Validation Accuracy Comparison')
+    axes[0].set_xlabel('Epoch')
+    axes[0].set_ylabel('Accuracy')
+    axes[0].legend()
+    axes[0].grid(True)
+    
+    # Loss
+    axes[1].plot(history_feature.history['val_loss'], 
+                label='Feature Extraction', marker='o')
+    axes[1].plot(history_finetune.history['val_loss'], 
+                label='Fine-tuning', marker='s')
+    axes[1].set_title('Validation Loss Comparison')
+    axes[1].set_xlabel('Epoch')
+    axes[1].set_ylabel('Loss')
+    axes[1].legend()
+    axes[1].grid(True)
+    
+    plt.tight_layout()
+    plt.savefig('/mnt/okcomputer/output/lab310_transfer_comparison.png', dpi=150)
+    plt.show()
+    print("\nComparison saved to: /mnt/okcomputer/output/lab310_transfer_comparison.png")
+
+
+compare_approaches(history_feature, history_finetune)
+
+
+# =============================================================================
+# Section 9: Progressive Unfreezing Strategy
+# =============================================================================
+
+def progressive_finetuning(base_model, X_train, y_train, X_test, y_test):
+    """
+    Progressive unfreezing strategy for fine-tuning.
+    """
+    
+    print("\n" + "=" * 60)
+    print("PROGRESSIVE FINE-TUNING")
+    print("=" * 60)
+    
+    # Stage 1: Train only classifier
+    print("\n--- Stage 1: Training classifier ---")
+    base_model.trainable = False
+    
+    inputs = keras.Input(shape=(32, 32, 3))
+    x = base_model(inputs, training=False)
+    x = layers.GlobalAveragePooling2D()(x)
+    x = layers.Dense(256, activation='relu')(x)
+    outputs = layers.Dense(10, activation='softmax')(x)
+    
+    model = models.Model(inputs, outputs)
+    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+    
+    model.fit(X_train[:5000], y_train[:5000],
+             batch_size=64, epochs=3, verbose=0,
+             validation_split=0.1)
+    
+    # Stage 2: Unfreeze last block
+    print("\n--- Stage 2: Fine-tuning last block ---")
+    base_model.trainable = True
+    for layer in base_model.layers[:-4]:
+        layer.trainable = False
+    
+    model.compile(optimizer=optimizers.Adam(learning_rate=0.0001),
+                  loss='categorical_crossentropy', metrics=['accuracy'])
+    
+    model.fit(X_train[:5000], y_train[:5000],
+             batch_size=64, epochs=3, verbose=0,
+             validation_split=0.1)
+    
+    # Stage 3: Unfreeze more layers
+    print("\n--- Stage 3: Fine-tuning more layers ---")
+    for layer in base_model.layers[:-8]:
+        layer.trainable = False
+    
+    model.compile(optimizer=optimizers.Adam(learning_rate=0.00001),
+                  loss='categorical_crossentropy', metrics=['accuracy'])
+    
+    history = model.fit(X_train[:5000], y_train[:5000],
+                       batch_size=64, epochs=3, verbose=0,
+                       validation_split=0.1)
+    
+    print("\nProgressive fine-tuning complete!")
+    
+    return model
+
+
+# Run progressive fine-tuning (commented for speed)
+# progressive_model = progressive_finetuning(base_model, X_train, y_train, X_test, y_test)
+
+
+# =============================================================================
+# Section 10: Exercises
+# =============================================================================
+
+print("\n" + "=" * 60)
+print("EXERCISES")
+print("=" * 60)
+
+print("""
+Exercise 1: Different Unfreezing Strategies
+- Compare unfreezing different numbers of layers
+- Plot accuracy vs. number of unfrozen layers
+
+Exercise 2: Learning Rate Scheduling
+- Implement learning rate warmup for fine-tuning
+- Compare with constant learning rate
+
+Exercise 3: Custom Dataset
+- Use transfer learning on your own dataset
+- Compare with training from scratch
+
+Exercise 4: Feature Visualization
+- Visualize features from different layers
+- Compare pretrained vs. randomly initialized
+""")
+
+print("\n" + "=" * 60)
+print("Lab 3.10 Complete!")
+print("=" * 60)
+```
+
+---
+
+<a name="lab-311"></a>

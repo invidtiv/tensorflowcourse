@@ -1,0 +1,444 @@
+---
+title: "Advanced Feature Visualization with Grad-CAM"
+module: 3
+labNumber: 10
+difficulty: "easy"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Advanced Feature Visualization with Grad-CAM
+
+## Objectives
+- Implement Grad-CAM for visual explanations
+- Understand attention mechanisms in CNNs
+- Create class activation maps
+
+## Prerequisites
+- Completion of Labs 3.7-3.8
+- Understanding of backpropagation
+
+```python
+"""
+Lab 3.9: Advanced Feature Visualization with Grad-CAM
+Class Activation Mapping for model interpretability
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import models
+from tensorflow.keras.applications import VGG16, ResNet50
+from tensorflow.keras.preprocessing import image
+import cv2
+
+# =============================================================================
+# Section 1: Grad-CAM Theory
+# =============================================================================
+
+print("=" * 60)
+print("GRAD-CAM: GRADIENT-WEIGHTED CLASS ACTIVATION MAPPING")
+print("=" * 60)
+
+print("""
+Grad-CAM (Selvaraju et al., 2017):
+==================================
+
+Purpose: Visualize where the CNN "looks" to make predictions.
+
+How it works:
+1. Forward pass to get class prediction
+2. Compute gradient of class score w.r.t. feature maps
+3. Global average pooling of gradients → importance weights
+4. Weighted combination of feature maps
+5. ReLU to keep only positive contributions
+
+Formula:
+  L_gradcam = ReLU(Σ_k α_k * A^k)
+  
+  where α_k = (1/Z) * Σ_i Σ_j (∂y^c / ∂A^k_ij)
+  
+  A^k = k-th feature map
+  y^c = class score for class c
+
+Applications:
+- Model interpretability
+- Debugging predictions
+- Weakly-supervised localization
+""")
+
+
+# =============================================================================
+# Section 2: Grad-CAM Implementation
+# =============================================================================
+
+class GradCAM:
+    """Grad-CAM implementation for CNN visualization."""
+    
+    def __init__(self, model, layer_name):
+        """
+        Initialize GradCAM.
+        
+        Args:
+            model: CNN model
+            layer_name: Name of the last convolutional layer
+        """
+        self.model = model
+        self.layer_name = layer_name
+        
+        # Create model that outputs both predictions and conv layer output
+        self.grad_model = models.Model(
+            inputs=model.inputs,
+            outputs=[model.get_layer(layer_name).output, model.output]
+        )
+    
+    def compute_heatmap(self, img_array, class_index=None):
+        """
+        Compute Grad-CAM heatmap.
+        
+        Args:
+            img_array: Input image array (batch_size, H, W, C)
+            class_index: Target class index (None for predicted class)
+        
+        Returns:
+            heatmap: Grad-CAM heatmap
+        """
+        # Record operations for gradient computation
+        with tf.GradientTape() as tape:
+            conv_outputs, predictions = self.grad_model(img_array)
+            
+            if class_index is None:
+                class_index = tf.argmax(predictions[0])
+            
+            # Get the score for the target class
+            class_score = predictions[:, class_index]
+        
+        # Compute gradients
+        grads = tape.gradient(class_score, conv_outputs)
+        
+        # Global average pooling of gradients
+        pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
+        
+        # Weight feature maps by gradients
+        conv_outputs = conv_outputs[0]
+        heatmap = tf.reduce_sum(tf.multiply(pooled_grads, conv_outputs), axis=-1)
+        
+        # Apply ReLU
+        heatmap = np.maximum(heatmap, 0)
+        
+        # Normalize
+        heatmap = heatmap / (np.max(heatmap) + 1e-8)
+        
+        return heatmap.numpy()
+    
+    def overlay_heatmap(self, img, heatmap, alpha=0.4, colormap=cv2.COLORMAP_JET):
+        """
+        Overlay heatmap on original image.
+        
+        Args:
+            img: Original image (H, W, C)
+            heatmap: Grad-CAM heatmap
+            alpha: Transparency
+            colormap: OpenCV colormap
+        
+        Returns:
+            Overlayed image
+        """
+        # Resize heatmap to match image
+        heatmap = cv2.resize(heatmap, (img.shape[1], img.shape[0]))
+        
+        # Convert to uint8
+        heatmap = np.uint8(255 * heatmap)
+        
+        # Apply colormap
+        heatmap = cv2.applyColorMap(heatmap, colormap)
+        
+        # Convert image to uint8 if needed
+        if img.max() <= 1.0:
+            img = np.uint8(255 * img)
+        
+        # Overlay
+        overlayed = cv2.addWeighted(heatmap, alpha, img, 1 - alpha, 0)
+        
+        return overlayed
+
+
+# =============================================================================
+# Section 3: Load Model and Test
+# =============================================================================
+
+print("\n" + "=" * 60)
+print("LOADING VGG16 MODEL")
+print("=" * 60)
+
+# Load VGG16
+model = VGG16(weights='imagenet', include_top=True)
+print(f"Model loaded with {len(model.layers)} layers")
+
+# Create Grad-CAM instance
+grad_cam = GradCAM(model, 'block5_conv3')
+
+
+# =============================================================================
+# Section 4: Test with Sample Image
+# =============================================================================
+
+def load_and_preprocess_image(img_path, target_size=(224, 224)):
+    """Load and preprocess image for VGG16."""
+    img = image.load_img(img_path, target_size=target_size)
+    img_array = image.img_to_array(img)
+    img_array = np.expand_dims(img_array, axis=0)
+    img_array = keras.applications.vgg16.preprocess_input(img_array)
+    return img_array, img
+
+
+# Create a sample image for testing
+print("\n" + "=" * 60)
+print("CREATING SAMPLE TEST IMAGE")
+print("=" * 60)
+
+# Create synthetic test image with different regions
+test_img = np.zeros((224, 224, 3), dtype=np.uint8)
+
+# Add colored regions
+test_img[:112, :112] = [255, 100, 100]  # Red region (top-left)
+test_img[:112, 112:] = [100, 255, 100]  # Green region (top-right)
+test_img[112:, :112] = [100, 100, 255]  # Blue region (bottom-left)
+test_img[112:, 112:] = [255, 255, 100]  # Yellow region (bottom-right)
+
+# Save test image
+cv2.imwrite('/mnt/okcomputer/output/lab39_test_image.png', test_img)
+
+# Preprocess for model
+test_img_preprocessed = cv2.resize(test_img, (224, 224))
+test_img_preprocessed = test_img_preprocessed.astype(np.float32)
+test_img_preprocessed = np.expand_dims(test_img_preprocessed, axis=0)
+test_img_preprocessed = keras.applications.vgg16.preprocess_input(test_img_preprocessed)
+
+# Get prediction
+predictions = model.predict(test_img_preprocessed, verbose=0)
+top_class = np.argmax(predictions[0])
+
+print(f"\nPredicted class: {top_class}")
+print(f"Confidence: {predictions[0][top_class]:.4f}")
+
+
+# =============================================================================
+# Section 5: Compute and Visualize Grad-CAM
+# =============================================================================
+
+def visualize_gradcam(grad_cam, img_array, original_img, class_index=None):
+    """Visualize Grad-CAM for an image."""
+    
+    # Compute heatmap
+    heatmap = grad_cam.compute_heatmap(img_array, class_index)
+    
+    # Overlay
+    overlayed = grad_cam.overlay_heatmap(original_img, heatmap)
+    
+    # Visualize
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+    
+    axes[0].imshow(original_img)
+    axes[0].set_title('Original Image')
+    axes[0].axis('off')
+    
+    axes[1].imshow(heatmap, cmap='jet')
+    axes[1].set_title('Grad-CAM Heatmap')
+    axes[1].axis('off')
+    
+    axes[2].imshow(cv2.cvtColor(overlayed, cv2.COLOR_BGR2RGB))
+    axes[2].set_title('Overlay')
+    axes[2].axis('off')
+    
+    plt.tight_layout()
+    plt.savefig('/mnt/okcomputer/output/lab39_gradcam_result.png', dpi=150)
+    plt.show()
+    print("\nGrad-CAM visualization saved to: /mnt/okcomputer/output/lab39_gradcam_result.png")
+    
+    return heatmap, overlayed
+
+
+heatmap, overlayed = visualize_gradcam(grad_cam, test_img_preprocessed, test_img)
+
+
+# =============================================================================
+# Section 6: Multi-Class Grad-CAM
+# =============================================================================
+
+def visualize_multiple_classes(grad_cam, img_array, original_img, top_k=3):
+    """Visualize Grad-CAM for top-k predicted classes."""
+    
+    # Get predictions
+    predictions = model.predict(img_array, verbose=0)[0]
+    top_indices = np.argsort(predictions)[-top_k:][::-1]
+    
+    fig, axes = plt.subplots(2, top_k, figsize=(5*top_k, 10))
+    
+    for idx, class_idx in enumerate(top_indices):
+        # Compute heatmap
+        heatmap = grad_cam.compute_heatmap(img_array, class_idx)
+        overlayed = grad_cam.overlay_heatmap(original_img, heatmap)
+        
+        # Show heatmap
+        axes[0, idx].imshow(heatmap, cmap='jet')
+        axes[0, idx].set_title(f'Class {class_idx}\nScore: {predictions[class_idx]:.3f}')
+        axes[0, idx].axis('off')
+        
+        # Show overlay
+        axes[1, idx].imshow(cv2.cvtColor(overlayed, cv2.COLOR_BGR2RGB))
+        axes[1, idx].set_title(f'Overlay')
+        axes[1, idx].axis('off')
+    
+    plt.tight_layout()
+    plt.savefig('/mnt/okcomputer/output/lab39_multiclass_gradcam.png', dpi=150)
+    plt.show()
+    print("\nMulti-class Grad-CAM saved to: /mnt/okcomputer/output/lab39_multiclass_gradcam.png")
+
+
+visualize_multiple_classes(grad_cam, test_img_preprocessed, test_img, top_k=3)
+
+
+# =============================================================================
+# Section 7: Layer-wise Grad-CAM Comparison
+# =============================================================================
+
+def compare_layer_gradcam(model, img_array, original_img, layer_names):
+    """Compare Grad-CAM from different layers."""
+    
+    fig, axes = plt.subplots(1, len(layer_names) + 1, figsize=(4*(len(layer_names)+1), 4))
+    
+    # Show original
+    axes[0].imshow(original_img)
+    axes[0].set_title('Original')
+    axes[0].axis('off')
+    
+    # Grad-CAM from each layer
+    for idx, layer_name in enumerate(layer_names):
+        grad_cam_layer = GradCAM(model, layer_name)
+        heatmap = grad_cam_layer.compute_heatmap(img_array)
+        overlayed = grad_cam_layer.overlay_heatmap(original_img, heatmap)
+        
+        axes[idx + 1].imshow(cv2.cvtColor(overlayed, cv2.COLOR_BGR2RGB))
+        axes[idx + 1].set_title(f'{layer_name}')
+        axes[idx + 1].axis('off')
+    
+    plt.tight_layout()
+    plt.savefig('/mnt/okcomputer/output/lab39_layer_comparison.png', dpi=150)
+    plt.show()
+    print("\nLayer comparison saved to: /mnt/okcomputer/output/lab39_layer_comparison.png")
+
+
+layer_names = ['block3_conv3', 'block4_conv3', 'block5_conv3']
+compare_layer_gradcam(model, test_img_preprocessed, test_img, layer_names)
+
+
+# =============================================================================
+# Section 8: Guided Grad-CAM
+# =============================================================================
+
+def guided_backprop(model, img_array, layer_name):
+    """
+    Compute guided backpropagation.
+    
+    Guided backprop only propagates positive gradients through ReLU.
+    """
+    
+    grad_model = models.Model(
+        inputs=model.inputs,
+        outputs=model.get_layer(layer_name).output
+    )
+    
+    with tf.GradientTape() as tape:
+        tape.watch(img_array)
+        conv_output = grad_model(img_array)
+        
+        # Get the max activation
+        max_activation = tf.reduce_max(conv_output, axis=(1, 2, 3))
+    
+    grads = tape.gradient(max_activation, img_array)
+    
+    # Guided backprop: only positive gradients
+    guided_grads = tf.nn.relu(grads)
+    
+    return guided_grads[0].numpy()
+
+
+def create_guided_gradcam(grad_cam, model, img_array, original_img):
+    """Create Guided Grad-CAM (Guided Backprop * Grad-CAM)."""
+    
+    # Get Grad-CAM
+    heatmap = grad_cam.compute_heatmap(img_array)
+    heatmap_resized = cv2.resize(heatmap, (original_img.shape[1], original_img.shape[0]))
+    
+    # Get guided backprop
+    guided_bp = guided_backprop(model, img_array, 'block5_conv3')
+    
+    # Convert to grayscale
+    guided_bp_gray = np.mean(guided_bp, axis=-1)
+    
+    # Multiply with Grad-CAM
+    guided_gradcam = guided_bp_gray * heatmap_resized
+    
+    # Normalize
+    guided_gradcam = (guided_gradcam - guided_gradcam.min()) / (guided_gradcam.max() - guided_gradcam.min() + 1e-8)
+    
+    # Visualize
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+    
+    axes[0].imshow(heatmap, cmap='jet')
+    axes[0].set_title('Grad-CAM')
+    axes[0].axis('off')
+    
+    axes[1].imshow(guided_bp_gray, cmap='gray')
+    axes[1].set_title('Guided Backprop')
+    axes[1].axis('off')
+    
+    axes[2].imshow(guided_gradcam, cmap='jet')
+    axes[2].set_title('Guided Grad-CAM')
+    axes[2].axis('off')
+    
+    plt.tight_layout()
+    plt.savefig('/mnt/okcomputer/output/lab39_guided_gradcam.png', dpi=150)
+    plt.show()
+    print("\nGuided Grad-CAM saved to: /mnt/okcomputer/output/lab39_guided_gradcam.png")
+
+
+create_guided_gradcam(grad_cam, model, test_img_preprocessed, test_img)
+
+
+# =============================================================================
+# Section 9: Exercises
+# =============================================================================
+
+print("\n" + "=" * 60)
+print("EXERCISES")
+print("=" * 60)
+
+print("""
+Exercise 1: Implement Score-CAM
+- Use activation maps instead of gradients
+- Compare with Grad-CAM
+
+Exercise 2: Ablation Study
+- Remove different parts of the image
+- Observe how predictions change
+
+Exercise 3: Adversarial Examples
+- Create adversarial examples
+- Visualize how attention changes
+
+Exercise 4: Model Comparison
+- Compare Grad-CAM across different architectures
+- Analyze which models have better localization
+""")
+
+print("\n" + "=" * 60)
+print("Lab 3.9 Complete!")
+print("=" * 60)
+```
+
+
+---
+
+<a name="lab-310"></a>

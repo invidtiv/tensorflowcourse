@@ -1,0 +1,134 @@
+---
+title: "L1 vs L2 Regularization"
+module: 4
+labNumber: 14
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# L1 vs L2 Regularization
+
+```python
+"""
+Lab 4.2: L1 vs L2 Regularization Comparison
+============================================
+Compare L1, L2, and Elastic Net regularization.
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+
+tf.random.set_seed(42)
+
+(x_train, y_train), (x_test, y_test) = tf.keras.datasets.cifar10.load_data()
+x_train, x_test = x_train / 255.0, x_test / 255.0
+y_train = tf.keras.utils.to_categorical(y_train, 10)
+y_test = tf.keras.utils.to_categorical(y_test, 10)
+
+def create_model(kernel_regularizer=None):
+    return tf.keras.Sequential([
+        tf.keras.layers.Conv2D(32, 3, activation='relu', kernel_regularizer=kernel_regularizer,
+                               input_shape=(32, 32, 3)),
+        tf.keras.layers.MaxPooling2D(),
+        tf.keras.layers.Conv2D(64, 3, activation='relu', kernel_regularizer=kernel_regularizer),
+        tf.keras.layers.MaxPooling2D(),
+        tf.keras.layers.Flatten(),
+        tf.keras.layers.Dense(128, activation='relu', kernel_regularizer=kernel_regularizer),
+        tf.keras.layers.Dense(10, activation='softmax')
+    ])
+
+def analyze_weight_sparsity(model, threshold=1e-4):
+    total_params = 0
+    zero_params = 0
+    
+    for layer in model.layers:
+        if hasattr(layer, 'kernel'):
+            weights = layer.kernel.numpy().flatten()
+            total_params += len(weights)
+            zero_params += np.sum(np.abs(weights) < threshold)
+    
+    sparsity = zero_params / total_params if total_params > 0 else 0
+    return sparsity, zero_params, total_params
+
+def compare_regularization():
+    configs = {
+        'No Regularization': None,
+        'L2 (lambda=0.001)': tf.keras.regularizers.L2(0.001),
+        'L2 (lambda=0.01)': tf.keras.regularizers.L2(0.01),
+        'L1 (lambda=0.001)': tf.keras.regularizers.L1(0.001),
+        'L1 (lambda=0.01)': tf.keras.regularizers.L1(0.01),
+        'Elastic Net (l1=0.001, l2=0.001)': tf.keras.regularizers.L1L2(0.001, 0.001),
+    }
+    
+    results = {}
+    
+    for name, regularizer in configs.items():
+        print(f"\nTraining: {name}")
+        
+        model = create_model(regularizer)
+        model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+                      loss='categorical_crossentropy', metrics=['accuracy'])
+        
+        history = model.fit(x_train, y_train, batch_size=128, epochs=30,
+                           validation_data=(x_test, y_test), verbose=0)
+        
+        test_loss, test_acc = model.evaluate(x_test, y_test, verbose=0)
+        sparsity, zero_params, total_params = analyze_weight_sparsity(model)
+        
+        results[name] = {
+            'history': history.history,
+            'test_accuracy': test_acc,
+            'test_loss': test_loss,
+            'sparsity': sparsity,
+            'zero_params': zero_params,
+            'total_params': total_params
+        }
+        
+        print(f"  Test Accuracy: {test_acc:.4f}")
+        print(f"  Weight Sparsity: {sparsity:.4f} ({zero_params}/{total_params})")
+    
+    return results
+
+def visualize_regularization_results(results):
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    
+    for name, data in results.items():
+        axes[0, 0].plot(data['history']['val_accuracy'], label=name, linewidth=2)
+    axes[0, 0].set_title('Validation Accuracy', fontweight='bold')
+    axes[0, 0].set_xlabel('Epoch'); axes[0, 0].set_ylabel('Accuracy')
+    axes[0, 0].legend(fontsize=8); axes[0, 0].grid(True, alpha=0.3)
+    
+    names = list(results.keys())
+    test_accs = [results[n]['test_accuracy'] for n in names]
+    bars = axes[0, 1].bar(range(len(names)), test_accs, color='lightblue', edgecolor='black')
+    axes[0, 1].set_title('Test Accuracy', fontweight='bold')
+    axes[0, 1].set_ylabel('Accuracy')
+    axes[0, 1].set_xticks(range(len(names)))
+    axes[0, 1].set_xticklabels(names, rotation=45, ha='right', fontsize=8)
+    for bar, acc in zip(bars, test_accs):
+        axes[0, 1].text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
+                       f'{acc:.3f}', ha='center', va='bottom', fontsize=8)
+    
+    sparsities = [results[n]['sparsity'] for n in names]
+    bars = axes[1, 0].bar(range(len(names)), sparsities, color='lightcoral', edgecolor='black')
+    axes[1, 0].set_title('Weight Sparsity', fontweight='bold')
+    axes[1, 0].set_ylabel('Sparsity Ratio')
+    axes[1, 0].set_xticks(range(len(names)))
+    axes[1, 0].set_xticklabels(names, rotation=45, ha='right', fontsize=8)
+    
+    for name, data in results.items():
+        axes[1, 1].plot(data['history']['loss'], label=name, linewidth=2)
+    axes[1, 1].set_title('Training Loss', fontweight='bold')
+    axes[1, 1].set_xlabel('Epoch'); axes[1, 1].set_ylabel('Loss')
+    axes[1, 1].legend(fontsize=8); axes[1, 1].grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig('regularization_comparison.png', dpi=150)
+    plt.show()
+
+results = compare_regularization()
+visualize_regularization_results(results)
+```
+
+---

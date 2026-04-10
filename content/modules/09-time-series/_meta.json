@@ -1,0 +1,21 @@
+{
+  "id": "09-time-series",
+  "number": 9,
+  "title": "Time Series and Sequence Prediction",
+  "shortTitle": "Time Series",
+  "description": "Stationarity, ARIMA, windowing techniques, 1D CNNs, LSTMs for forecasting, multi-step prediction, and anomaly detection.",
+  "duration": "1 week",
+  "difficulty": "intermediate",
+  "prerequisites": [
+    4
+  ],
+  "objectives": [
+    "Understand time series fundamentals and stationarity",
+    "Implement windowing and data preparation",
+    "Build 1D CNN and LSTM forecasting models",
+    "Apply multi-step and multi-variate prediction",
+    "Detect anomalies in time series data"
+  ],
+  "icon": "chart",
+  "color": "#14b8a6"
+}

@@ -1,0 +1,189 @@
+---
+title: "SGD with Momentum and Nesterov Acceleration"
+module: 1
+labNumber: 8
+difficulty: "medium"
+estimatedTime: "60-75 minutes"
+source: "authored-by-claude-2026-04-10"
+---
+
+## Objective
+
+Implement classical momentum and Nesterov accelerated gradient (NAG) from
+scratch, then compare them head-to-head against vanilla SGD on an ill-
+conditioned quadratic bowl. You'll see *why* momentum matters: it damps
+oscillations in steep directions and accelerates in flat ones.
+
+## Prerequisites
+
+- Lab 01 (vanilla GD) and Lab 07 (first TF model).
+- Comfortable reading the gradient-descent update rule.
+
+## Background
+
+**Vanilla SGD:**
+
+$$ \theta_{t+1} = \theta_t - \eta\,\nabla f(\theta_t) $$
+
+**Classical momentum** (Polyak, 1964) adds a velocity buffer that is an
+exponentially weighted moving average of past gradients:
+
+$$
+v_{t+1} = \beta\,v_t + \nabla f(\theta_t), \qquad
+\theta_{t+1} = \theta_t - \eta\,v_{t+1}
+$$
+
+**Nesterov accelerated gradient** peeks ahead before computing the gradient:
+
+$$
+v_{t+1} = \beta\,v_t + \nabla f(\theta_t - \eta\beta v_t), \qquad
+\theta_{t+1} = \theta_t - \eta\,v_{t+1}
+$$
+
+Typical `β` is 0.9. Intuitively: ordinary momentum is a ball rolling downhill
+accumulating velocity; NAG is a slightly smarter ball that looks where it's
+heading before stepping.
+
+## The test problem: an ill-conditioned quadratic
+
+```python
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Long, thin valley: condition number = 100
+A = np.diag([1.0, 100.0])
+def f(x):   return 0.5 * x @ A @ x
+def grad(x): return A @ x
+
+x0 = np.array([100.0, 1.0])   # start far along the flat axis
+```
+
+A pure gradient-descent trajectory will zig-zag violently across the steep
+`y`-axis while crawling along the flat `x`-axis. This is the textbook case
+where momentum shines.
+
+## Part 1 — Implement the three optimisers
+
+```python
+def run_sgd(lr=0.015, steps=200):
+    x = x0.copy(); hist = [x.copy()]
+    for _ in range(steps):
+        x = x - lr * grad(x)
+        hist.append(x.copy())
+    return np.array(hist)
+
+def run_momentum(lr=0.015, beta=0.9, steps=200):
+    x = x0.copy(); v = np.zeros_like(x); hist = [x.copy()]
+    for _ in range(steps):
+        v = beta * v + grad(x)
+        x = x - lr * v
+        hist.append(x.copy())
+    return np.array(hist)
+
+def run_nesterov(lr=0.015, beta=0.9, steps=200):
+    x = x0.copy(); v = np.zeros_like(x); hist = [x.copy()]
+    for _ in range(steps):
+        lookahead = x - lr * beta * v
+        v = beta * v + grad(lookahead)
+        x = x - lr * v
+        hist.append(x.copy())
+    return np.array(hist)
+
+traj_sgd = run_sgd()
+traj_mom = run_momentum()
+traj_nag = run_nesterov()
+```
+
+## Part 2 — Visualise the trajectories
+
+```python
+xs, ys = np.meshgrid(np.linspace(-120, 120, 200), np.linspace(-3, 3, 200))
+Z = 0.5 * (xs**2 + 100 * ys**2)
+
+fig, ax = plt.subplots(figsize=(10, 4))
+ax.contour(xs, ys, Z, levels=30, cmap="Greys", alpha=0.6)
+for traj, label, color in [
+    (traj_sgd, "SGD",      "#ef4444"),
+    (traj_mom, "Momentum", "#00d4ff"),
+    (traj_nag, "Nesterov", "#8b5cf6"),
+]:
+    ax.plot(traj[:, 0], traj[:, 1], "-o", ms=2, lw=1, color=color, label=label)
+ax.set_xlabel("x₁ (flat direction)")
+ax.set_ylabel("x₂ (steep direction)")
+ax.legend()
+ax.set_title("Optimiser trajectories on an ill-conditioned quadratic")
+plt.tight_layout(); plt.show()
+```
+
+You should clearly see SGD oscillating up-and-down on the steep axis while
+momentum and NAG glide smoothly toward the origin. NAG typically overshoots
+slightly less than plain momentum.
+
+## Part 3 — Quantitative convergence
+
+```python
+def loss_curve(traj):
+    return np.array([f(x) for x in traj])
+
+plt.figure(figsize=(7, 4))
+plt.semilogy(loss_curve(traj_sgd),  label="SGD")
+plt.semilogy(loss_curve(traj_mom),  label="Momentum β=0.9")
+plt.semilogy(loss_curve(traj_nag),  label="Nesterov  β=0.9")
+plt.xlabel("step"); plt.ylabel("f(x)  (log scale)")
+plt.legend(); plt.grid(True, which="both", alpha=0.3)
+plt.title("Convergence on ill-conditioned quadratic")
+plt.show()
+```
+
+## Part 4 — Use TensorFlow's built-in optimisers
+
+Confirm that the hand-rolled versions agree with `tf.keras.optimizers.SGD`:
+
+```python
+import tensorflow as tf
+
+def run_tf(momentum=0.0, nesterov=False, steps=200, lr=0.015):
+    x = tf.Variable(x0.astype(np.float32))
+    opt = tf.keras.optimizers.SGD(learning_rate=lr,
+                                  momentum=momentum,
+                                  nesterov=nesterov)
+    hist = [x.numpy().copy()]
+    for _ in range(steps):
+        with tf.GradientTape() as tape:
+            loss = 0.5 * tf.tensordot(x, tf.constant(A, dtype=tf.float32) @ x, 1)
+        g = tape.gradient(loss, [x])
+        opt.apply_gradients(zip(g, [x]))
+        hist.append(x.numpy().copy())
+    return np.array(hist)
+
+tf_sgd = run_tf()
+tf_mom = run_tf(momentum=0.9)
+tf_nag = run_tf(momentum=0.9, nesterov=True)
+```
+
+Overlay these on the previous plot. If your manual implementations are
+correct they should sit on top of the TF curves.
+
+## Exercises
+
+1. **Sweep `β`** over `{0.0, 0.5, 0.9, 0.99}` for the momentum optimiser.
+   Which value gives the fastest convergence? Which value starts diverging?
+2. **Step-size sensitivity.** Re-run vanilla SGD at `lr = 0.02` — does it
+   still converge? Now try momentum at the same `lr`. Which breaks first?
+3. **Derive it.** Show that if `β = 0`, the momentum update reduces exactly
+   to vanilla SGD. Write the two lines of algebra in a markdown cell.
+4. **Bonus.** Replace the quadratic with the Rosenbrock function from Lab 1
+   and re-run all three optimisers. Does momentum still help on a non-convex
+   valley?
+
+## Key takeaways
+
+- On ill-conditioned problems, vanilla SGD oscillates across the steep
+  direction and crawls along the flat one. Momentum fixes both.
+- Nesterov's "look-ahead" usually gives a small edge over classical
+  momentum, especially near the optimum where it reduces overshoot.
+- `tf.keras.optimizers.SGD(momentum=0.9, nesterov=True)` is exactly what you
+  just implemented — and it's a one-liner.
+- The same principle underlies Adam, RMSprop, and every other modern
+  optimiser: they are all, at heart, smarter ways of averaging past
+  gradients.

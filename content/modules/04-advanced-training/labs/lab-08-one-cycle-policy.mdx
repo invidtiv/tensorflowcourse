@@ -1,0 +1,106 @@
+---
+title: "One-Cycle Policy"
+module: 4
+labNumber: 8
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# One-Cycle Policy
+
+```python
+"""
+Lab 2.3: One-Cycle Learning Rate Policy
+========================================
+Implement the one-cycle policy for super-convergence.
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+
+class OneCyclePolicy(tf.keras.optimizers.schedules.LearningRateSchedule):
+    """
+    One-cycle learning rate policy.
+    Combines learning rate and momentum cycling for super-convergence.
+    """
+    
+    def __init__(self, max_lr=0.1, total_steps=10000, pct_start=0.3,
+                 anneal_strategy='cos', base_momentum=0.85, max_momentum=0.95):
+        super().__init__()
+        self.max_lr = max_lr
+        self.total_steps = total_steps
+        self.pct_start = pct_start
+        self.anneal_strategy = anneal_strategy
+        self.base_momentum = base_momentum
+        self.max_momentum = max_momentum
+        
+    def __call__(self, step):
+        step = tf.cast(step, tf.float32)
+        total_steps = tf.cast(self.total_steps, tf.float32)
+        progress = step / total_steps
+        
+        if progress < self.pct_start:
+            phase_progress = progress / self.pct_start
+            if self.anneal_strategy == 'cos':
+                lr = self.max_lr * (1 + tf.cos(np.pi * (1 - phase_progress))) / 2
+            else:
+                lr = self.max_lr * phase_progress
+        else:
+            phase_progress = (progress - self.pct_start) / (1 - self.pct_start)
+            if self.anneal_strategy == 'cos':
+                lr = self.max_lr * (1 + tf.cos(np.pi * phase_progress)) / 2
+            else:
+                lr = self.max_lr * (1 - phase_progress)
+        
+        return lr
+    
+    def get_momentum(self, step):
+        step = tf.cast(step, tf.float32)
+        total_steps = tf.cast(self.total_steps, tf.float32)
+        progress = step / total_steps
+        
+        if progress < self.pct_start:
+            phase_progress = progress / self.pct_start
+            momentum = self.max_momentum - (self.max_momentum - self.base_momentum) * phase_progress
+        else:
+            phase_progress = (progress - self.pct_start) / (1 - self.pct_start)
+            momentum = self.base_momentum + (self.max_momentum - self.base_momentum) * phase_progress
+        
+        return momentum
+    
+    def get_config(self):
+        return {'max_lr': self.max_lr, 'total_steps': self.total_steps,
+                'pct_start': self.pct_start, 'anneal_strategy': self.anneal_strategy,
+                'base_momentum': self.base_momentum, 'max_momentum': self.max_momentum}
+
+def visualize_one_cycle():
+    total_steps = 10000
+    
+    policy = OneCyclePolicy(max_lr=0.1, total_steps=total_steps, pct_start=0.3,
+                            anneal_strategy='cos', base_momentum=0.85, max_momentum=0.95)
+    
+    steps = np.arange(total_steps)
+    lrs = [policy(s).numpy() for s in steps]
+    momentums = [policy.get_momentum(s).numpy() for s in steps]
+    
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    
+    axes[0].plot(steps, lrs, linewidth=2, color='blue')
+    axes[0].set_xlabel('Training Steps'); axes[0].set_ylabel('Learning Rate')
+    axes[0].set_title('One-Cycle Learning Rate', fontweight='bold')
+    axes[0].grid(True, alpha=0.3)
+    
+    axes[1].plot(steps, momentums, linewidth=2, color='red')
+    axes[1].set_xlabel('Training Steps'); axes[1].set_ylabel('Momentum')
+    axes[1].set_title('One-Cycle Momentum', fontweight='bold')
+    axes[1].grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig('one_cycle_policy.png', dpi=150)
+    plt.show()
+
+visualize_one_cycle()
+```
+
+---

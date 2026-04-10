@@ -1,0 +1,595 @@
+---
+title: "Anchor Box Generation"
+module: 6
+labNumber: 4
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Anchor Box Generation
+
+## Objectives
+- Understand anchor box concept
+- Generate anchor boxes for different scales and aspect ratios
+- Implement k-means clustering for anchor optimization
+- Visualize anchor box distributions
+
+## Theory
+
+Anchor boxes are predefined bounding boxes with specific scales and aspect ratios that serve as references for object detection. They help the network learn to detect objects of various sizes and shapes.
+
+### Anchor Generation Formula
+```
+For each scale s and aspect ratio r:
+  width = s * sqrt(r)
+  height = s / sqrt(r)
+```
+
+## Complete Implementation
+
+```python
+"""
+Lab 6.3: Anchor Box Generation
+Object Detection Systems - Module 6
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+from typing import List, Tuple
+
+# =============================================================================
+# Section 1: Basic Anchor Generation
+# =============================================================================
+
+def generate_anchors_base(scales: List[float], aspect_ratios: List[float]) -> tf.Tensor:
+    """
+    Generate base anchor boxes.
+    
+    Args:
+        scales: List of anchor scales (relative to feature map)
+        aspect_ratios: List of aspect ratios (width/height)
+    
+    Returns:
+        Anchor boxes in [x_min, y_min, x_max, y_max] format [N, 4]
+    """
+    anchors = []
+    
+    for scale in scales:
+        for ratio in aspect_ratios:
+            # Calculate width and height
+            width = scale * np.sqrt(ratio)
+            height = scale / np.sqrt(ratio)
+            
+            # Create anchor centered at origin
+            x_min = -width / 2
+            y_min = -height / 2
+            x_max = width / 2
+            y_max = height / 2
+            
+            anchors.append([x_min, y_min, x_max, y_max])
+    
+    return tf.constant(anchors, dtype=tf.float32)
+
+
+def generate_anchors_on_grid(feature_map_size: Tuple[int, int],
+                              stride: int,
+                              base_anchors: tf.Tensor,
+                              image_size: Tuple[int, int] = (640, 640)) -> tf.Tensor:
+    """
+    Generate anchors on a grid across the feature map.
+    
+    Args:
+        feature_map_size: (height, width) of feature map
+        stride: Stride of the feature map relative to input
+        base_anchors: Base anchor boxes [N, 4]
+        image_size: Original image size (height, width)
+    
+    Returns:
+        All anchors on the grid [H*W*N, 4]
+    """
+    fh, fw = feature_map_size
+    num_anchors = len(base_anchors)
+    
+    # Create grid of center points
+    shift_x = tf.range(fw, dtype=tf.float32) * stride
+    shift_y = tf.range(fh, dtype=tf.float32) * stride
+    
+    shift_x, shift_y = tf.meshgrid(shift_x, shift_y)
+    shift_x = tf.reshape(shift_x, [-1])
+    shift_y = tf.reshape(shift_y, [-1])
+    
+    # Stack shifts: [H*W, 4] -> [dx, dy, dx, dy]
+    shifts = tf.stack([shift_x, shift_y, shift_x, shift_y], axis=1)
+    
+    # Add base anchors to each shift
+    # shifts: [H*W, 4], base_anchors: [N, 4]
+    # Result: [H*W, N, 4]
+    anchors = tf.expand_dims(base_anchors, 0) + tf.expand_dims(shifts, 1)
+    
+    # Reshape to [H*W*N, 4]
+    anchors = tf.reshape(anchors, [-1, 4])
+    
+    # Normalize to [0, 1]
+    ih, iw = image_size
+    anchors = anchors / tf.constant([iw, ih, iw, ih], dtype=tf.float32)
+    
+    # Clip to image boundaries
+    anchors = tf.clip_by_value(anchors, 0.0, 1.0)
+    
+    return anchors
+
+
+# =============================================================================
+# Section 2: Multi-Scale Anchor Generation (FPN Style)
+# =============================================================================
+
+def generate_fpn_anchors(image_size: Tuple[int, int] = (640, 640),
+                         strides: List[int] = [8, 16, 32],
+                         scales_per_level: List[List[float]] = None,
+                         aspect_ratios: List[float] = [0.5, 1.0, 2.0]) -> dict:
+    """
+    Generate anchors for Feature Pyramid Network (FPN) style detection.
+    
+    Args:
+        image_size: Input image size (height, width)
+        strides: Feature map strides
+        scales_per_level: Anchor scales for each pyramid level
+        aspect_ratios: Aspect ratios for all levels
+    
+    Returns:
+        Dictionary mapping stride to anchors
+    """
+    if scales_per_level is None:
+        # Default scales for each FPN level
+        scales_per_level = [
+            [32, 64, 128],      # P3 (stride 8)
+            [128, 256, 512],    # P4 (stride 16)
+            [512, 768, 1024]    # P5 (stride 32)
+        ]
+    
+    ih, iw = image_size
+    fpn_anchors = {}
+    
+    for stride, scales in zip(strides, scales_per_level):
+        # Calculate feature map size
+        fh = ih // stride
+        fw = iw // stride
+        
+        # Generate base anchors for this level
+        # Normalize scales by stride
+        normalized_scales = [s / stride for s in scales]
+        base_anchors = generate_anchors_base(normalized_scales, aspect_ratios)
+        
+        # Generate grid anchors
+        anchors = generate_anchors_on_grid(
+            (fh, fw), stride, base_anchors, image_size
+        )
+        
+        fpn_anchors[stride] = {
+            'anchors': anchors,
+            'feature_size': (fh, fw),
+            'num_anchors_per_location': len(scales) * len(aspect_ratios)
+        }
+    
+    return fpn_anchors
+
+
+# =============================================================================
+# Section 3: K-Means Clustering for Anchor Optimization
+# =============================================================================
+
+def kmeans_anchors(dataset_boxes: np.ndarray,
+                   k: int = 9,
+                   max_iter: int = 300,
+                   seed: int = 42) -> np.ndarray:
+    """
+    Use k-means clustering to find optimal anchor box sizes.
+    
+    Uses IoU as distance metric instead of Euclidean distance.
+    
+    Args:
+        dataset_boxes: Array of box dimensions [N, 2] (width, height)
+        k: Number of clusters (anchors) to find
+        max_iter: Maximum iterations
+        seed: Random seed
+    
+    Returns:
+        Optimal anchor dimensions [k, 2]
+    """
+    np.random.seed(seed)
+    
+    n_boxes = len(dataset_boxes)
+    
+    # Initialize centroids randomly from dataset
+    indices = np.random.choice(n_boxes, k, replace=False)
+    centroids = dataset_boxes[indices].copy()
+    
+    for iteration in range(max_iter):
+        # Calculate IoU between all boxes and centroids
+        # boxes: [N, 1, 2], centroids: [1, k, 2]
+        boxes_expanded = dataset_boxes[:, np.newaxis, :]  # [N, 1, 2]
+        centroids_expanded = centroids[np.newaxis, :, :]   # [1, k, 2]
+        
+        # Calculate intersection
+        min_wh = np.minimum(boxes_expanded, centroids_expanded)  # [N, k, 2]
+        intersection = min_wh[:, :, 0] * min_wh[:, :, 1]  # [N, k]
+        
+        # Calculate areas
+        box_areas = dataset_boxes[:, 0] * dataset_boxes[:, 1]  # [N]
+        centroid_areas = centroids[:, 0] * centroids[:, 1]      # [k]
+        
+        # Calculate IoU
+        union = box_areas[:, np.newaxis] + centroid_areas[np.newaxis, :] - intersection
+        iou = intersection / (union + 1e-7)
+        
+        # Assign each box to closest centroid (highest IoU)
+        assignments = np.argmax(iou, axis=1)
+        
+        # Update centroids
+        new_centroids = np.zeros_like(centroids)
+        for i in range(k):
+            mask = assignments == i
+            if np.sum(mask) > 0:
+                new_centroids[i] = np.mean(dataset_boxes[mask], axis=0)
+            else:
+                # Reinitialize empty cluster
+                new_centroids[i] = dataset_boxes[np.random.randint(n_boxes)]
+        
+        # Check convergence
+        if np.allclose(centroids, new_centroids, rtol=1e-5):
+            print(f"K-means converged at iteration {iteration}")
+            break
+        
+        centroids = new_centroids
+    
+    # Sort by area
+    areas = centroids[:, 0] * centroids[:, 1]
+    sorted_indices = np.argsort(areas)
+    
+    return centroids[sorted_indices]
+
+
+def generate_synthetic_dataset(num_boxes: int = 1000,
+                                image_size: Tuple[int, int] = (640, 640),
+                                seed: int = 42) -> np.ndarray:
+    """
+    Generate synthetic bounding box dataset for anchor optimization.
+    
+    Returns:
+        Box dimensions [N, 2] (width, height)
+    """
+    np.random.seed(seed)
+    
+    # Simulate different object categories with different size distributions
+    boxes = []
+    
+    # Small objects (20%)
+    n_small = num_boxes // 5
+    small_w = np.random.normal(30, 10, n_small)
+    small_h = np.random.normal(40, 12, n_small)
+    boxes.append(np.stack([small_w, small_h], axis=1))
+    
+    # Medium objects (50%)
+    n_medium = num_boxes // 2
+    medium_w = np.random.normal(100, 30, n_medium)
+    medium_h = np.random.normal(120, 35, n_medium)
+    boxes.append(np.stack([medium_w, medium_h], axis=1))
+    
+    # Large objects (30%)
+    n_large = num_boxes - n_small - n_medium
+    large_w = np.random.normal(250, 50, n_large)
+    large_h = np.random.normal(280, 60, n_large)
+    boxes.append(np.stack([large_w, large_h], axis=1))
+    
+    all_boxes = np.concatenate(boxes, axis=0)
+    
+    # Ensure positive dimensions
+    all_boxes = np.maximum(all_boxes, 10)
+    
+    # Shuffle
+    np.random.shuffle(all_boxes)
+    
+    return all_boxes
+
+
+# =============================================================================
+# Section 4: Visualization Functions
+# =============================================================================
+
+def visualize_anchors(anchors: tf.Tensor, title: str = "Anchor Boxes"):
+    """
+    Visualize anchor boxes.
+    """
+    anchors_np = anchors.numpy()
+    
+    fig, ax = plt.subplots(1, 1, figsize=(10, 10))
+    ax.set_xlim(-0.6, 0.6)
+    ax.set_ylim(-0.6, 0.6)
+    ax.set_aspect('equal')
+    ax.axhline(y=0, color='k', linestyle='-', linewidth=0.5)
+    ax.axvline(x=0, color='k', linestyle='-', linewidth=0.5)
+    
+    colors = plt.cm.rainbow(np.linspace(0, 1, len(anchors_np)))
+    
+    for i, (anchor, color) in enumerate(zip(anchors_np, colors)):
+        x_min, y_min, x_max, y_max = anchor
+        width = x_max - x_min
+        height = y_max - y_min
+        
+        rect = patches.Rectangle(
+            (x_min, y_min), width, height,
+            linewidth=2, edgecolor=color, facecolor='none'
+        )
+        ax.add_patch(rect)
+        
+        # Add size annotation
+        ax.text(x_min, y_max + 0.02, f'{i}', color=color, fontsize=8)
+    
+    ax.set_title(title)
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+    plt.grid(True, alpha=0.3)
+    plt.show()
+
+
+def visualize_anchor_distribution(dataset_boxes: np.ndarray,
+                                   optimized_anchors: np.ndarray = None):
+    """
+    Visualize distribution of box sizes and optimized anchors.
+    """
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+    
+    # Scatter plot of box dimensions
+    ax = axes[0]
+    ax.scatter(dataset_boxes[:, 0], dataset_boxes[:, 1], alpha=0.3, s=10)
+    
+    if optimized_anchors is not None:
+        ax.scatter(optimized_anchors[:, 0], optimized_anchors[:, 1],
+                  c='red', s=200, marker='x', linewidths=3, label='Optimized Anchors')
+        ax.legend()
+    
+    ax.set_xlabel('Width')
+    ax.set_ylabel('Height')
+    ax.set_title('Box Size Distribution')
+    ax.grid(True, alpha=0.3)
+    
+    # Aspect ratio distribution
+    ax = axes[1]
+    aspect_ratios = dataset_boxes[:, 0] / dataset_boxes[:, 1]
+    ax.hist(aspect_ratios, bins=50, alpha=0.7, edgecolor='black')
+    ax.set_xlabel('Aspect Ratio (width/height)')
+    ax.set_ylabel('Frequency')
+    ax.set_title('Aspect Ratio Distribution')
+    ax.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.show()
+
+
+def visualize_fpn_anchors(fpn_anchors: dict, image_size: Tuple[int, int] = (640, 640)):
+    """
+    Visualize FPN anchors at different scales.
+    """
+    fig, axes = plt.subplots(1, len(fpn_anchors), figsize=(15, 5))
+    
+    if len(fpn_anchors) == 1:
+        axes = [axes]
+    
+    for ax, (stride, data) in zip(axes, sorted(fpn_anchors.items())):
+        anchors = data['anchors']
+        anchors_np = anchors.numpy()
+        
+        # Sample a subset for visualization
+        sample_indices = np.linspace(0, len(anchors_np) - 1, min(100, len(anchors_np)), dtype=int)
+        sample_anchors = anchors_np[sample_indices]
+        
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.set_aspect('equal')
+        
+        for anchor in sample_anchors:
+            x_min, y_min, x_max, y_max = anchor
+            width = x_max - x_min
+            height = y_max - y_min
+            
+            rect = patches.Rectangle(
+                (x_min, y_min), width, height,
+                linewidth=1, edgecolor='blue', facecolor='none', alpha=0.3
+            )
+            ax.add_patch(rect)
+        
+        ax.set_title(f'Stride {stride}\n{data["feature_size"]} grid, {data["num_anchors_per_location"]} anchors/location')
+        ax.set_xlabel('x')
+        ax.set_ylabel('y')
+    
+    plt.tight_layout()
+    plt.show()
+
+
+# =============================================================================
+# Section 5: Anchor Statistics
+# =============================================================================
+
+def compute_anchor_statistics(anchors: tf.Tensor) -> dict:
+    """
+    Compute statistics about anchor boxes.
+    """
+    anchors_np = anchors.numpy()
+    
+    widths = anchors_np[:, 2] - anchors_np[:, 0]
+    heights = anchors_np[:, 3] - anchors_np[:, 1]
+    areas = widths * heights
+    aspect_ratios = widths / heights
+    
+    return {
+        'num_anchors': len(anchors_np),
+        'width_mean': np.mean(widths),
+        'width_std': np.std(widths),
+        'height_mean': np.mean(heights),
+        'height_std': np.std(heights),
+        'area_mean': np.mean(areas),
+        'area_std': np.std(areas),
+        'aspect_ratio_mean': np.mean(aspect_ratios),
+        'aspect_ratio_std': np.std(aspect_ratios),
+        'min_area': np.min(areas),
+        'max_area': np.max(areas)
+    }
+
+
+# =============================================================================
+# Main Execution
+# =============================================================================
+
+if __name__ == "__main__":
+    print("\n" + "=" * 70)
+    print("Lab 6.3: Anchor Box Generation")
+    print("=" * 70)
+    
+    # Part 1: Generate base anchors
+    print("\n" + "-" * 60)
+    print("Part 1: Base Anchor Generation")
+    print("-" * 60)
+    
+    scales = [128, 256, 512]
+    aspect_ratios = [0.5, 1.0, 2.0]
+    
+    base_anchors = generate_anchors_base(scales, aspect_ratios)
+    print(f"Generated {len(base_anchors)} base anchors")
+    print(f"Scales: {scales}")
+    print(f"Aspect Ratios: {aspect_ratios}")
+    
+    # Visualize base anchors
+    visualize_anchors(base_anchors, "Base Anchor Boxes")
+    
+    # Part 2: Generate grid anchors
+    print("\n" + "-" * 60)
+    print("Part 2: Grid Anchor Generation")
+    print("-" * 60)
+    
+    image_size = (640, 640)
+    stride = 16
+    feature_size = (image_size[0] // stride, image_size[1] // stride)
+    
+    grid_anchors = generate_anchors_on_grid(
+        feature_size, stride, base_anchors, image_size
+    )
+    
+    print(f"Image size: {image_size}")
+    print(f"Feature map size: {feature_size}")
+    print(f"Stride: {stride}")
+    print(f"Total anchors: {len(grid_anchors)}")
+    
+    stats = compute_anchor_statistics(grid_anchors)
+    print(f"\nAnchor Statistics:")
+    for key, value in stats.items():
+        if isinstance(value, float):
+            print(f"  {key}: {value:.4f}")
+        else:
+            print(f"  {key}: {value}")
+    
+    # Part 3: FPN anchors
+    print("\n" + "-" * 60)
+    print("Part 3: FPN Multi-Scale Anchors")
+    print("-" * 60)
+    
+    fpn_anchors = generate_fpn_anchors(image_size)
+    
+    for stride, data in sorted(fpn_anchors.items()):
+        print(f"\nStride {stride}:")
+        print(f"  Feature size: {data['feature_size']}")
+        print(f"  Anchors per location: {data['num_anchors_per_location']}")
+        print(f"  Total anchors: {len(data['anchors'])}")
+    
+    # Visualize FPN anchors
+    visualize_fpn_anchors(fpn_anchors, image_size)
+    
+    # Part 4: K-means anchor optimization
+    print("\n" + "-" * 60)
+    print("Part 4: K-Means Anchor Optimization")
+    print("-" * 60)
+    
+    # Generate synthetic dataset
+    dataset_boxes = generate_synthetic_dataset(num_boxes=1000, image_size=image_size)
+    print(f"Generated {len(dataset_boxes)} synthetic boxes")
+    
+    # Run k-means
+    k = 9  # 9 anchors (3 scales x 3 aspect ratios)
+    optimized_anchors = kmeans_anchors(dataset_boxes, k=k)
+    
+    print(f"\nOptimized Anchors (width, height):")
+    for i, (w, h) in enumerate(optimized_anchors):
+        print(f"  Anchor {i}: ({w:.1f}, {h:.1f}), aspect ratio: {w/h:.2f}")
+    
+    # Visualize distribution
+    visualize_anchor_distribution(dataset_boxes, optimized_anchors)
+    
+    print("\n" + "=" * 70)
+    print("Lab 6.3 Complete!")
+    print("=" * 70)
+```
+
+## Expected Output
+
+```
+======================================================================
+Lab 6.3: Anchor Box Generation
+======================================================================
+------------------------------------------------------------
+Part 1: Base Anchor Generation
+------------------------------------------------------------
+Generated 9 base anchors
+Scales: [128, 256, 512]
+Aspect Ratios: [0.5, 1.0, 2.0]
+
+------------------------------------------------------------
+Part 2: Grid Anchor Generation
+------------------------------------------------------------
+Image size: (640, 640)
+Feature map size: (40, 40)
+Stride: 16
+Total anchors: 14400
+
+Anchor Statistics:
+  num_anchors: 14400
+  width_mean: 0.0625
+  width_std: 0.0442
+  height_mean: 0.0625
+  height_std: 0.0442
+  area_mean: 0.0052
+  area_std: 0.0074
+
+------------------------------------------------------------
+Part 3: FPN Multi-Scale Anchors
+------------------------------------------------------------
+
+Stride 8:
+  Feature size: (80, 80)
+  Anchors per location: 9
+  Total anchors: 57600
+
+Stride 16:
+  Feature size: (40, 40)
+  Anchors per location: 9
+  Total anchors: 14400
+
+Stride 32:
+  Feature size: (20, 20)
+  Anchors per location: 9
+  Total anchors: 3600
+
+------------------------------------------------------------
+Part 4: K-Means Anchor Optimization
+------------------------------------------------------------
+Generated 1000 synthetic boxes
+K-means converged at iteration 47
+
+Optimized Anchors (width, height):
+  Anchor 0: (24.5, 32.8), aspect ratio: 0.75
+  Anchor 1: (28.3, 38.1), aspect ratio: 0.74
+  Anchor 2: (89.2, 112.4), aspect ratio: 0.79
+  ...
+```
+
+---

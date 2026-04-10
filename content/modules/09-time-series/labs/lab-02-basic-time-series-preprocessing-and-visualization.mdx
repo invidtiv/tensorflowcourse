@@ -1,0 +1,194 @@
+---
+title: "Basic Time Series Preprocessing and Visualization"
+module: 9
+labNumber: 2
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Basic Time Series Preprocessing and Visualization
+
+### Objectives
+- Learn to load and visualize time series data
+- Implement basic preprocessing techniques
+- Understand time series components (trend, seasonality, residual)
+
+### Complete Implementation
+
+```python
+"""
+Lab 1.1: Basic Time Series Preprocessing and Visualization
+Topic: Stock Price Data Preprocessing
+"""
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from datetime import datetime, timedelta
+import tensorflow as tf
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
+import warnings
+warnings.filterwarnings('ignore')
+
+np.random.seed(42)
+tf.random.set_seed(42)
+
+# Generate Synthetic Stock Price Data
+def generate_stock_data(n_days=1000, trend=0.001, volatility=0.02, 
+                        seasonality_period=252, seasonality_amplitude=5):
+    dates = pd.bdate_range(start='2020-01-01', periods=n_days)
+    trend_component = np.cumsum(np.ones(n_days) * trend)
+    seasonal_component = seasonality_amplitude * np.sin(
+        2 * np.pi * np.arange(n_days) / seasonality_period
+    )
+    random_returns = np.random.normal(0, volatility, n_days)
+    price_changes = np.cumsum(random_returns)
+    base_price = 100
+    prices = base_price + trend_component + seasonal_component + price_changes
+    prices = np.maximum(prices, 10)
+    df = pd.DataFrame({'Close': prices}, index=dates)
+    return df
+
+print("=" * 60)
+print("STEP 1: Generating Synthetic Stock Data")
+print("=" * 60)
+stock_data = generate_stock_data(n_days=1000)
+print(f"Generated {len(stock_data)} days of stock data")
+print(f"\nFirst 5 rows:")
+print(stock_data.head())
+print(f"\nData Statistics:")
+print(stock_data.describe())
+
+# Visualize Raw Time Series
+fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+
+axes[0, 0].plot(stock_data.index, stock_data['Close'], color='blue', linewidth=1)
+axes[0, 0].set_title('Raw Stock Price Series', fontsize=12, fontweight='bold')
+axes[0, 0].set_xlabel('Date')
+axes[0, 0].set_ylabel('Price ($)')
+axes[0, 0].grid(True, alpha=0.3)
+
+daily_returns = stock_data['Close'].pct_change().dropna()
+axes[0, 1].plot(daily_returns.index, daily_returns, color='green', linewidth=0.5, alpha=0.7)
+axes[0, 1].set_title('Daily Returns', fontsize=12, fontweight='bold')
+axes[0, 1].set_xlabel('Date')
+axes[0, 1].set_ylabel('Return (%)')
+axes[0, 1].grid(True, alpha=0.3)
+
+axes[1, 0].hist(daily_returns, bins=50, color='purple', alpha=0.7, edgecolor='black')
+axes[1, 0].set_title('Distribution of Daily Returns', fontsize=12, fontweight='bold')
+axes[1, 0].set_xlabel('Return')
+axes[1, 0].set_ylabel('Frequency')
+axes[1, 0].grid(True, alpha=0.3)
+
+window = 30
+rolling_mean = stock_data['Close'].rolling(window=window).mean()
+rolling_std = stock_data['Close'].rolling(window=window).std()
+axes[1, 1].plot(stock_data.index, stock_data['Close'], label='Price', color='blue', alpha=0.5)
+axes[1, 1].plot(rolling_mean.index, rolling_mean, label=f'{window}-day MA', color='red')
+axes[1, 1].fill_between(rolling_std.index, 
+                        rolling_mean - rolling_std, 
+                        rolling_mean + rolling_std, 
+                        alpha=0.2, color='red', label='+/-1 Std Dev')
+axes[1, 1].set_title('Price with Rolling Statistics', fontsize=12, fontweight='bold')
+axes[1, 1].set_xlabel('Date')
+axes[1, 1].set_ylabel('Price ($)')
+axes[1, 1].legend()
+axes[1, 1].grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.savefig('/mnt/okcomputer/output/lab1_1_raw_visualization.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+# Handle Missing Values
+print("\n" + "=" * 60)
+print("STEP 3: Handling Missing Values")
+print("=" * 60)
+
+stock_data_with_missing = stock_data.copy()
+missing_indices = np.random.choice(stock_data_with_missing.index, size=20, replace=False)
+stock_data_with_missing.loc[missing_indices, 'Close'] = np.nan
+print(f"Introduced {stock_data_with_missing['Close'].isna().sum()} missing values")
+
+stock_data_ffill = stock_data_with_missing.copy()
+stock_data_ffill['Close'] = stock_data_ffill['Close'].fillna(method='ffill')
+stock_data_interp = stock_data_with_missing.copy()
+stock_data_interp['Close'] = stock_data_interp['Close'].interpolate(method='linear')
+
+print(f"After forward fill: {stock_data_ffill['Close'].isna().sum()} missing values")
+print(f"After linear interpolation: {stock_data_interp['Close'].isna().sum()} missing values")
+
+# Feature Engineering - Technical Indicators
+print("\n" + "=" * 60)
+print("STEP 4: Feature Engineering - Technical Indicators")
+print("=" * 60)
+
+def add_technical_indicators(df):
+    data = df.copy()
+    data['MA_5'] = data['Close'].rolling(window=5).mean()
+    data['MA_10'] = data['Close'].rolling(window=10).mean()
+    data['MA_20'] = data['Close'].rolling(window=20).mean()
+    data['MA_50'] = data['Close'].rolling(window=50).mean()
+    data['EMA_12'] = data['Close'].ewm(span=12, adjust=False).mean()
+    data['EMA_26'] = data['Close'].ewm(span=26, adjust=False).mean()
+    data['MACD'] = data['EMA_12'] - data['EMA_26']
+    data['MACD_Signal'] = data['MACD'].ewm(span=9, adjust=False).mean()
+    data['BB_Middle'] = data['Close'].rolling(window=20).mean()
+    bb_std = data['Close'].rolling(window=20).std()
+    data['BB_Upper'] = data['BB_Middle'] + (bb_std * 2)
+    data['BB_Lower'] = data['BB_Middle'] - (bb_std * 2)
+    delta = data['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+    rs = gain / loss
+    data['RSI'] = 100 - (100 / (1 + rs))
+    data['Returns'] = data['Close'].pct_change()
+    data['Log_Returns'] = np.log(data['Close'] / data['Close'].shift(1))
+    data['Volatility'] = data['Returns'].rolling(window=20).std()
+    for lag in [1, 2, 3, 5, 10]:
+        data[f'Close_Lag_{lag}'] = data['Close'].shift(lag)
+    return data
+
+stock_features = add_technical_indicators(stock_data)
+print(f"Added {len(stock_features.columns) - 1} technical indicators")
+print(f"\nAll features: {list(stock_features.columns)}")
+
+# Data Normalization
+print("\n" + "=" * 60)
+print("STEP 5: Data Normalization")
+print("=" * 60)
+
+features_for_scaling = ['Close', 'MA_10', 'MA_20', 'RSI', 'Volatility']
+data_clean = stock_features[features_for_scaling].dropna()
+
+minmax_scaler = MinMaxScaler()
+data_minmax = minmax_scaler.fit_transform(data_clean)
+data_minmax_df = pd.DataFrame(data_minmax, columns=features_for_scaling, index=data_clean.index)
+
+standard_scaler = StandardScaler()
+data_standard = standard_scaler.fit_transform(data_clean)
+data_standard_df = pd.DataFrame(data_standard, columns=features_for_scaling, index=data_clean.index)
+
+print(f"Original data shape: {data_clean.shape}")
+print(f"\nMin-Max Scaled data range:")
+print(data_minmax_df.describe().loc[['min', 'max']])
+
+# Save preprocessed data
+import joblib
+joblib.dump(minmax_scaler, '/mnt/okcomputer/output/lab1_1_minmax_scaler.pkl')
+stock_features.to_csv('/mnt/okcomputer/output/lab1_1_stock_features.csv')
+print("\nSaved preprocessed data and scalers")
+
+print("\n" + "=" * 60)
+print("Lab 1.1 Complete!")
+print("=" * 60)
+```
+
+### Key Takeaways
+
+1. **Data Generation**: Synthetic data allows controlled experimentation
+2. **Missing Values**: Forward fill is common for time series; interpolation preserves trends
+3. **Technical Indicators**: Moving averages, MACD, RSI provide additional features
+4. **Normalization**: Min-Max for bounded outputs; Standard for neural networks
+
+---

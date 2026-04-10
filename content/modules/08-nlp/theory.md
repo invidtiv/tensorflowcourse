@@ -1,0 +1,1906 @@
+---
+title: "Natural Language Processing"
+module: 8
+description: "Embeddings, RNN/LSTM/GRU, attention mechanisms, Transformer architecture, and BERT/GPT concepts with TensorFlow."
+duration: "2 weeks"
+difficulty: "intermediate"
+---
+
+# Module 8: Natural Language Processing - Theoretical Foundations
+
+## Course Overview
+
+This module provides a comprehensive exploration of Natural Language Processing (NLP) from foundational concepts to state-of-the-art architectures. Students will develop deep theoretical understanding of how machines process, represent, and generate human language, culminating in modern transformer-based models that have revolutionized the field.
+
+**Learning Objectives:**
+- Master text representation paradigms from one-hot encoding to contextual embeddings
+- Understand the mathematical foundations of sequential models and attention mechanisms
+- Analyze the architectural innovations that enabled the deep learning revolution in NLP
+- Evaluate modern pretrained language models and their training paradigms
+
+**Prerequisites:** Deep learning fundamentals, linear algebra, probability theory, Python programming
+
+---
+
+# Chapter 1: Foundations of Text Representation
+
+## 1.1 The Challenge of Language Representation
+
+Natural language presents unique challenges for computational processing that distinguish it from other data modalities:
+
+### 1.1.1 Discrete vs. Continuous Nature
+
+Unlike images (pixel values) or audio (waveform amplitudes), language is fundamentally **discrete** and **symbolic**. Words are arbitrary signs that bear no mathematical relationship to their meanings—a property known as the **arbitrariness of the sign** (Saussure, 1916).
+
+**Key Challenges:**
+- **Vocabulary explosion**: Natural languages contain hundreds of thousands of unique words
+- **Sparsity**: Any given text uses only a tiny fraction of the possible vocabulary
+- **Compositionality**: Meaning emerges from the combination of words, not just individual tokens
+- **Ambiguity**: Same words carry different meanings in different contexts
+- **Variability**: Infinite ways to express the same concept
+
+### 1.1.2 The Distributional Hypothesis
+
+The foundational principle underlying modern NLP is the **distributional hypothesis**, articulated by linguist John Firth (1957):
+
+> *"You shall know a word by the company it keeps."*
+
+**Formal Statement:**
+Words that appear in similar contexts tend to have similar meanings. Mathematically, if words $w_i$ and $w_j$ have similar context distributions $P(context | w_i) \approx P(context | w_j)$, then their semantic representations should be similar.
+
+This hypothesis transforms the problem of meaning representation into a problem of **co-occurrence statistics**.
+
+---
+
+## 1.2 One-Hot Encoding: The Baseline Representation
+
+### 1.2.1 Definition and Construction
+
+One-hot encoding represents each word as a binary vector where only one position is active:
+
+Given a vocabulary $V = \{w_1, w_2, ..., w_{|V|}\}$, the one-hot vector for word $w_i$ is:
+
+$$\mathbf{e}_{w_i} = [0, 0, ..., \underbrace{1}_{\text{position } i}, ..., 0]^T \in \mathbb{R}^{|V|}$$
+
+**Example:**
+For vocabulary $V = \{\text{cat}, \text{dog}, \text{fish}, \text{run}, \text{jump}\}$:
+
+| Word | One-Hot Vector |
+|------|----------------|
+| cat | $[1, 0, 0, 0, 0]^T$ |
+| dog | $[0, 1, 0, 0, 0]^T$ |
+| fish | $[0, 0, 1, 0, 0]^T$ |
+| run | $[0, 0, 0, 1, 0]^T$ |
+| jump | $[0, 0, 0, 0, 1]^T$ |
+
+### 1.2.2 Mathematical Properties
+
+**Advantages:**
+- **Uniqueness**: Each word has a distinct representation
+- **Simplicity**: Easy to implement and interpret
+- **No assumptions**: No prior knowledge about word relationships
+
+**Critical Limitations:**
+
+1. **Orthogonality Problem**: All word vectors are mutually orthogonal:
+   $$\mathbf{e}_{w_i}^T \mathbf{e}_{w_j} = 0 \quad \text{for } i \neq j$$
+   This means $\text{sim}(\text{cat}, \text{dog}) = \text{sim}(\text{cat}, \text{run}) = 0$, which is semantically nonsensical.
+
+2. **Dimensionality Curse**: 
+   - Modern vocabularies: $|V| \approx 30,000$ to $1,000,000$
+   - Memory requirement: $|V| \times |V|$ for naive co-occurrence matrices
+   - Storage: ~120MB for 30K vocabulary (float32)
+
+3. **Generalization Failure**: Cannot handle out-of-vocabulary (OOV) words
+
+4. **No Semantic Structure**: Cannot capture synonymy, antonymy, or semantic similarity
+
+### 1.2.3 The Curse of Dimensionality in NLP
+
+For a vocabulary of size $|V|$, one-hot encoding creates an $|V|$-dimensional space where:
+- The available volume grows exponentially: $O(2^{|V|})$
+- The data density decreases exponentially: $O(1/2^{|V|})$
+- Distance metrics become less meaningful in high dimensions
+
+**Key Insight**: One-hot encoding treats language as a set of unrelated atomic symbols, completely ignoring the rich structure inherent in linguistic systems.
+
+---
+
+## 1.3 Distributed Representations: The Paradigm Shift
+
+### 1.3.1 Core Concept
+
+**Distributed representations** encode words as dense, low-dimensional vectors where:
+- Each dimension captures some aspect of meaning
+- Similar words occupy nearby regions in vector space
+- Semantic relationships are encoded as geometric relationships
+
+**Formal Definition:**
+A distributed representation maps each word $w$ to a dense vector:
+
+$$\mathbf{v}_w \in \mathbb{R}^d \quad \text{where } d \ll |V|$$
+
+Typically, $d \in [50, 300]$ for classical embeddings, $d \in [768, 4096]$ for contextual embeddings.
+
+### 1.3.2 The Power of Distributed Representations
+
+**1. Semantic Similarity:**
+Words with similar meanings have high cosine similarity:
+$$\text{sim}(w_i, w_j) = \frac{\mathbf{v}_{w_i} \cdot \mathbf{v}_{w_j}}{||\mathbf{v}_{w_i}|| \cdot ||\mathbf{v}_{w_j}||}$$
+
+**2. Analogical Reasoning:**
+Vector arithmetic captures semantic relationships:
+$$\mathbf{v}_{\text{king}} - \mathbf{v}_{\text{man}} + \mathbf{v}_{\text{woman}} \approx \mathbf{v}_{\text{queen}}$$
+
+**3. Dimensionality Reduction:**
+From $|V|$ dimensions to $d$ dimensions, achieving:
+- Compression ratio: $|V|/d$ (e.g., 100:1 for $|V|=30,000, d=300$)
+- Better generalization through shared parameters
+- Efficient computation
+
+### 1.3.3 Comparison: One-Hot vs. Distributed
+
+| Property | One-Hot | Distributed |
+|----------|---------|-------------|
+| Dimensionality | $|V|$ (10K-1M) | $d$ (50-4096) |
+| Sparsity | 100% sparse | Dense |
+| Semantic similarity | None captured | Captured via geometry |
+| Generalization | None | Strong |
+| Storage | $O(|V|^2)$ | $O(|V| \times d)$ |
+| Computation | Matrix multiplication | Efficient dot products |
+| Training data | None required | Requires large corpus |
+
+---
+
+## 1.4 Tokenization: The First Processing Step
+
+### 1.4.1 Why Tokenization Matters
+
+Tokenization is the process of breaking text into meaningful units (tokens). It is the foundation upon which all subsequent NLP processing depends.
+
+**The Tokenization Problem:**
+Given a string $S$, partition it into a sequence of tokens $T = [t_1, t_2, ..., t_n]$ such that:
+$$S = t_1 \oplus t_2 \oplus ... \oplus t_n$$
+
+where $\oplus$ denotes string concatenation (possibly with spacing).
+
+### 1.4.2 Tokenization Strategies
+
+#### 1.4.2.1 Word-Based Tokenization
+
+**Approach:** Split on whitespace and punctuation.
+
+**Example:**
+```
+Input: "Hello, world! How are you?"
+Output: ["Hello", ",", "world", "!", "How", "are", "you", "?"]
+```
+
+**Challenges:**
+- **Compound words**: "New York" (city) vs. "new" + "York"
+- **Contractions**: "don't" → "do" + "n't" or "don't"?
+- **Hyphenated words**: "state-of-the-art"
+- **Multi-word expressions**: "kick the bucket"
+
+**Vocabulary Size Implications:**
+| Corpus | Word Types | Coverage Issues |
+|--------|------------|-----------------|
+| Small | ~10K | High OOV rate |
+| Medium | ~100K | Moderate OOV |
+| Large | ~1M+ | Memory issues |
+
+#### 1.4.2.2 Character-Based Tokenization
+
+**Approach:** Use individual characters as tokens.
+
+**Example:**
+```
+Input: "hello"
+Output: ["h", "e", "l", "l", "o"]
+```
+
+**Advantages:**
+- Fixed vocabulary size (~256 for ASCII, ~10K for Unicode)
+- No OOV problems
+- Can handle any word
+
+**Disadvantages:**
+- Very long sequences
+- Loses word-level semantics
+- Increased computational cost
+
+#### 1.4.2.3 Subword Tokenization
+
+**Core Insight:** Balance between word and character tokenization by using frequently occurring subword units.
+
+**Mathematical Formulation:**
+Given a corpus $C$ and target vocabulary size $k$, find subword vocabulary $V$ that minimizes:
+$$\mathcal{L}(V) = \sum_{w \in C} |\text{tokenize}(w, V)|$$
+
+**Popular Algorithms:**
+
+**1. Byte Pair Encoding (BPE)**
+
+Originally a compression algorithm (Gage, 1994), adapted for NLP by Sennrich et al. (2016).
+
+**Algorithm:**
+```
+1. Initialize vocabulary with all characters
+2. Repeat until vocabulary size reached:
+   a. Find most frequent adjacent pair (A, B)
+   b. Merge into new token AB
+   c. Add AB to vocabulary
+```
+
+**Example Iteration:**
+```
+Corpus: {'low': 5, 'lower': 2, 'lowest': 1, 'newer': 2, 'wider': 1}
+
+Initial: l, o, w, e, r, s, t, n, i, d
+
+Iteration 1: Most frequent pair (e, r) → add 'er'
+Iteration 2: Most frequent pair ('er', ) in 'lower', 'newer', 'wider'
+...
+Final: low, lower, newest, newer, wide, er, est, ...
+```
+
+**2. WordPiece (Google)**
+
+Used in BERT, similar to BPE but uses likelihood-based merging criterion.
+
+**Selection Criterion:**
+Choose merge that maximizes training data likelihood:
+$$\text{score}(A, B) = \frac{P(AB)}{P(A) \cdot P(B)}$$
+
+**3. Unigram Language Model (SentencePiece)**
+
+Top-down approach: start with large vocabulary and prune.
+
+**Algorithm:**
+```
+1. Initialize with all characters and frequent substrings
+2. Repeat:
+   a. Compute unigram language model from current vocabulary
+   b. Remove tokens that least decrease likelihood
+3. Stop when target vocabulary size reached
+```
+
+### 1.4.3 Tokenization Comparison
+
+| Method | Vocab Size | OOV Rate | Sequence Length | Semantic Level |
+|--------|------------|----------|-----------------|----------------|
+| Word | 10K-1M | High | Short | Word |
+| Character | ~100 | None | Very Long | Character |
+| BPE | 8K-50K | Low | Medium | Subword |
+| WordPiece | 30K | Low | Medium | Subword |
+| Unigram | 8K-32K | Low | Medium | Subword |
+
+### 1.4.4 Key Insights: Tokenization
+
+1. **Tokenization is model-dependent**: Different models require different tokenization schemes
+2. **Vocabulary size trade-off**: Larger vocab → fewer tokens but more parameters
+3. **Language-specific considerations**: Agglutinative languages (Turkish, Finnish) benefit more from subword methods
+4. **Preprocessing matters**: Lowercasing, unicode normalization affect tokenization
+
+### 1.4.5 Common Pitfalls
+
+1. **OOV handling**: Always implement `<UNK>` token or subword fallback
+2. **Whitespace sensitivity**: "don't" vs "don 't" can produce different tokens
+3. **Language assumptions**: English-centric tokenizers fail on other languages
+4. **Version mismatch**: Using wrong tokenizer for pretrained model
+
+---
+
+# Chapter 2: Word Embeddings: Static Representations
+
+## 2.1 Neural Language Models: The Foundation
+
+### 2.1.1 Bengio's Neural Probabilistic Language Model (2003)
+
+The seminal work that introduced neural network-based language modeling.
+
+**Objective:** Predict next word given previous context:
+$$P(w_t | w_{t-1}, w_{t-2}, ..., w_{t-n+1})$$
+
+**Architecture:**
+```
+Input: One-hot vectors for context words
+    ↓
+Lookup Table: Convert to embeddings
+    ↓
+Concatenation: Join context embeddings
+    ↓
+Hidden Layer: tanh(W·x + b)
+    ↓
+Output Layer: Softmax over vocabulary
+```
+
+**Mathematical Formulation:**
+$$y = \text{softmax}(W_2 \cdot \tanh(W_1 \cdot [e_{w_{t-1}}; ...; e_{w_{t-n+1}}] + b_1) + b_2)$$
+
+**Key Innovation:**
+Words are mapped to continuous vectors that are learned jointly with the language model.
+
+### 2.1.2 The Embedding Lookup as Matrix Multiplication
+
+The embedding layer can be viewed as a learned projection:
+
+$$\mathbf{e}_w = \mathbf{E}^T \cdot \mathbf{x}_w$$
+
+Where:
+- $\mathbf{E} \in \mathbb{R}^{|V| \times d}$ is the embedding matrix
+- $\mathbf{x}_w \in \mathbb{R}^{|V|}$ is the one-hot vector for word $w$
+- $\mathbf{e}_w \in \mathbb{R}^d$ is the embedding vector
+
+**Efficient Implementation:**
+Instead of matrix multiplication, use direct index lookup:
+```python
+# Instead of: E.T @ one_hot(w)
+# Use: E[w]
+embedding = embedding_matrix[word_index]
+```
+
+---
+
+## 2.2 Word2Vec: Efficient Prediction-Based Embeddings
+
+### 2.2.1 Historical Context and Motivation
+
+Mikolov et al. (2013) at Google introduced Word2Vec, addressing computational inefficiencies in neural language models.
+
+**Key Innovations:**
+1. Remove hidden layer (simpler architecture)
+2. Focus on learning embeddings, not language modeling
+3. Use efficient training objectives (CBOW and Skip-gram)
+4. Implement negative sampling for faster training
+
+### 2.2.2 Continuous Bag of Words (CBOW)
+
+**Objective:** Predict target word from surrounding context.
+
+**Architecture:**
+```
+Context words: w_{t-2}, w_{t-1}, w_{t+1}, w_{t+2}
+           ↓
+    [Embedding Lookup]
+           ↓
+    Average embeddings
+           ↓
+    Projection to vocab
+           ↓
+    Softmax → P(w_t | context)
+```
+
+**Mathematical Formulation:**
+
+Context representation:
+$$\mathbf{v}_{context} = \frac{1}{2c} \sum_{-c \leq j \leq c, j \neq 0} \mathbf{v}_{w_{t+j}}$$
+
+Where $c$ is the context window size.
+
+Prediction:
+$$P(w_t | context) = \frac{\exp(\mathbf{u}_{w_t}^T \cdot \mathbf{v}_{context})}{\sum_{w \in V} \exp(\mathbf{u}_w^T \cdot \mathbf{v}_{context})}$$
+
+Here, $\mathbf{u}_w$ is the output vector for word $w$ (distinct from input embedding $\mathbf{v}_w$).
+
+**Training Objective:**
+$$\mathcal{L}_{CBOW} = -\frac{1}{T} \sum_{t=1}^{T} \log P(w_t | w_{t-c}, ..., w_{t-1}, w_{t+1}, ..., w_{t+c})$$
+
+### 2.2.3 Skip-gram Model
+
+**Objective:** Predict context words from target word (inverse of CBOW).
+
+**Architecture:**
+```
+Target word: w_t
+      ↓
+[Embedding Lookup]
+      ↓
+Projection to multiple outputs
+      ↓
+Softmax for each context position
+```
+
+**Mathematical Formulation:**
+
+For each context position $j \in [-c, c], j \neq 0$:
+$$P(w_{t+j} | w_t) = \frac{\exp(\mathbf{u}_{w_{t+j}}^T \cdot \mathbf{v}_{w_t})}{\sum_{w \in V} \exp(\mathbf{u}_w^T \cdot \mathbf{v}_{w_t})}$$
+
+**Training Objective:**
+$$\mathcal{L}_{Skip-gram} = -\frac{1}{T} \sum_{t=1}^{T} \sum_{-c \leq j \leq c, j \neq 0} \log P(w_{t+j} | w_t)$$
+
+### 2.2.4 CBOW vs. Skip-gram Comparison
+
+| Aspect | CBOW | Skip-gram |
+|--------|------|-----------|
+| Direction | Context → Target | Target → Context |
+| Training Speed | Faster | Slower |
+| Rare Words | Less effective | More effective |
+| Large Corpora | Better | Better with more data |
+| Small Corpora | Better | May overfit |
+| Representation | Smoother | More distinct |
+
+**Key Insight:** Skip-gram creates better representations for rare words because each occurrence generates multiple training examples (one per context word).
+
+### 2.2.5 Hierarchical Softmax
+
+**Problem:** Computing softmax over $|V|$ is $O(|V|)$, prohibitively expensive for large vocabularies.
+
+**Solution:** Use a binary tree structure (Huffman tree) where:
+- Leaves represent words
+- Path from root to leaf defines probability
+
+**Mathematical Formulation:**
+$$P(w | w_I) = \prod_{j=1}^{L(w)} \sigma(\llbracket n(w, j+1) = \text{left}(n(w, j)) \rrbracket \cdot \mathbf{v}'_{n(w,j)}^T \mathbf{v}_{w_I})$$
+
+Where:
+- $L(w)$ is path length to word $w$
+- $n(w, j)$ is the $j$-th node on path to $w$
+- $\sigma$ is sigmoid function
+- $\llbracket \cdot \rrbracket$ is 1 if true, -1 if false
+
+**Complexity:** Reduced from $O(|V|)$ to $O(\log |V|)$
+
+### 2.2.6 Negative Sampling (NEG)
+
+**Intuition:** Instead of normalizing over all vocabulary, distinguish target word from a small set of negative samples.
+
+**Objective Function:**
+$$\log \sigma(\mathbf{u}_{w_O}^T \mathbf{v}_{w_I}) + \sum_{i=1}^{k} \mathbb{E}_{w_i \sim P_n(w)}[\log \sigma(-\mathbf{u}_{w_i}^T \mathbf{v}_{w_I})]$$
+
+Where:
+- $w_O$ is the output (target/context) word
+- $w_I$ is the input word
+- $k$ is number of negative samples
+- $P_n(w) \propto f(w)^{3/4}$ (frequency-based noise distribution)
+
+**Why $f(w)^{3/4}$?**
+- Downweights frequent words ("the", "and")
+- Upweights rare words compared to raw frequency
+- Empirically found to work best
+
+**Training Speedup:** From $O(|V|)$ to $O(k)$ where $k \in [5, 20]$.
+
+### 2.2.7 Word2Vec Training Dynamics
+
+**The Embedding Matrix:**
+Word2Vec actually learns two embedding matrices:
+- $\mathbf{E}_{input} \in \mathbb{R}^{|V| \times d}$: Used for input words
+- $\mathbf{E}_{output} \in \mathbb{R}^{|V| \times d}$: Used for output words
+
+**Final Embeddings:**
+Common practices:
+1. Use only $\mathbf{E}_{input}$
+2. Use only $\mathbf{E}_{output}$
+3. Average: $(\mathbf{E}_{input} + \mathbf{E}_{output}) / 2$
+4. Concatenate: $[\mathbf{E}_{input}; \mathbf{E}_{output}]$
+
+**Key Insights:**
+1. Skip-gram with negative sampling is the most commonly used variant
+2. Context window size affects semantic capture (larger → more topical similarity)
+3. Subsampling frequent words improves representation quality
+4. Training on more data generally produces better embeddings
+
+### 2.2.8 Common Pitfalls: Word2Vec
+
+1. **No context sensitivity**: "bank" has same representation for river bank and financial bank
+2. **Antonym problem**: "good" and "bad" can appear close in vector space
+3. **Out-of-vocabulary**: Cannot handle words not seen during training
+4. **Morphological blindness**: "run", "runs", "running" have unrelated representations
+
+---
+
+## 2.3 GloVe: Global Vectors for Word Representation
+
+### 2.3.1 Motivation: Count-Based vs. Prediction-Based
+
+**Count-Based Methods** (e.g., LSA, HAL):
+- Build co-occurrence matrix $X$ where $X_{ij}$ counts word $i$ appears near word $j$
+- Factorize $X$ to get low-dimensional embeddings
+- Capture global statistical information
+
+**Prediction-Based Methods** (e.g., Word2Vec):
+- Learn embeddings through prediction tasks
+- Capture local context patterns
+- Efficient streaming training
+
+**GloVe's Insight:** Combine the best of both approaches.
+
+### 2.3.2 The GloVe Model
+
+**Key Observation:**
+Ratios of co-occurrence probabilities encode meaning:
+
+$$\frac{P(w_k | w_i)}{P(w_k | w_j)}$$
+
+**Example:**
+| Ratio | $w_k$ = solid | $w_k$ = gas | $w_k$ = water | $w_k$ = fashion |
+|-------|---------------|-------------|---------------|-----------------|
+| $P(w_k \| \text{ice})$ | large | small | large | small |
+| $P(w_k \| \text{steam})$ | small | large | large | small |
+| Ratio | large | small | ~1 | ~1 |
+
+**Model Formulation:**
+
+Learn word vectors such that:
+$$\mathbf{w}_i^T \mathbf{\tilde{w}}_j + b_i + \tilde{b}_j = \log(X_{ij})$$
+
+Where:
+- $\mathbf{w}_i$: Word vector for word $i$
+- $\mathbf{\tilde{w}}_j$: Separate context vector for word $j$
+- $b_i, \tilde{b}_j$: Bias terms
+- $X_{ij}$: Co-occurrence count
+
+**Objective Function:**
+$$J = \sum_{i,j=1}^{|V|} f(X_{ij})(\mathbf{w}_i^T \mathbf{\tilde{w}}_j + b_i + \tilde{b}_j - \log X_{ij})^2$$
+
+**Weighting Function:**
+$$f(x) = \begin{cases} (x/x_{max})^\alpha & \text{if } x < x_{max} \\ 1 & \text{otherwise} \end{cases}$$
+
+Typically: $x_{max} = 100$, $\alpha = 0.75$
+
+**Purpose of $f(x)$:**
+- $f(0) = 0$: Don't penalize zero co-occurrences
+- $f(x)$ is non-decreasing: Rare co-occurrences still matter
+- $f(x)$ is bounded: Don't overweight frequent pairs
+
+### 2.3.3 Matrix Factorization Interpretation
+
+**Connection to SVD:**
+
+Standard co-occurrence matrix factorization:
+$$\mathbf{X} \approx \mathbf{W} \mathbf{C}^T$$
+
+Where $\mathbf{W}, \mathbf{C} \in \mathbb{R}^{|V| \times d}$.
+
+**GloVe as Weighted Matrix Factorization:**
+
+GloVe factorizes the **log co-occurrence matrix** with a weighted loss:
+$$\min_{\mathbf{W}, \mathbf{C}, \mathbf{b}, \mathbf{\tilde{b}}} \sum_{i,j} f(X_{ij})(\log X_{ij} - \mathbf{w}_i^T \mathbf{\tilde{w}}_j - b_i - \tilde{b}_j)^2$$
+
+**Why Log Transform?**
+1. Co-occurrence counts follow power law (very skewed)
+2. Log compresses the dynamic range
+3. Makes the problem more tractable for optimization
+
+### 2.3.4 GloVe vs. Word2Vec Comparison
+
+| Aspect | GloVe | Word2Vec |
+|--------|-------|----------|
+| Training data | Pre-built co-occurrence matrix | Stream through corpus |
+| Memory | Requires storing $X$ | Lower memory footprint |
+| Parallelization | Easy (matrix operations) | Harder (sequential) |
+| Global statistics | Explicitly used | Implicitly captured |
+| Training speed | Fast (iterative optimization) | Moderate |
+| Performance | Similar on most tasks | Similar on most tasks |
+
+### 2.3.5 Key Insights: Static Embeddings
+
+1. **All methods learn similar structure**: Word2Vec, GloVe, and FastText produce embeddings with comparable performance
+2. **Hyperparameters matter more than method**: Dimensionality, context window, corpus size dominate
+3. **Task-specific tuning**: Different tasks benefit from different embedding types
+4. **Ensemble approaches**: Combining multiple embedding types can improve results
+
+---
+
+## 2.4 FastText: Subword Information
+
+### 2.4.1 Motivation
+
+**Problem with Word2Vec/GloVe:**
+- Cannot generate embeddings for OOV words
+- Ignore morphological structure
+- "run", "runs", "running" learned independently
+
+**FastText Solution:**
+Represent words as bags of character n-grams.
+
+### 2.4.2 FastText Model
+
+**Word Representation:**
+For word $w$, generate all character n-grams (typically $n \in [3, 6]$):
+
+```
+"where": <wh, whe, her, ere, re>, <whe, wher, here, ere>
+```
+
+With special boundary symbols:
+```
+"where": <wh, whe, her, ere, re>, <whe, wher, here, ere>, <where>
+```
+
+**Embedding Calculation:**
+$$\mathbf{e}_w = \sum_{g \in \mathcal{G}_w} \mathbf{z}_g$$
+
+Where $\mathcal{G}_w$ is the set of n-grams for word $w$, and $\mathbf{z}_g$ is the embedding for n-gram $g$.
+
+**Training:**
+Uses Skip-gram with negative sampling, but with subword representations.
+
+### 2.4.3 Advantages of FastText
+
+1. **OOV handling**: Can generate embeddings for unseen words
+2. **Morphological awareness**: Captures prefix/suffix patterns
+3. **Efficiency**: Only stores n-gram embeddings, not word embeddings
+4. **Better for morphologically rich languages**: German, Turkish, Finnish
+
+### 2.4.4 Comparison Summary
+
+| Model | OOV Handling | Morphology | Training Speed | Memory |
+|-------|--------------|------------|----------------|--------|
+| Word2Vec | No | No | Fast | Medium |
+| GloVe | No | No | Fast | High |
+| FastText | Yes | Yes | Moderate | Higher |
+
+---
+
+# Chapter 3: Sequential Models for NLP
+
+## 3.1 The Need for Sequence Modeling
+
+### 3.1.1 Language as Sequential Data
+
+Natural language is inherently sequential:
+- Words form ordered sequences
+- Meaning depends on word order
+- Long-range dependencies exist
+- Variable-length inputs
+
+**Formal Problem:**
+Given sequence $\mathbf{x} = (x_1, x_2, ..., x_T)$, learn function:
+$$f: \mathcal{X}^T \rightarrow \mathcal{Y}$$
+
+Where $\mathcal{X}$ is the input space (e.g., word embeddings) and $\mathcal{Y}$ is the output space (e.g., labels, sequences).
+
+### 3.1.2 Challenges in Sequence Modeling
+
+1. **Variable length**: Sentences have different numbers of words
+2. **Long-range dependencies**: "The cat, which was sitting on the mat that was near the window, **was** sleeping."
+3. **Parameter sharing**: Same concept should be processed the same way regardless of position
+4. **Order matters**: "Dog bites man" $\neq$ "Man bites dog"
+
+---
+
+## 3.2 Recurrent Neural Networks (RNNs)
+
+### 3.2.1 The RNN Architecture
+
+**Core Idea:** Maintain hidden state that captures information from previous time steps.
+
+**Mathematical Formulation:**
+
+Hidden state update:
+$$\mathbf{h}_t = f(\mathbf{W}_{hh} \mathbf{h}_{t-1} + \mathbf{W}_{xh} \mathbf{x}_t + \mathbf{b}_h)$$
+
+Output:
+$$\mathbf{y}_t = g(\mathbf{W}_{hy} \mathbf{h}_t + \mathbf{b}_y)$$
+
+Where:
+- $\mathbf{x}_t \in \mathbb{R}^{d_{in}}$: Input at time $t$
+- $\mathbf{h}_t \in \mathbb{R}^{d_{hidden}}$: Hidden state at time $t$
+- $\mathbf{y}_t \in \mathbb{R}^{d_{out}}$: Output at time $t$
+- $f$: Activation function (typically tanh)
+- $g$: Output activation (softmax for classification)
+
+**Unrolled View:**
+```
+x_1 → [RNN] → h_1 → [RNN] → h_2 → ... → h_T → y_T
+      ↑         ↑         ↑
+    h_0       h_1       h_2
+```
+
+### 3.2.2 Computational Graph and Backpropagation
+
+**Forward Pass:**
+For $t = 1$ to $T$:
+1. $\mathbf{h}_t = \tanh(\mathbf{W}_{hh} \mathbf{h}_{t-1} + \mathbf{W}_{xh} \mathbf{x}_t + \mathbf{b}_h)$
+2. $\mathbf{y}_t = \text{softmax}(\mathbf{W}_{hy} \mathbf{h}_t + \mathbf{b}_y)$
+3. $\mathcal{L}_t = -\sum_i y_{t,i}^{true} \log y_{t,i}$
+
+**Backward Pass (Backpropagation Through Time - BPTT):**
+
+Total loss: $\mathcal{L} = \sum_{t=1}^{T} \mathcal{L}_t$
+
+Gradients flow backward through time:
+$$\frac{\partial \mathcal{L}}{\partial \mathbf{h}_t} = \frac{\partial \mathcal{L}_t}{\partial \mathbf{h}_t} + \frac{\partial \mathcal{L}}{\partial \mathbf{h}_{t+1}} \frac{\partial \mathbf{h}_{t+1}}{\partial \mathbf{h}_t}$$
+
+### 3.2.3 The Vanishing Gradient Problem
+
+**Problem:** Gradients become exponentially small as they propagate backward.
+
+**Analysis:**
+Consider the Jacobian of the hidden state transition:
+$$\frac{\partial \mathbf{h}_t}{\partial \mathbf{h}_{t-1}} = \text{diag}(f'(\mathbf{z}_t)) \mathbf{W}_{hh}$$
+
+Where $\mathbf{z}_t = \mathbf{W}_{hh} \mathbf{h}_{t-1} + \mathbf{W}_{xh} \mathbf{x}_t + \mathbf{b}_h$.
+
+For long-term dependency at time $t$ on input at time $k$:
+$$\frac{\partial \mathcal{L}_t}{\partial \mathbf{x}_k} = \frac{\partial \mathcal{L}_t}{\partial \mathbf{h}_t} \prod_{i=k+1}^{t} \frac{\partial \mathbf{h}_i}{\partial \mathbf{h}_{i-1}} \frac{\partial \mathbf{h}_k}{\partial \mathbf{x}_k}$$
+
+**Eigenvalue Analysis:**
+If the largest eigenvalue $\lambda_{max}$ of $\mathbf{W}_{hh}$ satisfies $|\lambda_{max}| < 1$, then:
+$$||\prod_{i=k+1}^{t} \frac{\partial \mathbf{h}_i}{\partial \mathbf{h}_{i-1}}|| \approx |\lambda_{max}|^{t-k} \rightarrow 0 \text{ as } (t-k) \rightarrow \infty$$
+
+**Consequence:** RNNs cannot learn long-range dependencies (typically beyond 10-20 steps).
+
+### 3.2.4 The Exploding Gradient Problem
+
+**Problem:** Gradients can become exponentially large.
+
+When $|\lambda_{max}| > 1$:
+$$||\prod_{i=k+1}^{t} \frac{\partial \mathbf{h}_i}{\partial \mathbf{h}_{i-1}}|| \rightarrow \infty$$
+
+**Solutions:**
+1. **Gradient Clipping:**
+   $$\text{if } ||\mathbf{g}|| > \tau: \quad \mathbf{g} \leftarrow \frac{\tau \mathbf{g}}{||\mathbf{g}||}$$
+
+2. **Regularization:** Penalize large weight norms
+
+### 3.2.5 RNN Variants for Different Tasks
+
+**1. One-to-Many (Generation):**
+```
+Input: Single vector
+Output: Sequence
+Example: Image captioning
+```
+
+**2. Many-to-One (Classification):**
+```
+Input: Sequence
+Output: Single label
+Example: Sentiment analysis
+```
+
+**3. Many-to-Many (Synced):**
+```
+Input: Sequence
+Output: Sequence (same length)
+Example: Part-of-speech tagging
+```
+
+**4. Many-to-Many (Delayed):**
+```
+Input: Sequence
+Output: Sequence (different length)
+Example: Machine translation
+```
+
+### 3.2.6 Key Insights: RNNs
+
+1. **Universal approximation**: RNNs can approximate any computable function (given sufficient capacity)
+2. **Shared parameters**: Same weights applied at every time step
+3. **Memory limited**: Hidden state must capture all relevant history
+4. **Sequential processing**: Cannot parallelize forward/backward passes
+
+### 3.2.7 Common Pitfalls
+
+1. **Initialization matters**: Orthogonal initialization helps with gradient flow
+2. **Learning rate sensitivity**: Too high → instability; too low → slow convergence
+3. **Truncated BPTT**: Practical necessity limits effective memory
+4. **Teacher forcing**: Training with ground truth vs. generated inputs creates exposure bias
+
+---
+
+## 3.3 Long Short-Term Memory (LSTM)
+
+### 3.3.1 Motivation and History
+
+Introduced by Hochreiter & Schmidhuber (1997) to address vanishing gradients.
+
+**Key Innovation:** Explicit memory cell with gating mechanisms to control information flow.
+
+### 3.3.2 LSTM Architecture
+
+**Core Components:**
+1. **Cell State** ($\mathbf{c}_t$): Long-term memory
+2. **Hidden State** ($\mathbf{h}_t$): Short-term/working memory
+3. **Gates**: Control information flow
+
+**Gate Equations:**
+
+**Forget Gate:** What to discard from cell state
+$$\mathbf{f}_t = \sigma(\mathbf{W}_f \cdot [\mathbf{h}_{t-1}, \mathbf{x}_t] + \mathbf{b}_f)$$
+
+**Input Gate:** What new information to store
+$$\mathbf{i}_t = \sigma(\mathbf{W}_i \cdot [\mathbf{h}_{t-1}, \mathbf{x}_t] + \mathbf{b}_i)$$
+
+**Candidate Values:** New candidate information
+$$\mathbf{\tilde{c}}_t = \tanh(\mathbf{W}_c \cdot [\mathbf{h}_{t-1}, \mathbf{x}_t] + \mathbf{b}_c)$$
+
+**Output Gate:** What to output
+$$\mathbf{o}_t = \sigma(\mathbf{W}_o \cdot [\mathbf{h}_{t-1}, \mathbf{x}_t] + \mathbf{b}_o)$$
+
+**State Updates:**
+
+Cell state update:
+$$\mathbf{c}_t = \mathbf{f}_t \odot \mathbf{c}_{t-1} + \mathbf{i}_t \odot \mathbf{\tilde{c}}_t$$
+
+Hidden state update:
+$$\mathbf{h}_t = \mathbf{o}_t \odot \tanh(\mathbf{c}_t)$$
+
+Where $\odot$ denotes element-wise multiplication.
+
+### 3.3.3 Gating Mechanism Deep Dive
+
+**Forget Gate Analysis:**
+- $\mathbf{f}_t \approx 0$: Erase information from cell state
+- $\mathbf{f}_t \approx 1$: Preserve information
+- Learned per dimension: Can selectively forget
+
+**Input Gate Analysis:**
+- $\mathbf{i}_t \approx 0$: Ignore new input
+- $\mathbf{i}_t \approx 1**: Incorporate new input fully
+- Combined with candidate: Controls what enters memory
+
+**Output Gate Analysis:**
+- $\mathbf{o}_t \approx 0$: Output nothing (but cell state preserved)
+- $\mathbf{o}_t \approx 1$: Output full cell state content
+- Allows hidden state to differ from cell state
+
+### 3.3.4 Gradient Flow in LSTM
+
+**Key Advantage:** Cell state has linear connection:
+$$\mathbf{c}_t = \mathbf{f}_t \odot \mathbf{c}_{t-1} + \mathbf{i}_t \odot \mathbf{\tilde{c}}_t$$
+
+When forget gate is open ($\mathbf{f}_t \approx 1$):
+$$\frac{\partial \mathbf{c}_t}{\partial \mathbf{c}_{t-1}} \approx 1$$
+
+**Gradient Backpropagation:**
+$$\frac{\partial \mathcal{L}}{\partial \mathbf{c}_t} = \frac{\partial \mathcal{L}}{\partial \mathbf{h}_t} \frac{\partial \mathbf{h}_t}{\partial \mathbf{c}_t} + \frac{\partial \mathcal{L}}{\partial \mathbf{c}_{t+1}} \frac{\partial \mathbf{c}_{t+1}}{\partial \mathbf{c}_t}$$
+
+With $\frac{\partial \mathbf{c}_{t+1}}{\partial \mathbf{c}_t} = \mathbf{f}_{t+1}$, if forget gates are near 1:
+$$\frac{\partial \mathcal{L}}{\partial \mathbf{c}_k} \approx \frac{\partial \mathcal{L}}{\partial \mathbf{c}_t} \prod_{i=k+1}^{t} \mathbf{f}_i \approx \frac{\partial \mathcal{L}}{\partial \mathbf{c}_t}$$
+
+**Result:** Gradients can flow across 100+ time steps without vanishing!
+
+### 3.3.5 LSTM Variants
+
+**1. Peephole Connections (Gers & Schmidhuber, 2000):**
+Allow gates to see cell state:
+$$\mathbf{f}_t = \sigma(\mathbf{W}_f \cdot [\mathbf{c}_{t-1}, \mathbf{h}_{t-1}, \mathbf{x}_t] + \mathbf{b}_f)$$
+
+**2. Coupled Forget and Input Gates:**
+Make the decision jointly:
+$$\mathbf{f}_t = 1 - \mathbf{i}_t$$
+
+**3. Layer Normalization (Ba et al., 2016):**
+Normalize across features:
+$$\text{LN}(\mathbf{x}) = \gamma \odot \frac{\mathbf{x} - \mu}{\sqrt{\sigma^2 + \epsilon}} + \beta$$
+
+### 3.3.6 Key Insights: LSTM
+
+1. **Explicit memory**: Cell state provides highway for gradient flow
+2. **Gating is key**: Learned gates control information flow
+3. **Flexible forgetting**: Can remember indefinitely or forget quickly
+4. **Still sequential**: Cannot parallelize across time steps
+
+### 3.3.7 Common Pitfalls
+
+1. **Forget gate initialization**: Initialize with small positive bias (~1) to start with open gates
+2. **Overfitting**: LSTMs have many parameters; regularization is important
+3. **Computational cost**: ~4x parameters of vanilla RNN
+4. **Hyperparameter sensitivity**: Hidden size, dropout rate matter significantly
+
+---
+
+## 3.4 Gated Recurrent Unit (GRU)
+
+### 3.4.1 Motivation
+
+Introduced by Cho et al. (2014) as a simpler alternative to LSTM.
+
+**Design Goals:**
+- Maintain gating benefits
+- Reduce parameter count
+- Simplify architecture
+
+### 3.4.2 GRU Architecture
+
+**Simplified Design:** Merge cell and hidden states into single state.
+
+**Gate Equations:**
+
+**Reset Gate:** How much past information to forget
+$$\mathbf{r}_t = \sigma(\mathbf{W}_r \cdot [\mathbf{h}_{t-1}, \mathbf{x}_t] + \mathbf{b}_r)$$
+
+**Update Gate:** How much to update vs. preserve
+$$\mathbf{z}_t = \sigma(\mathbf{W}_z \cdot [\mathbf{h}_{t-1}, \mathbf{x}_t] + \mathbf{b}_z)$$
+
+**Candidate Activation:**
+$$\mathbf{\tilde{h}}_t = \tanh(\mathbf{W} \cdot [\mathbf{r}_t \odot \mathbf{h}_{t-1}, \mathbf{x}_t] + \mathbf{b})$$
+
+**State Update:**
+$$\mathbf{h}_t = (1 - \mathbf{z}_t) \odot \mathbf{h}_{t-1} + \mathbf{z}_t \odot \mathbf{\tilde{h}}_t$$
+
+### 3.4.3 LSTM vs. GRU Comparison
+
+| Aspect | LSTM | GRU |
+|--------|------|-----|
+| Gates | 3 (forget, input, output) | 2 (reset, update) |
+| States | 2 (cell, hidden) | 1 (hidden) |
+| Parameters | ~4x RNN | ~3x RNN |
+| Gradient flow | Explicit cell state | Through update gate |
+| Training speed | Slower | Faster |
+| Performance | Task-dependent | Task-dependent |
+
+### 3.4.4 Empirical Comparison
+
+**Research Findings:**
+- No consistent winner between LSTM and GRU
+- GRU often trains faster due to fewer parameters
+- LSTM may have slight edge on tasks requiring long memory
+- Both significantly outperform vanilla RNN
+
+**Practical Recommendation:**
+- Start with LSTM (more established)
+- Try GRU if training speed is critical
+- Use cross-validation to decide for specific task
+
+---
+
+## 3.5 Bidirectional RNNs
+
+### 3.5.1 Motivation
+
+**Problem with Standard RNNs:**
+- Only use past context
+- Cannot see future words
+- Language understanding often requires full context
+
+**Example:**
+"The bank **was**..." → Need to see if "river" or "account" follows to understand "bank".
+
+### 3.5.2 Bidirectional Architecture
+
+**Core Idea:** Process sequence in both directions simultaneously.
+
+**Architecture:**
+```
+Forward RNN:  h→_1 → h→_2 → ... → h→_T
+Backward RNN: h←_T → h←_{T-1} → ... → h←_1
+
+Concatenate: [h→_t; h←_t] for each position t
+```
+
+**Mathematical Formulation:**
+
+Forward pass:
+$$\overrightarrow{\mathbf{h}}_t = f(\mathbf{W}_{\rightarrow} \overrightarrow{\mathbf{h}}_{t-1} + \mathbf{W}_{x\rightarrow} \mathbf{x}_t + \mathbf{b}_{\rightarrow})$$
+
+Backward pass:
+$$\overleftarrow{\mathbf{h}}_t = f(\mathbf{W}_{\leftarrow} \overleftarrow{\mathbf{h}}_{t+1} + \mathbf{W}_{x\leftarrow} \mathbf{x}_t + \mathbf{b}_{\leftarrow})$$
+
+Combined representation:
+$$\mathbf{h}_t = [\overrightarrow{\mathbf{h}}_t; \overleftarrow{\mathbf{h}}_t]$$
+
+### 3.5.3 Applications
+
+**1. Sequence Labeling:**
+- Named Entity Recognition (NER)
+- Part-of-Speech (POS) tagging
+- Requires full context for each token
+
+**2. Sentence Classification:**
+- Sentiment analysis
+- Topic classification
+- Use final concatenated states
+
+**3. Feature Extraction:**
+- Provide contextualized representations
+- Feed into downstream models
+
+### 3.5.4 Limitations
+
+1. **Cannot be used for language modeling**: Would see future tokens
+2. **Requires full sequence**: Cannot process streaming data
+3. **Doubles computation**: Two RNNs instead of one
+4. **Memory requirements**: Store both forward and backward states
+
+### 3.5.5 Key Insights: Bidirectional Models
+
+1. **Context is crucial**: Future information often disambiguates past
+2. **Not always applicable**: Language modeling, real-time processing
+3. **Standard in encoding**: Almost always used for understanding tasks
+4. **Can stack**: Multiple bidirectional layers for hierarchical features
+
+---
+
+# Chapter 4: Attention Mechanisms
+
+## 4.1 The Attention Revolution
+
+### 4.1.1 Limitations of RNN Encoder-Decoder
+
+**Traditional Seq2Seq:**
+```
+Source: x_1, x_2, ..., x_n
+       ↓
+Encoder RNN → context vector c
+       ↓
+Decoder RNN → y_1, y_2, ..., y_m
+```
+
+**Critical Problem:**
+- All source information compressed into fixed-size vector $\mathbf{c}$
+- Information bottleneck for long sequences
+- No direct access to relevant source positions
+
+**Example:**
+In translation, generating word 50 should directly attend to relevant source words, not struggle through 50 steps of RNN state.
+
+### 4.1.2 The Intuition of Attention
+
+**Human Attention Analogy:**
+When translating a sentence, you don't read the entire source text for each output word. You focus on the relevant parts.
+
+**Key Idea:**
+Allow decoder to "look back" at source hidden states and selectively focus on relevant ones.
+
+---
+
+## 4.2 Attention Mechanism: Mathematical Foundation
+
+### 4.2.1 The Attention Framework
+
+**General Formulation:**
+
+Given:
+- **Query** ($\mathbf{q}$): What we're looking for
+- **Keys** ($\mathbf{k}_1, ..., \mathbf{k}_n$): What we can attend to
+- **Values** ($\mathbf{v}_1, ..., \mathbf{v}_n$): What we extract
+
+**Attention Output:**
+$$\text{Attention}(\mathbf{q}, \mathbf{K}, \mathbf{V}) = \sum_{i=1}^{n} \alpha_i \mathbf{v}_i$$
+
+Where attention weights $\alpha_i$ satisfy:
+$$\alpha_i = \frac{\exp(\text{score}(\mathbf{q}, \mathbf{k}_i))}{\sum_{j=1}^{n} \exp(\text{score}(\mathbf{q}, \mathbf{k}_j))}$$
+
+### 4.2.2 Scoring Functions
+
+**1. Dot Product:**
+$$\text{score}(\mathbf{q}, \mathbf{k}) = \mathbf{q}^T \mathbf{k}$$
+- Simple and fast
+- Requires same dimensionality
+- No learned parameters
+
+**2. Scaled Dot Product:**
+$$\text{score}(\mathbf{q}, \mathbf{k}) = \frac{\mathbf{q}^T \mathbf{k}}{\sqrt{d_k}}$$
+- Scaling prevents softmax saturation for large $d_k$
+- Used in Transformers
+
+**3. Additive (Bahdanau):**
+$$\text{score}(\mathbf{q}, \mathbf{k}) = \mathbf{v}^T \tanh(\mathbf{W}_q \mathbf{q} + \mathbf{W}_k \mathbf{k})$$
+- More flexible
+- Learned parameters
+- Can handle different dimensionalities
+
+**4. Multiplicative (Luong):**
+$$\text{score}(\mathbf{q}, \mathbf{k}) = \mathbf{q}^T \mathbf{W} \mathbf{k}$$
+- Learned similarity metric
+- Faster than additive
+
+### 4.2.3 Bahdanau Attention (Additive)
+
+**Original Neural Machine Translation Attention:**
+
+Context vector for decoder step $t$:
+$$\mathbf{c}_t = \sum_{s=1}^{S} \alpha_{t,s} \mathbf{h}_s^{enc}$$
+
+Attention weights:
+$$\alpha_{t,s} = \frac{\exp(e_{t,s})}{\sum_{s'=1}^{S} \exp(e_{t,s'})}$$
+
+Alignment scores:
+$$e_{t,s} = \mathbf{v}_a^T \tanh(\mathbf{W}_s \mathbf{h}_s^{enc} + \mathbf{W}_d \mathbf{h}_{t-1}^{dec} + \mathbf{b})$$
+
+### 4.2.4 Luong Attention (Multiplicative)
+
+**Simpler Alternative:**
+
+Score functions:
+- **Dot:** $score(\mathbf{h}_t^{dec}, \mathbf{h}_s^{enc}) = (\mathbf{h}_t^{dec})^T \mathbf{h}_s^{enc}$
+- **General:** $score(\mathbf{h}_t^{dec}, \mathbf{h}_s^{enc}) = (\mathbf{h}_t^{dec})^T \mathbf{W} \mathbf{h}_s^{enc}$
+- **Concat:** $score(\mathbf{h}_t^{dec}, \mathbf{h}_s^{enc}) = \mathbf{v}^T \tanh(\mathbf{W}[\mathbf{h}_t^{dec}; \mathbf{h}_s^{enc}])$
+
+**Key Difference:** Uses current decoder state $\mathbf{h}_t^{dec}$ (not previous).
+
+### 4.2.5 Attention Visualization
+
+**Attention Matrices:**
+For translation, attention weights form interpretable alignment:
+
+```
+        The  cat  sat  on  the  mat
+Le      0.8  0.1  0.0  0.0  0.1  0.0
+chat    0.1  0.8  0.0  0.0  0.1  0.0
+est     0.0  0.1  0.7  0.0  0.1  0.1
+assis   0.0  0.0  0.2  0.6  0.0  0.2
+sur     0.0  0.0  0.0  0.3  0.4  0.3
+le      0.0  0.0  0.0  0.0  0.6  0.4
+tapis   0.0  0.0  0.0  0.0  0.2  0.8
+```
+
+---
+
+## 4.3 Self-Attention
+
+### 4.3.1 The Concept
+
+**Key Insight:** Instead of attending from decoder to encoder, let each position attend to all positions in the same sequence.
+
+**Self-Attention:**
+$$\text{SelfAttn}(\mathbf{X}) = \text{Attention}(\mathbf{X}, \mathbf{X}, \mathbf{X})$$
+
+Where $\mathbf{X} \in \mathbb{R}^{n \times d}$ is the input sequence.
+
+### 4.3.2 Mathematical Formulation
+
+For input $\mathbf{X} = [\mathbf{x}_1; \mathbf{x}_2; ...; \mathbf{x}_n]$:
+
+**Linear Projections:**
+$$\mathbf{Q} = \mathbf{X} \mathbf{W}^Q, \quad \mathbf{K} = \mathbf{X} \mathbf{W}^K, \quad \mathbf{V} = \mathbf{X} \mathbf{W}^V$$
+
+Where $\mathbf{W}^Q, \mathbf{W}^K, \mathbf{W}^V \in \mathbb{R}^{d \times d_k}$.
+
+**Scaled Dot-Product Attention:**
+$$\text{Attention}(\mathbf{Q}, \mathbf{K}, \mathbf{V}) = \text{softmax}\left(\frac{\mathbf{Q}\mathbf{K}^T}{\sqrt{d_k}}\right)\mathbf{V}$$
+
+**Output:**
+$$\mathbf{Z} \in \mathbb{R}^{n \times d_k}$$
+
+### 4.3.3 Why Self-Attention is Powerful
+
+**1. Captures Dependencies:**
+Each token can directly attend to any other token, regardless of distance.
+
+**2. Parallelizable:**
+All attention computations can happen simultaneously (unlike RNNs).
+
+**3. Interpretable:**
+Attention weights reveal which tokens influence each other.
+
+**4. Position-Agnostic:**
+Same operation applied to all positions (parameter sharing).
+
+### 4.3.4 Complexity Comparison
+
+| Layer Type | Per-Layer Complexity | Sequential Ops | Max Path Length |
+|------------|---------------------|----------------|-----------------|
+| Self-Attention | $O(n^2 \cdot d)$ | $O(1)$ | $O(1)$ |
+| Recurrent | $O(n \cdot d^2)$ | $O(n)$ | $O(n)$ |
+| Convolutional | $O(k \cdot n \cdot d^2)$ | $O(1)$ | $O(\log_k(n))$ |
+
+Where $n$ = sequence length, $d$ = dimension, $k$ = kernel size.
+
+---
+
+## 4.4 Multi-Head Attention
+
+### 4.4.1 Motivation
+
+**Problem with Single Attention:**
+- One attention pattern may not capture all relationships
+- Different representation subspaces may need different attention
+
+**Solution:** Run attention multiple times in parallel with different learned projections.
+
+### 4.4.2 Mathematical Formulation
+
+**Multi-Head Computation:**
+
+For head $i \in \{1, ..., h\}$:
+$$\text{head}_i = \text{Attention}(\mathbf{X}\mathbf{W}_i^Q, \mathbf{X}\mathbf{W}_i^K, \mathbf{X}\mathbf{W}_i^V)$$
+
+**Concatenation and Projection:**
+$$\text{MultiHead}(\mathbf{X}) = \text{Concat}(\text{head}_1, ..., \text{head}_h)\mathbf{W}^O$$
+
+**Dimension:**
+- Each head: $d_k = d_v = d_{model} / h$
+- Total output: $d_{model}$
+
+### 4.4.3 Why Multiple Heads Help
+
+**1. Different Representation Subspaces:**
+Each head can focus on different types of relationships:
+- Head 1: Syntactic dependencies
+- Head 2: Coreference relationships
+- Head 3: Semantic similarity
+
+**2. Increased Expressiveness:**
+With $h$ heads, model can attend to $h$ different positions simultaneously.
+
+**3. Empirical Benefit:**
+Multiple heads consistently improve performance across tasks.
+
+### 4.4.4 Attention Pattern Analysis
+
+**Research Findings (Vaswani et al., 2017; Clark et al., 2019):**
+
+Different heads specialize:
+- **Positional heads**: Attend to adjacent tokens
+- **Syntactic heads**: Follow dependency tree structure
+- **Rare word heads**: Focus on infrequent tokens
+- **Delimiter heads**: Attend to [SEP], [CLS] tokens
+
+---
+
+# Chapter 5: The Transformer Architecture
+
+## 5.1 Historical Significance
+
+### 5.1.1 "Attention Is All You Need"
+
+Vaswani et al. (2017) introduced the Transformer, revolutionizing NLP:
+
+**Key Innovation:**
+- Completely eliminate recurrence
+- Use only attention mechanisms
+- Enable massive parallelization
+- Achieve state-of-the-art results
+
+**Impact:**
+- Foundation for BERT, GPT, T5, and all modern NLP models
+- Enabled training on unprecedented scale
+- Shifted from recurrent to attention-based paradigms
+
+---
+
+## 5.2 Transformer Architecture Overview
+
+### 5.2.1 High-Level Structure
+
+```
+Input Tokens
+    ↓
+[Embedding + Positional Encoding]
+    ↓
+┌─────────────────────────────────────┐
+│           Encoder Stack             │
+│  ┌─────┐ ┌─────┐     ┌─────┐       │
+│  │Block│→│Block│→...→│Block│  × N  │
+│  └─────┘ └─────┘     └─────┘       │
+└─────────────────────────────────────┘
+    ↓
+Encoder Output
+    ↓
+┌─────────────────────────────────────┐
+│           Decoder Stack             │
+│  ┌─────┐ ┌─────┐     ┌─────┐       │
+│  │Block│→│Block│→...→│Block│  × N  │
+│  └─────┘ └─────┘     └─────┘       │
+└─────────────────────────────────────┘
+    ↓
+Output Tokens
+```
+
+### 5.2.2 Encoder Block
+
+```
+Input
+  ↓
+[Multi-Head Self-Attention]
+  ↓
+[Add & Norm]  ← Residual + LayerNorm
+  ↓
+[Feed-Forward Network]
+  ↓
+[Add & Norm]
+  ↓
+Output
+```
+
+### 5.2.3 Decoder Block
+
+```
+Input
+  ↓
+[Masked Multi-Head Self-Attention]
+  ↓
+[Add & Norm]
+  ↓
+[Multi-Head Cross-Attention]  ← Attends to encoder output
+  ↓
+[Add & Norm]
+  ↓
+[Feed-Forward Network]
+  ↓
+[Add & Norm]
+  ↓
+Output
+```
+
+---
+
+## 5.3 Core Components in Detail
+
+### 5.3.1 Positional Encoding
+
+**Problem:** Self-attention is position-invariant. "Dog bites man" = "Man bites dog".
+
+**Solution:** Add position information to input embeddings.
+
+**Sinusoidal Encoding (Original):**
+
+For position $pos$ and dimension $i$:
+
+$$PE_{(pos, 2i)} = \sin\left(\frac{pos}{10000^{2i/d_{model}}}\right)$$
+
+$$PE_{(pos, 2i+1)} = \cos\left(\frac{pos}{10000^{2i/d_{model}}}\right)$$
+
+**Properties:**
+1. Unique encoding for each position
+2. Bounded values $[-1, 1]$
+3. Can extrapolate to longer sequences
+4. Relative positions learnable via linear transformations
+
+**Learned Positional Embeddings (Alternative):**
+$$\mathbf{p}_{pos} \in \mathbb{R}^{d_{model}} \text{ (learned parameters)}$$
+
+### 5.3.2 Multi-Head Self-Attention
+
+**Full Equation:**
+$$\text{MultiHead}(\mathbf{Q}, \mathbf{K}, \mathbf{V}) = \text{Concat}(\text{head}_1, ..., \text{head}_h)\mathbf{W}^O$$
+
+Where:
+$$\text{head}_i = \text{Attention}(\mathbf{Q}\mathbf{W}_i^Q, \mathbf{K}\mathbf{W}_i^K, \mathbf{V}\mathbf{W}_i^V)$$
+
+And:
+$$\text{Attention}(\mathbf{Q}, \mathbf{K}, \mathbf{V}) = \text{softmax}\left(\frac{\mathbf{Q}\mathbf{K}^T}{\sqrt{d_k}}\right)\mathbf{V}$$
+
+### 5.3.3 Masked Self-Attention
+
+**Purpose:** Prevent decoder from attending to future positions during training.
+
+**Implementation:**
+Set attention scores for future positions to $-\infty$:
+
+$$\text{Mask}_{ij} = \begin{cases} 0 & \text{if } i \geq j \\ -\infty & \text{if } i < j \end{cases}$$
+
+$$\text{Attention}(\mathbf{Q}, \mathbf{K}, \mathbf{V}) = \text{softmax}\left(\frac{\mathbf{Q}\mathbf{K}^T}{\sqrt{d_k}} + \text{Mask}\right)\mathbf{V}$$
+
+**Result:** Position $i$ can only attend to positions $\leq i$.
+
+### 5.3.4 Position-wise Feed-Forward Network
+
+**Architecture:**
+$$\text{FFN}(\mathbf{x}) = \max(0, \mathbf{x}\mathbf{W}_1 + \mathbf{b}_1)\mathbf{W}_2 + \mathbf{b}_2$$
+
+Or with GELU activation (modern variant):
+$$\text{FFN}(\mathbf{x}) = \text{GELU}(\mathbf{x}\mathbf{W}_1 + \mathbf{b}_1)\mathbf{W}_2 + \mathbf{b}_2$$
+
+**Dimensions:**
+- Input/Output: $d_{model}$
+- Hidden: $d_{ff} = 4 \times d_{model}$ (typically)
+
+**Purpose:**
+- Apply non-linear transformation
+- Process each position independently
+- Increase model capacity
+
+### 5.3.5 Layer Normalization
+
+**Formula:**
+$$\text{LayerNorm}(\mathbf{x}) = \gamma \odot \frac{\mathbf{x} - \mu}{\sqrt{\sigma^2 + \epsilon}} + \beta$$
+
+Where:
+- $\mu = \frac{1}{d}\sum_{i=1}^{d} x_i$ (mean across features)
+- $\sigma^2 = \frac{1}{d}\sum_{i=1}^{d}(x_i - \mu)^2$ (variance across features)
+- $\gamma, \beta \in \mathbb{R}^d$: Learned scale and shift parameters
+
+**Why LayerNorm (not BatchNorm)?**
+- Sequences have different lengths
+- Batch statistics unreliable for small batches
+- LayerNorm is sequence-length independent
+
+### 5.3.6 Residual Connections
+
+**Purpose:** Enable gradient flow through deep networks.
+
+**Formulation:**
+$$\mathbf{x}_{out} = \text{LayerNorm}(\mathbf{x} + \text{Sublayer}(\mathbf{x}))$$
+
+**Benefits:**
+1. Mitigates vanishing gradients
+2. Allows training of very deep networks (12-24+ layers)
+3. Creates ensemble-like behavior
+
+---
+
+## 5.4 Transformer Training
+
+### 5.4.1 Training Objective
+
+**Original (Machine Translation):**
+Cross-entropy loss on target sequence:
+$$\mathcal{L} = -\sum_{t=1}^{T} \log P(y_t | y_{<t}, \mathbf{x})$$
+
+### 5.4.2 Training Efficiency
+
+**Why Transformers Train Faster:**
+
+| Aspect | RNN | Transformer |
+|--------|-----|-------------|
+| Parallelization | Sequential | Fully parallel |
+| GPU utilization | Poor | Excellent |
+| Large batch training | Difficult | Easy |
+| Mixed precision | Harder | Easier |
+
+**Speedup:** 5-10x faster training on modern hardware.
+
+### 5.4.3 Regularization Techniques
+
+**1. Dropout:**
+- Applied to embeddings, attention, FFN outputs
+- Typical rate: 0.1-0.3
+
+**2. Label Smoothing:**
+Replace one-hot targets with:
+$$q'(k) = (1 - \epsilon)\delta_{k,y} + \epsilon/|V|$$
+
+Typical $\epsilon = 0.1$
+
+**3. Attention Dropout:**
+Drop attention weights during training.
+
+---
+
+## 5.5 Key Insights: Transformers
+
+1. **Attention is sufficient**: No recurrence or convolution needed
+2. **Scalability**: Architecture scales to billions of parameters
+3. **Universality**: Same architecture works across NLP tasks
+4. **Transferability**: Pretrained models transfer well
+
+### 5.5.1 Common Pitfalls
+
+1. **Quadratic complexity**: $O(n^2)$ attention limits very long sequences
+2. **Memory intensive**: Attention matrices scale with sequence length
+3. **Position sensitivity**: Requires careful positional encoding
+4. **Data hungry**: Needs large datasets for training from scratch
+
+---
+
+# Chapter 6: Pretrained Language Models
+
+## 6.1 The Pretraining Paradigm
+
+### 6.1.1 Transfer Learning in NLP
+
+**Traditional Approach:**
+Train model from scratch for each task.
+
+**Pretraining Paradigm:**
+1. **Pretrain** on large unlabeled corpus
+2. **Fine-tune** on specific downstream tasks
+
+**Benefits:**
+- Leverage massive unlabeled data
+- Learn general language representations
+- Reduce task-specific data requirements
+- Improve performance across tasks
+
+### 6.1.2 Pretraining Objectives
+
+**1. Language Modeling:**
+$$\mathcal{L}_{LM} = -\sum_{t} \log P(w_t | w_{<t})$$
+
+**2. Masked Language Modeling:**
+$$\mathcal{L}_{MLM} = -\sum_{t \in \mathcal{M}} \log P(w_t | \mathbf{w}_{\backslash \mathcal{M}})$$
+
+Where $\mathcal{M}$ is the set of masked positions.
+
+**3. Next Sentence Prediction:**
+$$\mathcal{L}_{NSP} = -\log P(\text{is_next} | \mathbf{s}_1, \mathbf{s}_2)$$
+
+---
+
+## 6.2 BERT: Bidirectional Encoder Representations
+
+### 6.2.1 Architecture
+
+**Base Model:**
+- Layers: 12
+- Hidden size: 768
+- Attention heads: 12
+- Parameters: 110M
+
+**Large Model:**
+- Layers: 24
+- Hidden size: 1024
+- Attention heads: 16
+- Parameters: 340M
+
+### 6.2.2 Pretraining Tasks
+
+**1. Masked Language Modeling (MLM):**
+
+Randomly mask 15% of tokens:
+- 80%: Replace with [MASK]
+- 10%: Replace with random token
+- 10%: Keep unchanged
+
+**Why not 100% [MASK]?**
+- [MASK] never appears during fine-tuning
+- Creates mismatch between pretraining and fine-tuning
+
+**2. Next Sentence Prediction (NSP):**
+
+Input: [CLS] Sentence A [SEP] Sentence B [SEP]
+
+50% of time B follows A (IsNext)
+50% of time B is random (NotNext)
+
+**Purpose:** Learn sentence-level relationships.
+
+### 6.2.3 Input Representation
+
+```
+[CLS] The cat sat [SEP] It was happy [SEP]
+  ↓     ↓   ↓   ↓    ↓   ↓   ↓   ↓     ↓
+Token Embeddings
+  +
+Segment Embeddings (0 for A, 1 for B)
+  +
+Position Embeddings
+  ↓
+Final Input Representation
+```
+
+### 6.2.4 Fine-tuning BERT
+
+**Classification Tasks:**
+- Use [CLS] token representation
+- Add classification layer on top
+
+**Token-Level Tasks:**
+- Use representations from all tokens
+- Add task-specific output layer
+
+**Sentence Pair Tasks:**
+- Concatenate with [SEP]
+- Use [CLS] for classification
+
+### 6.2.5 BERT Variants
+
+| Model | Architecture | Pretraining |
+|-------|--------------|-------------|
+| BERT-Base | 12L, 768H, 12A | MLM + NSP |
+| BERT-Large | 24L, 1024H, 16A | MLM + NSP |
+| RoBERTa | Same as BERT | Optimized training |
+| ALBERT | Factorized embeddings | Sentence order |
+| DistilBERT | 6L (distilled) | Same as BERT |
+
+---
+
+## 6.3 GPT: Generative Pretraining
+
+### 6.3.1 Architecture Difference
+
+**GPT uses decoder-only architecture:**
+- No encoder
+- Masked self-attention throughout
+- Left-to-right language modeling
+
+### 6.3.2 Pretraining Objective
+
+Standard autoregressive language modeling:
+$$\mathcal{L} = -\sum_{t} \log P(w_t | w_1, ..., w_{t-1})$$
+
+### 6.3.3 GPT Generations
+
+| Model | Year | Parameters | Context |
+|-------|------|------------|---------|
+| GPT-1 | 2018 | 117M | 512 |
+| GPT-2 | 2019 | 1.5B | 1024 |
+| GPT-3 | 2020 | 175B | 2048 |
+| GPT-4 | 2023 | Unknown | 8K-32K |
+
+### 6.3.4 GPT-3 and Few-Shot Learning
+
+**Key Innovation:**
+Demonstrate tasks through examples in prompt, no gradient updates.
+
+**Prompt Types:**
+1. **Zero-shot:** Task description only
+2. **One-shot:** One example + task
+3. **Few-shot:** Multiple examples + task
+
+**Example (Translation):**
+```
+English: Hello
+French: Bonjour
+
+English: How are you?
+French: Comment allez-vous?
+
+English: Good morning
+French:
+```
+
+---
+
+## 6.4 T5: Text-to-Text Transfer Transformer
+
+### 6.4.1 Unified Framework
+
+**Core Idea:** Cast all NLP tasks as text-to-text problems.
+
+**Examples:**
+- Translation: `translate English to German: Hello → Hallo`
+- Summarization: `summarize: [article] → [summary]`
+- Classification: `sentiment: Great movie! → positive`
+
+### 6.4.2 Architecture
+
+**Encoder-Decoder Transformer:**
+- Same as original Transformer
+- Scales from Small (60M) to 11B parameters
+
+### 6.4.3 Pretraining
+
+**Denoising Objective:**
+Corrupt spans of text and reconstruct:
+
+```
+Input:  Thank you <X> me to your party <Y> week.
+Target: <X> for inviting <Y> last
+```
+
+**Advantages:**
+- Unified training objective
+- Flexible input/output format
+- Strong transfer learning
+
+---
+
+## 6.5 Comparison of Pretraining Approaches
+
+| Aspect | BERT | GPT | T5 |
+|--------|------|-----|-----|
+| Architecture | Encoder | Decoder | Encoder-Decoder |
+| Direction | Bidirectional | Left-to-right | Bidirectional |
+| Pretraining | MLM + NSP | Autoregressive LM | Span corruption |
+| Best for | Understanding | Generation | Both |
+| Fine-tuning | Required | Prompting works | Required |
+| Masking | Random tokens | None | Contiguous spans |
+
+---
+
+## 6.6 Key Insights: Pretrained Models
+
+1. **Scale matters**: Larger models generally perform better
+2. **Data quality**: Pretraining corpus affects downstream performance
+3. **Task alignment**: Pretraining objective should match downstream task
+4. **Compute efficiency**: Pretraining once, fine-tuning many times
+
+### 6.6.1 Common Pitfalls
+
+1. **Pretraining/fine-tuning mismatch**: Different tokenizers, vocabularies
+2. **Catastrophic forgetting**: Overwrite pretrained knowledge during fine-tuning
+3. **Hyperparameter sensitivity**: Learning rate, batch size critical for fine-tuning
+4. **Evaluation leakage**: Test data in pretraining corpus
+
+---
+
+# Chapter 7: Modern NLP Architectures
+
+## 7.1 Scaling Laws and Large Models
+
+### 7.1.1 The Scaling Hypothesis
+
+**Observation:** Model performance improves predictably with:
+- More parameters ($N$)
+- More data ($D$)
+- More compute ($C$)
+
+**Scaling Laws (Kaplan et al., 2020):**
+$$L(N) \propto N^{-\alpha_N}, \quad L(D) \propto D^{-\alpha_D}, \quad L(C) \propto C^{-\alpha_C}$$
+
+Where $L$ is test loss.
+
+### 7.1.2 Efficient Scaling
+
+**Chinchilla Scaling (Hoffmann et al., 2022):**
+Optimal model size and training tokens should scale equally:
+- Previous models were undertrained
+- Smaller models + more data can match larger models
+
+**Recommendation:**
+For compute budget $C$, optimal:
+- Parameters: $N_{opt} \propto C^{0.5}$
+- Tokens: $D_{opt} \propto C^{0.5}$
+
+---
+
+## 7.2 Efficient Transformers
+
+### 7.2.1 The Attention Bottleneck
+
+**Problem:** Self-attention is $O(n^2)$ in sequence length.
+
+For sequence length $n$:
+- Attention matrix: $n \times n$
+- Memory: $O(n^2)$
+- Computation: $O(n^2 \cdot d)$
+
+**Limitation:** Typical maximum: 512-4096 tokens
+
+### 7.2.2 Linear Attention Methods
+
+**1. Sparse Attention:**
+Only attend to subset of positions:
+- Local attention: Attend to nearby tokens
+- Strided attention: Attend to every k-th token
+- Factorized attention: Multiple sparse patterns
+
+**2. Linear Attention:**
+Approximate softmax attention with kernel methods:
+$$\text{softmax}(\frac{\mathbf{Q}\mathbf{K}^T}{\sqrt{d_k}})\mathbf{V} \approx \phi(\mathbf{Q})(\phi(\mathbf{K})^T\mathbf{V})$$
+
+**Complexity:** $O(n \cdot d^2)$ instead of $O(n^2 \cdot d)$
+
+**3. Flash Attention:**
+IO-aware algorithm that reduces memory accesses:
+- Tiling to fit in SRAM
+- Recomputation instead of storage
+- Up to 7.6x speedup on A100
+
+---
+
+## 7.3 Multimodal Models
+
+### 7.3.1 Vision-Language Models
+
+**CLIP (OpenAI, 2021):**
+Joint embedding of images and text:
+- Contrastive learning on (image, text) pairs
+- Zero-shot image classification
+- Cross-modal retrieval
+
+**Architecture:**
+- Image encoder: Vision Transformer
+- Text encoder: Transformer
+- Contrastive loss aligns embeddings
+
+### 7.3.2 GPT-4V and Multimodal Understanding
+
+**Capabilities:**
+- Image understanding
+- Visual question answering
+- Document analysis
+- Chart interpretation
+
+---
+
+## 7.4 Instruction Tuning and Alignment
+
+### 7.4.1 From Pretraining to Instruction Following
+
+**Problem:** Pretrained LMs don't follow instructions naturally.
+
+**Solution:** Fine-tune on instruction-following datasets.
+
+**Example:**
+```
+Instruction: Summarize the following article in 3 sentences.
+Input: [article text]
+Output: [summary]
+```
+
+### 7.4.2 RLHF: Reinforcement Learning from Human Feedback
+
+**Three-Stage Process:**
+
+**1. Supervised Fine-Tuning (SFT):**
+Train on high-quality human demonstrations.
+
+**2. Reward Model Training:**
+- Collect human preferences: $y_w \succ y_l$ given $x$
+- Train reward model $r(x, y)$ to predict preferences
+
+**3. RL Fine-Tuning:**
+Optimize policy with PPO:
+$$\max_{\pi_\theta} \mathbb{E}[r(x, y)] - \beta \text{KL}(\pi_\theta || \pi_{ref})$$
+
+**Benefits:**
+- Better instruction following
+- Reduced harmful outputs
+- Improved helpfulness
+
+---
+
+## 7.5 Future Directions
+
+### 7.5.1 Current Research Frontiers
+
+1. **Long Context:** Extending beyond 1M tokens
+2. **Multimodal Integration:** Unified text, image, audio, video
+3. **Reasoning:** Chain-of-thought, tool use, planning
+4. **Efficiency:** Smaller models, quantization, distillation
+5. **Interpretability**: Understanding what models learn
+
+### 7.5.2 Open Challenges
+
+1. **Hallucination**: Generating false information
+2. **Bias**: Reflecting societal biases in training data
+3. **Factuality**: Maintaining factual consistency
+4. **Evaluation**: Measuring true capabilities
+5. **Safety**: Preventing harmful outputs
+
+---
+
+# Summary and Key Takeaways
+
+## Module 8 Learning Path
+
+```
+Text Representation
+    ↓
+One-Hot → Distributed Embeddings (Word2Vec, GloVe)
+    ↓
+Sequential Models
+    ↓
+RNN → LSTM/GRU → Bidirectional
+    ↓
+Attention Mechanisms
+    ↓
+Self-Attention → Multi-Head Attention
+    ↓
+Transformer Architecture
+    ↓
+Pretrained Models
+    ↓
+BERT (Encoder) → GPT (Decoder) → T5 (Encoder-Decoder)
+    ↓
+Modern NLP
+    ↓
+Scaling → Efficiency → Multimodal → Alignment
+```
+
+## Core Principles
+
+1. **Representation matters**: Good embeddings capture semantic relationships
+2. **Context is crucial**: Understanding requires surrounding information
+3. **Attention enables parallelization**: Key to scalable architectures
+4. **Pretraining transfers**: Learn once, apply everywhere
+5. **Scale brings emergence**: Larger models show qualitatively new capabilities
+
+## Mathematical Foundations Checklist
+
+- [ ] One-hot vs distributed representation properties
+- [ ] Word2Vec CBOW and Skip-gram objectives
+- [ ] GloVe matrix factorization interpretation
+- [ ] RNN forward/backward pass (BPTT)
+- [ ] LSTM/GRU gating equations
+- [ ] Attention score functions
+- [ ] Self-attention and multi-head attention
+- [ ] Transformer encoder/decoder architecture
+- [ ] Positional encoding formulas
+- [ ] Pretraining objectives (MLM, autoregressive LM)
+
+---
+
+# References
+
+## Foundational Papers
+
+1. Bengio et al. (2003). "A Neural Probabilistic Language Model"
+2. Mikolov et al. (2013). "Efficient Estimation of Word Representations"
+3. Pennington et al. (2014). "GloVe: Global Vectors for Word Representation"
+4. Hochreiter & Schmidhuber (1997). "Long Short-Term Memory"
+5. Cho et al. (2014). "Learning Phrase Representations using RNN"
+6. Bahdanau et al. (2015). "Neural Machine Translation by Jointly Learning to Align"
+7. Vaswani et al. (2017). "Attention Is All You Need"
+8. Devlin et al. (2019). "BERT: Pre-training of Deep Bidirectional Transformers"
+9. Radford et al. (2019). "Language Models are Unsupervised Multitask Learners"
+10. Raffel et al. (2020). "Exploring the Limits of Transfer Learning with T5"
+
+## Further Reading
+
+- Goldberg (2017). "Neural Network Methods for NLP"
+- Jurafsky & Martin (2023). "Speech and Language Processing"
+- Goodfellow et al. (2016). "Deep Learning" (Chapters 10-12)
+
+---
+
+*This module provides the theoretical foundation for understanding modern NLP. Students should supplement with hands-on implementation and experimentation to fully grasp these concepts.*

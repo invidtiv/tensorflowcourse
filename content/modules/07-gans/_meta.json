@@ -1,0 +1,21 @@
+{
+  "id": "07-gans",
+  "number": 7,
+  "title": "Generative Adversarial Networks",
+  "shortTitle": "GANs",
+  "description": "Minimax theory, mode collapse, DCGAN, conditional GAN, WGAN-GP, StyleGAN concepts, and evaluation metrics (IS/FID).",
+  "duration": "1 week",
+  "difficulty": "intermediate",
+  "prerequisites": [
+    4
+  ],
+  "objectives": [
+    "Understand adversarial training theory",
+    "Implement GAN, DCGAN, and conditional GAN",
+    "Address mode collapse with WGAN-GP",
+    "Evaluate generative models with IS and FID",
+    "Explore StyleGAN architecture concepts"
+  ],
+  "icon": "drama",
+  "color": "#a855f7"
+}

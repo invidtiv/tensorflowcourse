@@ -1,0 +1,225 @@
+---
+title: "Lab 14"
+module: 2
+labNumber: 14
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-06-part6.md"
+---
+```python
+"""
+Lab 2.7: Auto-MPG Regression with Preprocessing
+Complete regression workflow with the Auto-MPG dataset.
+"""
+
+import tensorflow as tf
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+
+print("=" * 60)
+print("LAB 2.7: Auto-MPG Regression with Preprocessing")
+print("=" * 60)
+
+# ============================================================
+# STEP 1: Load and Explore Auto-MPG Dataset
+# ============================================================
+print("\n[STEP 1] Loading Auto-MPG dataset...")
+
+# Download dataset
+url = 'http://archive.ics.uci.edu/ml/machine-learning-databases/auto-mpg/auto-mpg.data'
+column_names = ['MPG', 'Cylinders', 'Displacement', 'Horsepower', 'Weight',
+                'Acceleration', 'Model Year', 'Origin']
+
+# Load data
+raw_dataset = pd.read_csv(url, names=column_names,
+                          na_values='?', comment='\t',
+                          sep=' ', skipinitialspace=True)
+
+# Clean data
+dataset = raw_dataset.copy()
+dataset = dataset.dropna()
+
+# Convert Origin to categorical
+dataset['Origin'] = dataset['Origin'].map({1: 'USA', 2: 'Europe', 3: 'Japan'})
+dataset = pd.get_dummies(dataset, columns=['Origin'], prefix='', prefix_sep='')
+
+print(f"Dataset shape: {dataset.shape}")
+print("\nFirst 5 rows:")
+print(dataset.head())
+print("\nData statistics:")
+print(dataset.describe())
+
+# ============================================================
+# STEP 2: Split and Preprocess Data
+# ============================================================
+print("\n[STEP 2] Splitting and preprocessing data...")
+
+# Separate features and target
+target = dataset.pop('MPG')
+features = dataset
+
+# Split data
+X_train, X_test, y_train, y_test = train_test_split(
+    features, target, test_size=0.2, random_state=42
+)
+
+print(f"Training samples: {len(X_train)}")
+print(f"Test samples: {len(X_test)}")
+
+# Normalize features
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+print(f"\nFeature means after scaling: {X_train_scaled.mean(axis=0).round(4)}")
+print(f"Feature stds after scaling: {X_train_scaled.std(axis=0).round(4)}")
+
+# ============================================================
+# STEP 3: Build Regression Models
+# ============================================================
+print("\n[STEP 3] Building regression models...")
+
+def create_simple_model(input_dim):
+    """Simple regression model."""
+    model = tf.keras.Sequential([
+        tf.keras.layers.Dense(64, activation='relu', input_shape=(input_dim,)),
+        tf.keras.layers.Dense(32, activation='relu'),
+        tf.keras.layers.Dense(1)
+    ])
+    return model
+
+def create_deep_model(input_dim):
+    """Deeper regression model."""
+    model = tf.keras.Sequential([
+        tf.keras.layers.Dense(128, activation='relu', input_shape=(input_dim,)),
+        tf.keras.layers.Dropout(0.2),
+        tf.keras.layers.Dense(64, activation='relu'),
+        tf.keras.layers.Dropout(0.2),
+        tf.keras.layers.Dense(32, activation='relu'),
+        tf.keras.layers.Dense(1)
+    ])
+    return model
+
+def create_wide_model(input_dim):
+    """Wide regression model."""
+    model = tf.keras.Sequential([
+        tf.keras.layers.Dense(256, activation='relu', input_shape=(input_dim,)),
+        tf.keras.layers.Dense(128, activation='relu'),
+        tf.keras.layers.Dense(1)
+    ])
+    return model
+
+# ============================================================
+# STEP 4: Train and Compare Models
+# ============================================================
+print("\n[STEP 4] Training and comparing models...")
+
+models = {
+    'Simple': create_simple_model(X_train_scaled.shape[1]),
+    'Deep': create_deep_model(X_train_scaled.shape[1]),
+    'Wide': create_wide_model(X_train_scaled.shape[1])
+}
+
+results = {}
+
+for name, model in models.items():
+    print(f"\nTraining {name} model...")
+    
+    model.compile(optimizer='adam', loss='mse', metrics=['mae'])
+    
+    history = model.fit(
+        X_train_scaled, y_train,
+        validation_split=0.2,
+        epochs=100,
+        batch_size=32,
+        verbose=0
+    )
+    
+    # Evaluate
+    test_loss, test_mae = model.evaluate(X_test_scaled, y_test, verbose=0)
+    
+    # Predictions
+    y_pred = model.predict(X_test_scaled, verbose=0).flatten()
+    
+    results[name] = {
+        'model': model,
+        'history': history,
+        'test_mae': test_mae,
+        'predictions': y_pred
+    }
+    
+    print(f"  Test MAE: {test_mae:.4f}")
+
+# ============================================================
+# STEP 5: Visualize Results
+# ============================================================
+print("\n[STEP 5] Visualizing results...")
+
+fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+
+# Training loss comparison
+ax1 = axes[0, 0]
+for name, result in results.items():
+    ax1.plot(result['history'].history['val_loss'], label=name, linewidth=2)
+ax1.set_xlabel('Epoch')
+ax1.set_ylabel('Validation Loss (MSE)')
+ax1.set_title('Training Loss Comparison', fontweight='bold')
+ax1.legend()
+ax1.grid(True, alpha=0.3)
+ax1.set_yscale('log')
+
+# MAE comparison
+ax2 = axes[0, 1]
+maes = [results[n]['test_mae'] for n in results.keys()]
+bars = ax2.bar(results.keys(), maes, color=['skyblue', 'lightgreen', 'salmon'], alpha=0.7)
+ax2.set_ylabel('Test MAE')
+ax2.set_title('Model Performance Comparison', fontweight='bold')
+ax2.grid(True, alpha=0.3, axis='y')
+for bar in bars:
+    height = bar.get_height()
+    ax2.text(bar.get_x() + bar.get_width()/2., height,
+             f'{height:.2f}', ha='center', va='bottom')
+
+# Predicted vs Actual (best model)
+ax3 = axes[1, 0]
+best_model_name = min(results, key=lambda x: results[x]['test_mae'])
+y_pred_best = results[best_model_name]['predictions']
+ax3.scatter(y_test, y_pred_best, alpha=0.5)
+ax3.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--', linewidth=2)
+ax3.set_xlabel('Actual MPG')
+ax3.set_ylabel('Predicted MPG')
+ax3.set_title(f'Predicted vs Actual ({best_model_name} Model)', fontweight='bold')
+ax3.grid(True, alpha=0.3)
+
+# Residuals
+ax4 = axes[1, 1]
+residuals = y_test - y_pred_best
+ax4.scatter(y_pred_best, residuals, alpha=0.5)
+ax4.axhline(y=0, color='r', linestyle='--', linewidth=2)
+ax4.set_xlabel('Predicted MPG')
+ax4.set_ylabel('Residuals')
+ax4.set_title('Residual Plot', fontweight='bold')
+ax4.grid(True, alpha=0.3)
+
+plt.suptitle('Auto-MPG Regression Results', fontsize=14, fontweight='bold')
+plt.tight_layout()
+plt.savefig('/mnt/okcomputer/output/auto_mpg_results.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+print(f"\nBest model: {best_model_name} with MAE = {results[best_model_name]['test_mae']:.4f}")
+
+print("\n" + "=" * 60)
+print("LAB 2.7 COMPLETED SUCCESSFULLY!")
+print("=" * 60)
+print("\nKEY TAKEAWAYS:")
+print("1. Feature normalization is crucial for regression")
+print("2. Different architectures can have similar performance")
+print("3. Residual plots help diagnose model issues")
+print("4. Deeper models may need more regularization")
+print("5. Always compare multiple architectures")
+```
+
+---

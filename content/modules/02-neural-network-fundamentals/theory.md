@@ -1,0 +1,1378 @@
+---
+title: "Neural Network Fundamentals"
+module: 2
+description: "Master perceptrons, activation functions, loss functions, backpropagation, and build networks with Keras Sequential and Functional APIs."
+duration: "2 weeks"
+difficulty: "beginner"
+---
+
+# Module 2: Neural Network Fundamentals - Comprehensive Theoretical Content
+
+## Module Overview
+
+This module provides the foundational theoretical understanding of neural networks, bridging the gap between biological inspiration and modern computational implementations. We explore the mathematical foundations, architectural principles, and optimization mechanisms that enable neural networks to learn from data.
+
+**Prerequisites:** Linear algebra, calculus, probability theory, Python programming  
+**Duration:** 3 weeks (12 lecture hours + 6 lab hours)  
+**Learning Objectives:**
+- Understand the mathematical foundations of neural computation
+- Master backpropagation and gradient-based optimization
+- Analyze activation functions and their properties
+- Apply proper weight initialization strategies
+- Evaluate loss functions and their characteristics
+
+---
+
+## 2.1 From Biological Neurons to Artificial Neural Networks
+
+### 2.1.1 Biological Inspiration
+
+The human brain contains approximately 86 billion neurons, each connected to thousands of others through synapses. This biological architecture inspired the development of artificial neural networks.
+
+**Key Biological Components:**
+
+| Biological Component | Artificial Equivalent | Function |
+|---------------------|----------------------|----------|
+| Dendrites | Input connections | Receive signals from other neurons |
+| Soma (Cell Body) | Weighted sum + activation | Process incoming information |
+| Axon | Output connection | Transmit signal to other neurons |
+| Synapse | Weight parameter | Modulate signal strength |
+| Action Potential | Activation function | Non-linear thresholding |
+
+**The McCulloch-Pitts Neuron (1943):**
+
+The first mathematical model of a neuron was proposed by Warren McCulloch and Walter Pitts:
+
+$$y = \theta\left(\sum_{i=1}^{n} w_i x_i - b\right)$$
+
+Where:
+- $x_i$ are binary inputs (0 or 1)
+- $w_i$ are synaptic weights
+- $b$ is the threshold (bias)
+- $\theta$ is the Heaviside step function
+- $y$ is the binary output
+
+This model demonstrated that networks of such neurons could compute any logical function, establishing the computational potential of neural architectures.
+
+### 2.1.2 The Perceptron: First Learning Algorithm
+
+**Historical Context:**
+Frank Rosenblatt introduced the Perceptron in 1958 at the Cornell Aeronautical Laboratory. It was implemented in hardware as the "Mark I Perceptron," a machine with 400 photocells as inputs and adjustable weights implemented as potentiometers.
+
+**Mathematical Formulation:**
+
+For a single perceptron with input vector $\mathbf{x} = [x_1, x_2, ..., x_n]^T$:
+
+$$\hat{y} = \sigma\left(\mathbf{w}^T \mathbf{x} + b\right) = \sigma\left(\sum_{i=1}^{n} w_i x_i + b\right)$$
+
+Where $\sigma$ is the step function:
+
+$$\sigma(z) = \begin{cases} 1 & \text{if } z \geq 0 \\ 0 & \text{if } z < 0 \end{cases}$$
+
+### 2.1.3 Perceptron Learning Rule - Mathematical Derivation
+
+**Objective:** Find weights $\mathbf{w}$ that correctly classify all training examples.
+
+**Learning Rule:**
+
+For a misclassified example $(\mathbf{x}^{(i)}, y^{(i)})$ where $y^{(i)} \in \{-1, +1\}$:
+
+$$\mathbf{w}_{t+1} = \mathbf{w}_t + \eta \cdot y^{(i)} \cdot \mathbf{x}^{(i)}$$
+
+$$b_{t+1} = b_t + \eta \cdot y^{(i)}$$
+
+**Derivation:**
+
+1. **Define the loss for a single example:**
+   $$L_i(\mathbf{w}, b) = \max(0, -y^{(i)}(\mathbf{w}^T \mathbf{x}^{(i)} + b))$$
+
+2. **Compute the gradient:**
+   $$\nabla_{\mathbf{w}} L_i = \begin{cases} -y^{(i)} \mathbf{x}^{(i)} & \text{if } y^{(i)}(\mathbf{w}^T \mathbf{x}^{(i)} + b) < 0 \\ 0 & \text{otherwise} \end{cases}$$
+
+3. **Apply gradient descent:**
+   $$\mathbf{w}_{t+1} = \mathbf{w}_t - \eta \nabla_{\mathbf{w}} L_i$$
+
+   When misclassified, this becomes:
+   $$\mathbf{w}_{t+1} = \mathbf{w}_t + \eta \cdot y^{(i)} \cdot \mathbf{x}^{(i)}$$
+
+**Perceptron Convergence Theorem:**
+
+*Theorem:* If the training data is linearly separable, the perceptron learning algorithm will converge to a set of weights that correctly classifies all examples in a finite number of steps.
+
+*Proof Sketch:*
+
+Let $\mathbf{w}^*$ be the optimal weight vector with $\|\mathbf{w}^*\| = 1$ and margin $\gamma > 0$ such that:
+$$y^{(i)}(\mathbf{w}^{*T} \mathbf{x}^{(i)}) \geq \gamma \quad \forall i$$
+
+Define $R = \max_i \|\mathbf{x}^{(i)}\|$. After $t$ updates:
+
+1. **Lower bound on alignment:**
+   $$\mathbf{w}^{*T} \mathbf{w}_t \geq t\eta\gamma$$
+
+2. **Upper bound on norm:**
+   $$\|\mathbf{w}_t\|^2 \leq t\eta^2 R^2$$
+
+3. **Using Cauchy-Schwarz:**
+   $$\frac{\mathbf{w}^{*T} \mathbf{w}_t}{\|\mathbf{w}_t\|} \leq 1$$
+
+4. **Combining bounds:**
+   $$\frac{t\eta\gamma}{\sqrt{t}\eta R} \leq 1 \implies t \leq \frac{R^2}{\gamma^2}$$
+
+Therefore, the number of updates is bounded by $\frac{R^2}{\gamma^2}$.
+
+**Key Insight:** The convergence rate depends inversely on the square of the margin. Better-separated data converges faster.
+
+### 2.1.4 Limitations and the XOR Problem
+
+**Minsky and Papert (1969):**
+
+In their book "Perceptrons," Marvin Minsky and Seymour Papert proved that single-layer perceptrons cannot solve non-linearly separable problems like XOR.
+
+**XOR Truth Table:**
+
+| $x_1$ | $x_2$ | XOR |
+|-------|-------|-----|
+| 0 | 0 | 0 |
+| 0 | 1 | 1 |
+| 1 | 0 | 1 |
+| 1 | 1 | 0 |
+
+**Proof of Impossibility:**
+
+Assume a perceptron can solve XOR. Then there exist $w_1, w_2, b$ such that:
+- $w_1 \cdot 0 + w_2 \cdot 0 + b < 0 \implies b < 0$
+- $w_1 \cdot 0 + w_2 \cdot 1 + b \geq 0 \implies w_2 + b \geq 0$
+- $w_1 \cdot 1 + w_2 \cdot 0 + b \geq 0 \implies w_1 + b \geq 0$
+- $w_1 \cdot 1 + w_2 \cdot 1 + b < 0 \implies w_1 + w_2 + b < 0$
+
+From (2) and (3): $w_1 + w_2 + 2b \geq 0$
+From (1): $w_1 + w_2 + b < 0$
+
+Adding $b < 0$ to the second inequality: $w_1 + w_2 + 2b < b < 0$
+
+This contradicts $w_1 + w_2 + 2b \geq 0$. ∎
+
+**Solution:** Multi-layer networks with non-linear activations can solve XOR and any other classification problem.
+
+---
+
+## 2.2 Feature Representation and Data Preprocessing
+
+### 2.2.1 Feature Vector Representation
+
+**Definition:** A feature vector $\mathbf{x} \in \mathbb{R}^d$ represents an input sample in a d-dimensional feature space.
+
+**Types of Features:**
+
+| Feature Type | Examples | Representation |
+|-------------|----------|----------------|
+| Continuous | Temperature, price, height | Real-valued scalars |
+| Discrete | Count of items, age in years | Integer values |
+| Categorical | Color, country, product type | One-hot encoding |
+| Binary | Yes/no, true/false | {0, 1} values |
+| Ordinal | Rating (1-5 stars), education level | Integer with order |
+
+**One-Hot Encoding:**
+
+For a categorical variable with $k$ categories:
+
+$$\text{category}_i \rightarrow \mathbf{e}_i = [0, ..., 0, \underbrace{1}_{i\text{th position}}, 0, ..., 0]^T \in \mathbb{R}^k$$
+
+**Example:** Color encoding
+- Red → [1, 0, 0]
+- Green → [0, 1, 0]  
+- Blue → [0, 0, 1]
+
+### 2.2.2 Feature Normalization
+
+**Why Normalize?**
+
+1. **Gradient Descent Efficiency:** Features on different scales cause elongated loss contours, slowing convergence
+2. **Numerical Stability:** Prevents overflow/underflow in computations
+3. **Fair Weight Updates:** Ensures all features contribute equally to learning
+
+**Normalization Techniques:**
+
+**1. Min-Max Scaling:**
+
+$$x' = \frac{x - x_{min}}{x_{max} - x_{min}}$$
+
+Properties:
+- Range: [0, 1]
+- Sensitive to outliers
+- Preserves zero sparsity
+
+**2. Standardization (Z-score Normalization):**
+
+$$x' = \frac{x - \mu}{\sigma}$$
+
+Where:
+- $\mu = \frac{1}{N}\sum_{i=1}^{N} x_i$ (mean)
+- $\sigma = \sqrt{\frac{1}{N}\sum_{i=1}^{N} (x_i - \mu)^2}$ (standard deviation)
+
+Properties:
+- Mean: 0, Standard deviation: 1
+- Less sensitive to outliers
+- Required for many algorithms (PCA, SVM, neural networks)
+
+**3. Robust Scaling:**
+
+$$x' = \frac{x - \text{median}}{\text{IQR}}$$
+
+Where IQR = Q3 - Q1 (interquartile range)
+
+Properties:
+- Very robust to outliers
+- Useful for skewed distributions
+
+### 2.2.3 Batch Normalization (Preview)
+
+For a mini-batch $B = \{x_1, ..., x_m\}$:
+
+$$\hat{x}_i = \frac{x_i - \mu_B}{\sqrt{\sigma_B^2 + \epsilon}}$$
+
+$$y_i = \gamma \hat{x}_i + \beta$$
+
+Where:
+- $\mu_B = \frac{1}{m}\sum_{i=1}^{m} x_i$ (batch mean)
+- $\sigma_B^2 = \frac{1}{m}\sum_{i=1}^{m} (x_i - \mu_B)^2$ (batch variance)
+- $\gamma, \beta$ are learnable parameters
+- $\epsilon$ is a small constant for numerical stability
+
+**Benefits:**
+- Reduces internal covariate shift
+- Allows higher learning rates
+- Acts as regularization
+- Reduces sensitivity to initialization
+
+---
+
+## 2.3 Neural Network Architecture Fundamentals
+
+### 2.3.1 Layer-wise Computation
+
+**Fully Connected (Dense) Layer:**
+
+For layer $l$ with $n^{[l]}$ neurons receiving input from $n^{[l-1]}$ neurons:
+
+$$\mathbf{z}^{[l]} = \mathbf{W}^{[l]} \mathbf{a}^{[l-1]} + \mathbf{b}^{[l]}$$
+
+$$\mathbf{a}^{[l]} = g^{[l]}(\mathbf{z}^{[l]})$$
+
+Where:
+- $\mathbf{W}^{[l]} \in \mathbb{R}^{n^{[l]} \times n^{[l-1]}}$: Weight matrix
+- $\mathbf{b}^{[l]} \in \mathbb{R}^{n^{[l]}}$: Bias vector
+- $\mathbf{a}^{[l-1]} \in \mathbb{R}^{n^{[l-1]}}$: Input activations
+- $g^{[l]}$: Activation function
+- $\mathbf{a}^{[l]} \in \mathbb{R}^{n^{[l]}}$: Output activations
+
+**Matrix Dimensions for a Network with $L$ Layers:**
+
+| Component | Dimensions | Description |
+|-----------|------------|-------------|
+| $\mathbf{W}^{[l]}$ | $(n^{[l]}, n^{[l-1]})$ | Weight matrix layer $l$ |
+| $\mathbf{b}^{[l]}$ | $(n^{[l]}, 1)$ | Bias vector layer $l$ |
+| $\mathbf{z}^{[l]}$ | $(n^{[l]}, m)$ | Pre-activation for $m$ examples |
+| $\mathbf{a}^{[l]}$ | $(n^{[l]}, m)$ | Post-activation for $m$ examples |
+
+### 2.3.2 Forward Propagation Algorithm
+
+```
+Input: Network parameters {W[1], b[1], ..., W[L], b[L]}, input X
+Output: Network predictions AL
+
+1. a[0] = X  # Input layer
+2. For l = 1 to L:
+   a. z[l] = W[l] · a[l-1] + b[l]
+   b. a[l] = g[l](z[l])
+3. Return a[L]  # Final output
+```
+
+**Computational Complexity:**
+- Forward pass: $O(\sum_{l=1}^{L} n^{[l]} \cdot n^{[l-1]})$
+- Dominated by matrix multiplications
+
+---
+
+## 2.4 Universal Approximation Theorem
+
+### 2.4.1 Statement and Significance
+
+**Theorem (Cybenko, 1989; Hornik et al., 1989):**
+
+Let $\sigma: \mathbb{R} \rightarrow \mathbb{R}$ be a non-constant, bounded, continuous function (activation function). Let $I_d = [0, 1]^d$ be the d-dimensional unit cube, and $C(I_d)$ be the space of continuous functions on $I_d$.
+
+For any $f \in C(I_d)$ and any $\epsilon > 0$, there exists an integer $N$, real constants $v_i, b_i \in \mathbb{R}$ and vectors $\mathbf{w}_i \in \mathbb{R}^d$ for $i = 1, ..., N$ such that:
+
+$$F(\mathbf{x}) = \sum_{i=1}^{N} v_i \sigma(\mathbf{w}_i^T \mathbf{x} + b_i)$$
+
+satisfies:
+
+$$|F(\mathbf{x}) - f(\mathbf{x})| < \epsilon \quad \forall \mathbf{x} \in I_d$$
+
+**In Plain Language:** A feedforward network with a single hidden layer containing a finite number of neurons can approximate any continuous function on a compact subset of $\mathbb{R}^d$ to arbitrary precision, given appropriate weights.
+
+### 2.4.2 Key Implications
+
+1. **Expressive Power:** Neural networks can represent virtually any function
+2. **Depth vs. Width:** While one hidden layer is sufficient, deeper networks may be more efficient
+3. **Non-linearity is Essential:** Linear networks cannot approximate non-linear functions
+
+### 2.4.3 Limitations and Practical Considerations
+
+**Theoretical vs. Practical:**
+
+| Aspect | Theoretical Guarantee | Practical Reality |
+|--------|---------------------|-------------------|
+| Existence | Guaranteed | Finding weights is hard |
+| Number of neurons | Finite but unbounded | May be impractically large |
+| Optimization | Not addressed | Local minima, saddle points |
+| Generalization | Not guaranteed | Overfitting is common |
+
+**Key Insight:** The theorem guarantees existence of a solution but says nothing about:
+- How to find the weights (optimization)
+- How many neurons are needed (capacity)
+- Whether the solution generalizes (statistical learning theory)
+
+### 2.4.4 Proof Sketch (Simplified)
+
+**Step 1:** Show that functions of the form $F(\mathbf{x})$ are dense in $C(I_d)$
+
+**Step 2:** Use the Hahn-Banach theorem and Riesz representation theorem
+
+**Step 3:** Show that if $\sigma$ is discriminatory, then the closure of the span of $\sigma(\mathbf{w}^T \mathbf{x} + b)$ is all of $C(I_d)$
+
+**Definition:** $\sigma$ is discriminatory if for any finite signed measure $\mu$ on $I_d$:
+$$\int_{I_d} \sigma(\mathbf{w}^T \mathbf{x} + b) d\mu(\mathbf{x}) = 0 \quad \forall \mathbf{w}, b \implies \mu = 0$$
+
+**Step 4:** Show that bounded, continuous, non-constant $\sigma$ are discriminatory
+
+---
+
+## 2.5 Activation Functions: Theory and Analysis
+
+### 2.5.1 Role of Activation Functions
+
+Activation functions introduce non-linearity, enabling neural networks to learn complex patterns. Without them, a deep network would be equivalent to a single linear transformation.
+
+**Proof:** Consider two layers without activation:
+$$\mathbf{y} = \mathbf{W}_2(\mathbf{W}_1\mathbf{x} + \mathbf{b}_1) + \mathbf{b}_2 = \mathbf{W}_2\mathbf{W}_1\mathbf{x} + (\mathbf{W}_2\mathbf{b}_1 + \mathbf{b}_2) = \mathbf{W}'\mathbf{x} + \mathbf{b}'$$
+
+### 2.5.2 Sigmoid Function
+
+**Definition:**
+$$\sigma(z) = \frac{1}{1 + e^{-z}}$$
+
+**Properties:**
+- Range: (0, 1)
+- Smooth and differentiable everywhere
+- $\sigma(0) = 0.5$
+- $\sigma(-z) = 1 - \sigma(z)$ (symmetry)
+
+**Derivative:**
+$$\sigma'(z) = \sigma(z)(1 - \sigma(z))$$
+
+*Derivation:*
+$$\sigma'(z) = \frac{d}{dz}(1 + e^{-z})^{-1} = -(1 + e^{-z})^{-2} \cdot (-e^{-z})$$
+$$= \frac{e^{-z}}{(1 + e^{-z})^2} = \frac{1}{1 + e^{-z}} \cdot \frac{e^{-z}}{1 + e^{-z}} = \sigma(z)(1 - \sigma(z))$$
+
+**Vanishing Gradient Problem:**
+
+For large $|z|$:
+- As $z \rightarrow \infty$: $\sigma(z) \rightarrow 1$, $\sigma'(z) \rightarrow 0$
+- As $z \rightarrow -\infty$: $\sigma(z) \rightarrow 0$, $\sigma'(z) \rightarrow 0$
+
+Maximum derivative: $\sigma'(0) = 0.25$
+
+In deep networks, gradients shrink exponentially: $\frac{\partial L}{\partial w_1} \propto (0.25)^L$
+
+### 2.5.3 Hyperbolic Tangent (Tanh)
+
+**Definition:**
+$$\tanh(z) = \frac{e^z - e^{-z}}{e^z + e^{-z}} = \frac{1 - e^{-2z}}{1 + e^{-2z}}$$
+
+**Properties:**
+- Range: (-1, 1)
+- Zero-centered output
+- $\tanh(z) = 2\sigma(2z) - 1$ (relationship to sigmoid)
+
+**Derivative:**
+$$\tanh'(z) = 1 - \tanh^2(z)$$
+
+Maximum derivative: $\tanh'(0) = 1$ (better than sigmoid)
+
+**Advantage over Sigmoid:** Zero-centered outputs help gradient descent converge faster.
+
+### 2.5.4 Rectified Linear Unit (ReLU)
+
+**Definition:**
+$$\text{ReLU}(z) = \max(0, z) = \begin{cases} z & \text{if } z > 0 \\ 0 & \text{if } z \leq 0 \end{cases}$$
+
+**Properties:**
+- Range: [0, ∞)
+- Computationally efficient (no exponentials)
+- Sparse activation (many neurons output 0)
+- No vanishing gradient for positive inputs
+
+**Derivative:**
+$$\text{ReLU}'(z) = \begin{cases} 1 & \text{if } z > 0 \\ 0 & \text{if } z < 0 \end{cases}$$
+
+At $z = 0$, the derivative is undefined; common practice is to set it to 0 or 1.
+
+**Dying ReLU Problem:**
+
+When a neuron's weights are updated such that $\mathbf{w}^T\mathbf{x} + b < 0$ for all training examples:
+- The neuron outputs 0
+- Gradient is 0
+- Weights never update → "dead" neuron
+
+**Probability Analysis:**
+
+For a layer with $n$ inputs from a standard normal distribution:
+$$P(z > 0) = P\left(\sum_{i=1}^{n} w_i x_i + b > 0\right)$$
+
+With proper initialization (He), $z \sim \mathcal{N}(0, 1)$, so $P(z > 0) = 0.5$.
+
+However, as depth increases, variance accumulates, and the probability of negative pre-activations increases.
+
+### 2.5.5 Leaky ReLU and Variants
+
+**Leaky ReLU:**
+$$\text{LeakyReLU}(z) = \begin{cases} z & \text{if } z > 0 \\ \alpha z & \text{if } z \leq 0 \end{cases}$$
+
+Where $\alpha$ is a small constant (typically 0.01).
+
+**Derivative:**
+$$\text{LeakyReLU}'(z) = \begin{cases} 1 & \text{if } z > 0 \\ \alpha & \text{if } z \leq 0 \end{cases}$$
+
+**Advantage:** Small negative slope prevents dying ReLU.
+
+**Parametric ReLU (PReLU):**
+$$\text{PReLU}(z) = \begin{cases} z & \text{if } z > 0 \\ \alpha z & \text{if } z \leq 0 \end{cases}$$
+
+Where $\alpha$ is learned during training.
+
+**Exponential Linear Unit (ELU):**
+$$\text{ELU}(z) = \begin{cases} z & \text{if } z > 0 \\ \alpha(e^z - 1) & \text{if } z \leq 0 \end{cases}$$
+
+Properties:
+- Smooth at $z = 0$
+- Mean activation closer to zero
+- Saturation for negative values reduces noise
+
+### 2.5.6 Softmax Function
+
+**Definition (for multi-class classification):**
+
+For a vector $\mathbf{z} = [z_1, z_2, ..., z_K]^T$:
+
+$$\text{softmax}(z_i) = \frac{e^{z_i}}{\sum_{j=1}^{K} e^{z_j}}$$
+
+**Properties:**
+- Output: probability distribution (sums to 1)
+- Range: (0, 1) for each output
+- Amplifies differences (exponential)
+
+**Numerical Stability:**
+
+Direct computation can overflow. Use:
+$$\text{softmax}(z_i) = \frac{e^{z_i - c}}{\sum_{j=1}^{K} e^{z_j - c}}$$
+
+Where $c = \max_j z_j$ (shifts values to prevent overflow).
+
+**Derivative:**
+
+$$\frac{\partial \text{softmax}(z_i)}{\partial z_j} = \text{softmax}(z_i)(\delta_{ij} - \text{softmax}(z_j))$$
+
+Where $\delta_{ij}$ is the Kronecker delta.
+
+### 2.5.7 Activation Function Comparison
+
+| Function | Range | Derivative Max | Zero-Centered | Saturation | Computation |
+|----------|-------|----------------|---------------|------------|-------------|
+| Sigmoid | (0, 1) | 0.25 | No | Yes | Expensive |
+| Tanh | (-1, 1) | 1 | Yes | Yes | Expensive |
+| ReLU | [0, ∞) | 1 | No | No (positive) | Cheap |
+| Leaky ReLU | (-∞, ∞) | 1 | No | No | Cheap |
+| ELU | (-α, ∞) | 1 | Approximate | Partial | Moderate |
+| Softmax | (0, 1) | - | No | No | Expensive |
+
+### 2.5.8 Activation Function Selection Guidelines
+
+**Hidden Layers:**
+- Default: ReLU
+- Deep networks: Leaky ReLU, ELU, or GELU
+- Recurrent networks: Tanh or LSTM/GRU gates
+
+**Output Layer:**
+- Binary classification: Sigmoid
+- Multi-class classification: Softmax
+- Regression: Linear (identity)
+
+---
+
+## 2.6 Loss Functions: Theory and Properties
+
+### 2.6.1 Role of Loss Functions
+
+The loss function $L(\hat{y}, y)$ quantifies the discrepancy between predicted output $\hat{y}$ and true target $y$. Training minimizes the expected loss over the data distribution.
+
+**Desirable Properties:**
+1. **Differentiability:** Enables gradient-based optimization
+2. **Convexity:** Guarantees global minimum (for linear models)
+3. **Sensitivity:** Meaningful gradients throughout the domain
+4. **Interpretability:** Clear relationship to task objective
+
+### 2.6.2 Mean Squared Error (MSE)
+
+**Definition:**
+$$\text{MSE} = \frac{1}{n}\sum_{i=1}^{n}(y_i - \hat{y}_i)^2$$
+
+**Properties:**
+- Penalizes large errors more heavily (quadratic)
+- Differentiable everywhere
+- Convex for linear regression
+- Sensitive to outliers
+
+**Gradient:**
+$$\frac{\partial \text{MSE}}{\partial \hat{y}_i} = \frac{2}{n}(\hat{y}_i - y_i)$$
+
+**Use Cases:**
+- Regression problems
+- Output with Gaussian noise assumption
+
+### 2.6.3 Mean Absolute Error (MAE)
+
+**Definition:**
+$$\text{MAE} = \frac{1}{n}\sum_{i=1}^{n}|y_i - \hat{y}_i|$$
+
+**Properties:**
+- Linear penalty for errors
+- More robust to outliers than MSE
+- Non-differentiable at 0 (use subgradient)
+- Geometric median solution
+
+**Gradient (for $\hat{y}_i \neq y_i$):**
+$$\frac{\partial \text{MAE}}{\partial \hat{y}_i} = \frac{1}{n}\text{sign}(\hat{y}_i - y_i)$$
+
+### 2.6.4 Huber Loss
+
+**Definition:**
+$$L_\delta(y, \hat{y}) = \begin{cases} \frac{1}{2}(y - \hat{y})^2 & \text{if } |y - \hat{y}| \leq \delta \\ \delta|y - \hat{y}| - \frac{1}{2}\delta^2 & \text{otherwise} \end{cases}$$
+
+**Properties:**
+- Combines MSE (small errors) and MAE (large errors)
+- Differentiable everywhere
+- Parameter $\delta$ controls transition point
+- Robust to outliers while maintaining smoothness
+
+**Gradient:**
+$$\frac{\partial L_\delta}{\partial \hat{y}} = \begin{cases} \hat{y} - y & \text{if } |y - \hat{y}| \leq \delta \\ \delta \cdot \text{sign}(\hat{y} - y) & \text{otherwise} \end{cases}$$
+
+### 2.6.5 Cross-Entropy Loss
+
+**Binary Cross-Entropy:**
+
+For binary classification with $y \in \{0, 1\}$ and $\hat{y} \in (0, 1)$:
+
+$$\mathcal{L}_{BCE} = -\frac{1}{n}\sum_{i=1}^{n}[y_i \log(\hat{y}_i) + (1-y_i)\log(1-\hat{y}_i)]$$
+
+**Derivation from Maximum Likelihood:**
+
+Model: $P(y=1|\mathbf{x}) = \hat{y}$, $P(y=0|\mathbf{x}) = 1 - \hat{y}$
+
+Likelihood: $\mathcal{L} = \prod_{i=1}^{n} \hat{y}_i^{y_i}(1-\hat{y}_i)^{1-y_i}$
+
+Negative log-likelihood:
+$$-\log \mathcal{L} = -\sum_{i=1}^{n}[y_i \log \hat{y}_i + (1-y_i)\log(1-\hat{y}_i)]$$
+
+**Gradient (with sigmoid output):**
+
+For a single example:
+$$\frac{\partial \mathcal{L}}{\partial z} = \hat{y} - y$$
+
+*Derivation:*
+$$\frac{\partial \mathcal{L}}{\partial z} = \frac{\partial \mathcal{L}}{\partial \hat{y}} \cdot \frac{\partial \hat{y}}{\partial z}$$
+
+$$= \left(-\frac{y}{\hat{y}} + \frac{1-y}{1-\hat{y}}\right) \cdot \hat{y}(1-\hat{y})$$
+
+$$= -y(1-\hat{y}) + (1-y)\hat{y} = \hat{y} - y$$
+
+**Key Insight:** The gradient is simply the prediction error, making optimization efficient.
+
+### 2.6.6 Categorical Cross-Entropy
+
+For multi-class classification with $K$ classes:
+
+$$\mathcal{L}_{CCE} = -\frac{1}{n}\sum_{i=1}^{n}\sum_{k=1}^{K} y_{i,k} \log(\hat{y}_{i,k})$$
+
+Where $y_{i,k}$ is 1 if example $i$ belongs to class $k$, 0 otherwise (one-hot encoded).
+
+**Gradient (with softmax output):**
+
+$$\frac{\partial \mathcal{L}}{\partial z_k} = \hat{y}_k - y_k$$
+
+This elegant result makes softmax + cross-entropy a natural pairing for classification.
+
+### 2.6.7 Convexity Analysis
+
+**Definition:** A function $f$ is convex if for all $\mathbf{x}, \mathbf{y}$ and $\lambda \in [0, 1]$:
+$$f(\lambda \mathbf{x} + (1-\lambda)\mathbf{y}) \leq \lambda f(\mathbf{x}) + (1-\lambda)f(\mathbf{y})$$
+
+**Convexity of Loss Functions:**
+
+| Loss Function | Convexity | Notes |
+|--------------|-----------|-------|
+| MSE | Convex | Hessian is positive semi-definite |
+| MAE | Convex | Piecewise linear |
+| Huber | Convex | Smooth approximation of MAE |
+| Cross-Entropy | Convex (linear models) | Non-convex with neural networks |
+
+**Important:** While individual loss functions may be convex, the composition with a neural network is generally non-convex due to:
+- Non-linear activations
+- Multiple layers
+- Weight interactions
+
+### 2.6.8 Loss Function Selection Guide
+
+| Task | Recommended Loss | Output Activation |
+|------|-----------------|-------------------|
+| Regression (standard) | MSE | Linear |
+| Regression (robust) | Huber | Linear |
+| Regression (outliers) | MAE | Linear |
+| Binary classification | BCE | Sigmoid |
+| Multi-class (single label) | CCE | Softmax |
+| Multi-class (multi-label) | BCE | Sigmoid |
+
+---
+
+## 2.7 Backpropagation: The Core Learning Algorithm
+
+### 2.7.1 Overview
+
+Backpropagation is an efficient algorithm for computing gradients in neural networks using the chain rule of calculus. It consists of:
+1. **Forward pass:** Compute predictions and store intermediate values
+2. **Backward pass:** Compute gradients by propagating errors backward
+
+### 2.7.2 Chain Rule Review
+
+**Single Variable Chain Rule:**
+$$\frac{dz}{dx} = \frac{dz}{dy} \cdot \frac{dy}{dx}$$
+
+**Multivariable Chain Rule:**
+$$\frac{\partial z}{\partial x} = \sum_{i} \frac{\partial z}{\partial y_i} \cdot \frac{\partial y_i}{\partial x}$$
+
+### 2.7.3 Backpropagation Derivation
+
+Consider a simple network with one hidden layer:
+
+**Forward Pass:**
+$$\mathbf{z}^{[1]} = \mathbf{W}^{[1]}\mathbf{x} + \mathbf{b}^{[1]}$$
+$$\mathbf{a}^{[1]} = g^{[1]}(\mathbf{z}^{[1]})$$
+$$\mathbf{z}^{[2]} = \mathbf{W}^{[2]}\mathbf{a}^{[1]} + \mathbf{b}^{[2]}$$
+$$\hat{y} = g^{[2]}(\mathbf{z}^{[2]})$$
+
+**Loss:**
+$$\mathcal{L} = L(\hat{y}, y)$$
+
+**Backward Pass - Output Layer:**
+
+Compute $\delta^{[2]} = \frac{\partial \mathcal{L}}{\partial \mathbf{z}^{[2]}}$:
+
+$$\delta^{[2]} = \frac{\partial \mathcal{L}}{\partial \hat{y}} \cdot \frac{\partial \hat{y}}{\partial \mathbf{z}^{[2]}} = \frac{\partial \mathcal{L}}{\partial \hat{y}} \odot g^{[2]'}(\mathbf{z}^{[2]})$$
+
+Where $\odot$ denotes element-wise multiplication.
+
+Gradients for output layer parameters:
+$$\frac{\partial \mathcal{L}}{\partial \mathbf{W}^{[2]}} = \delta^{[2]} \mathbf{a}^{[1]T}$$
+$$\frac{\partial \mathcal{L}}{\partial \mathbf{b}^{[2]}} = \delta^{[2]}$$
+
+**Backward Pass - Hidden Layer:**
+
+Compute $\delta^{[1]} = \frac{\partial \mathcal{L}}{\partial \mathbf{z}^{[1]}}$:
+
+$$\delta^{[1]} = \frac{\partial \mathcal{L}}{\partial \mathbf{z}^{[2]}} \cdot \frac{\partial \mathbf{z}^{[2]}}{\partial \mathbf{a}^{[1]}} \cdot \frac{\partial \mathbf{a}^{[1]}}{\partial \mathbf{z}^{[1]}}$$
+
+$$= \mathbf{W}^{[2]T}\delta^{[2]} \odot g^{[1]'}(\mathbf{z}^{[1]})$$
+
+Gradients for hidden layer parameters:
+$$\frac{\partial \mathcal{L}}{\partial \mathbf{W}^{[1]}} = \delta^{[1]} \mathbf{x}^T$$
+$$\frac{\partial \mathcal{L}}{\partial \mathbf{b}^{[1]}} = \delta^{[1]}$$
+
+### 2.7.4 General Backpropagation Algorithm
+
+**Notation:**
+- $L$: Number of layers
+- $\mathbf{a}^{[0]} = \mathbf{x}$: Input
+- $\mathbf{a}^{[L]} = \hat{y}$: Output
+
+**Algorithm:**
+
+```
+# Forward pass
+for l = 1 to L:
+    z[l] = W[l] · a[l-1] + b[l]
+    a[l] = g[l](z[l])
+
+# Backward pass
+delta[L] = ∇_a[L]L ⊙ g[L]'(z[L])
+for l = L down to 1:
+    dW[l] = delta[l] · a[l-1]T
+    db[l] = delta[l]
+    if l > 1:
+        delta[l-1] = W[l]T · delta[l] ⊙ g[l-1]'(z[l-1])
+```
+
+### 2.7.5 Computational Graph Perspective
+
+Backpropagation can be understood through computational graphs:
+
+**Example:** Compute $f(x, y, z) = (x + y) \cdot z$
+
+Forward:
+- $q = x + y$
+- $f = q \cdot z$
+
+Backward:
+- $\frac{\partial f}{\partial f} = 1$
+- $\frac{\partial f}{\partial q} = z$, $\frac{\partial f}{\partial z} = q$
+- $\frac{\partial f}{\partial x} = \frac{\partial f}{\partial q} \cdot \frac{\partial q}{\partial x} = z \cdot 1 = z$
+- $\frac{\partial f}{\partial y} = \frac{\partial f}{\partial q} \cdot \frac{\partial q}{\partial y} = z \cdot 1 = z$
+
+**Key Principle:** Each node only needs to know how to compute its local gradient. The chain rule combines these local gradients.
+
+### 2.7.6 Vectorized Backpropagation
+
+For a mini-batch of $m$ examples stored as columns in matrix $\mathbf{X} \in \mathbb{R}^{n^{[0]} \times m}$:
+
+**Forward:**
+$$\mathbf{Z}^{[l]} = \mathbf{W}^{[l]}\mathbf{A}^{[l-1]} + \mathbf{b}^{[l]}$$
+$$\mathbf{A}^{[l]} = g^{[l]}(\mathbf{Z}^{[l]})$$
+
+**Backward:**
+$$\mathbf{dZ}^{[l]} = \mathbf{dA}^{[l]} \odot g^{[l]'}(\mathbf{Z}^{[l]})$$
+$$\mathbf{dW}^{[l]} = \frac{1}{m}\mathbf{dZ}^{[l]}\mathbf{A}^{[l-1]T}$$
+$$\mathbf{db}^{[l]} = \frac{1}{m}\sum_{i=1}^{m}\mathbf{dZ}^{[l](i)}$$
+$$\mathbf{dA}^{[l-1]} = \mathbf{W}^{[l]T}\mathbf{dZ}^{[l]}$$
+
+### 2.7.7 Computational Complexity
+
+**Forward pass:** $O(W)$ where $W$ is the total number of weights
+**Backward pass:** $O(W)$ (approximately twice the forward pass cost)
+
+**Comparison with Numerical Differentiation:**
+
+| Method | Forward Evaluations | Accuracy |
+|--------|-------------------|----------|
+| Numerical | $O(W)$ | $O(\epsilon)$ |
+| Backpropagation | $O(1)$ | $O(\epsilon_{machine})$ |
+
+Backpropagation is both more efficient and more accurate than numerical differentiation.
+
+---
+
+## 2.8 Gradient Flow Analysis
+
+### 2.8.1 Vanishing and Exploding Gradients
+
+**Problem Statement:**
+
+In deep networks, gradients can become exponentially small (vanish) or large (explode) as they propagate backward through layers.
+
+**Mathematical Analysis:**
+
+Consider a deep network with $L$ layers and linear activations:
+
+$$\mathbf{a}^{[L]} = \mathbf{W}^{[L]}\mathbf{W}^{[L-1]}...\mathbf{W}^{[1]}\mathbf{x}$$
+
+The gradient with respect to the first layer:
+$$\frac{\partial \mathcal{L}}{\partial \mathbf{W}^{[1]}} = \frac{\partial \mathcal{L}}{\partial \mathbf{a}^{[L]}} \cdot \mathbf{W}^{[L]} \cdot \mathbf{W}^{[L-1]} \cdot ... \cdot \mathbf{W}^{[2]} \cdot \mathbf{x}$$
+
+If weights are initialized with variance $\sigma^2$, the product of $L$ matrices has variance approximately $\sigma^{2L}$.
+
+- If $\sigma < 1$: variance $\rightarrow 0$ exponentially (vanishing)
+- If $\sigma > 1$: variance $\rightarrow \infty$ exponentially (exploding)
+
+### 2.8.2 Spectral Analysis
+
+For a weight matrix $\mathbf{W}$ with singular values $\sigma_1 \geq \sigma_2 \geq ... \geq \sigma_n$:
+
+The product $\mathbf{W}^L$ has singular values $\sigma_i^L$.
+
+**Condition for stable gradients:**
+$$\sigma_{max} \approx 1 \text{ and } \sigma_{min} \approx 1$$
+
+This requires careful weight initialization.
+
+### 2.8.3 Gradient Flow in Different Architectures
+
+**Fully Connected Networks:**
+- Gradients flow through all paths
+- Most susceptible to vanishing/exploding gradients
+
+**Residual Networks (ResNet):**
+- Skip connections provide gradient highways
+- Gradient: $\frac{\partial \mathcal{L}}{\partial \mathbf{x}} = \frac{\partial \mathcal{L}}{\partial \mathcal{F}(\mathbf{x})} \cdot (1 + \frac{\partial \mathcal{F}}{\partial \mathbf{x}})$
+- The "+1" term preserves gradient magnitude
+
+**LSTM/GRU:**
+- Gated mechanisms control information flow
+- Cell state gradients flow with minimal modification
+
+### 2.8.4 Visualizing Gradient Flow
+
+**Techniques:**
+1. **Gradient Norms:** Plot $\|\frac{\partial \mathcal{L}}{\partial \mathbf{W}^{[l]}}\|$ vs. layer $l$
+2. **Activation Statistics:** Monitor mean and variance of activations
+3. **Spectral Analysis:** Examine singular value distributions
+
+**Healthy Training Indicators:**
+- Gradient norms stable across layers
+- Activations maintain reasonable range
+- No NaN or Inf values
+
+---
+
+## 2.9 Weight Initialization Strategies
+
+### 2.9.1 The Importance of Initialization
+
+Poor initialization can lead to:
+- Vanishing or exploding gradients
+- Slow convergence
+- Getting stuck in poor local minima
+- Symmetry breaking issues
+
+### 2.9.2 Zero Initialization (Problematic)
+
+If all weights are initialized to zero:
+$$\mathbf{z}^{[l]} = \mathbf{0} \implies \mathbf{a}^{[l]} = g(\mathbf{0})$$
+
+All neurons in a layer compute the same output and receive the same gradient, preventing learning of diverse features.
+
+### 2.9.3 Random Initialization
+
+**Small Random Values:**
+$$W_{ij} \sim \mathcal{N}(0, \epsilon^2)$$
+
+Problem: For deep networks, activations shrink or explode exponentially.
+
+### 2.9.4 Xavier/Glorot Initialization
+
+**Assumptions (Glorot & Bengio, 2010):**
+- Linear activations (or symmetric around 0)
+- Independent weights and inputs
+- Backward pass similar to forward pass
+
+**Derivation:**
+
+We want: $\text{Var}(a^{[l]}) = \text{Var}(a^{[l-1]})$
+
+For $z = \sum_{i=1}^{n} w_i x_i$ with $w_i \sim \mathcal{N}(0, \sigma^2)$ and $x_i$ i.i.d.:
+
+$$\text{Var}(z) = \sum_{i=1}^{n} \text{Var}(w_i x_i) = n \sigma^2 \text{Var}(x)$$
+
+For variance to be preserved: $n \sigma^2 = 1 \implies \sigma = \frac{1}{\sqrt{n}}$
+
+Considering both forward and backward passes, use average:
+
+**Xavier Initialization:**
+$$W_{ij} \sim \mathcal{N}\left(0, \frac{2}{n_{in} + n_{out}}\right)$$
+
+Or the simplified version:
+$$W_{ij} \sim \mathcal{N}\left(0, \frac{1}{n_{in}}\right)$$
+
+**Uniform Variant:**
+$$W_{ij} \sim U\left[-\sqrt{\frac{6}{n_{in} + n_{out}}}, \sqrt{\frac{6}{n_{in} + n_{out}}}\right]$$
+
+### 2.9.5 He Initialization
+
+**Motivation:** ReLU activations are not symmetric; they zero out half the inputs.
+
+**Derivation:**
+
+For ReLU: $a = \max(0, z)$
+
+Approximately half of $z$ values are negative, so:
+$$\mathbb{E}[a^2] = \frac{1}{2}\mathbb{E}[z^2]$$
+
+To maintain variance, we need:
+$$\text{Var}(w) = \frac{2}{n_{in}}$$
+
+**He Initialization:**
+$$W_{ij} \sim \mathcal{N}\left(0, \frac{2}{n_{in}}\right)$$
+
+### 2.9.6 Initialization Summary
+
+| Method | Formula | Best For |
+|--------|---------|----------|
+| Xavier (Normal) | $\mathcal{N}(0, \frac{2}{n_{in}+n_{out}})$ | Tanh, Sigmoid |
+| Xavier (Uniform) | $U[-\sqrt{\frac{6}{n_{in}+n_{out}}}, \sqrt{\frac{6}{n_{in}+n_{out}}}]$ | Tanh, Sigmoid |
+| He (Normal) | $\mathcal{N}(0, \frac{2}{n_{in}})$ | ReLU, Leaky ReLU |
+| He (Uniform) | $U[-\sqrt{\frac{6}{n_{in}}}, \sqrt{\frac{6}{n_{in}}}]$ | ReLU, Leaky ReLU |
+| Orthogonal | QR decomposition | RNNs, deep networks |
+
+### 2.9.7 Bias Initialization
+
+Biases are typically initialized to zero or small constants:
+- Zero: Default, works well
+- Small positive: For ReLU, helps initial activation
+
+---
+
+## 2.10 Feature Engineering vs. Representation Learning
+
+### 2.10.1 Traditional Feature Engineering
+
+**Definition:** Manual design of features based on domain knowledge.
+
+**Examples:**
+- Image processing: SIFT, HOG, SURF features
+- Text processing: TF-IDF, n-grams
+- Audio processing: MFCC, spectrograms
+
+**Process:**
+1. Analyze domain and problem
+2. Design features based on intuition
+3. Extract features from raw data
+4. Train classifier on features
+
+**Limitations:**
+- Requires extensive domain expertise
+- Time-consuming
+- May miss optimal features
+- Not transferable across domains
+
+### 2.10.2 Representation Learning
+
+**Definition:** Automatic learning of features from raw data.
+
+**Neural Network Approach:**
+- Layer 1: Learns low-level features (edges, colors)
+- Layer 2: Learns mid-level features (shapes, textures)
+- Layer 3+: Learns high-level features (objects, concepts)
+
+**Advantages:**
+- No manual feature design
+- Learns task-optimal representations
+- Hierarchical abstraction
+- Transferable representations
+
+### 2.10.3 Comparison
+
+| Aspect | Feature Engineering | Representation Learning |
+|--------|-------------------|------------------------|
+| Human effort | High | Low |
+| Domain knowledge | Required | Beneficial but not required |
+| Scalability | Limited | High |
+| Performance | Plateaus | Continues improving with data |
+| Interpretability | Often higher | Often lower (black box) |
+| Data requirements | Lower | Higher |
+
+### 2.10.4 Hierarchy of Representations
+
+**Visual Example (CNN):**
+
+| Layer | Learned Features | Receptive Field |
+|-------|-----------------|-----------------|
+| 1 | Edges, gradients | 3×3 - 5×5 |
+| 2 | Textures, patterns | 10×10 - 20×20 |
+| 3 | Object parts | 30×30 - 60×60 |
+| 4+ | Complete objects | Full image |
+
+**Mathematical Interpretation:**
+
+Each layer computes:
+$$\mathbf{a}^{[l]} = g(\mathbf{W}^{[l]} \mathbf{a}^{[l-1]} + \mathbf{b}^{[l]})$$
+
+This is a non-linear transformation that progressively disentangles factors of variation in the data.
+
+### 2.10.5 Disentangled Representations
+
+**Goal:** Learn representations where each dimension corresponds to an independent factor of variation.
+
+**Example:** For faces, separate:
+- Identity
+- Pose
+- Expression
+- Lighting
+
+**Benefits:**
+- Better generalization
+- Easier manipulation
+- Improved transfer learning
+
+---
+
+## 2.11 Bias-Variance Tradeoff in Neural Networks
+
+### 2.11.1 Theoretical Framework
+
+**Expected Prediction Error:**
+
+For a model $\hat{f}$ trained on dataset $\mathcal{D}$, the expected error at point $x$:
+
+$$\mathbb{E}_{\mathcal{D}}[(y - \hat{f}(x; \mathcal{D}))^2] = \underbrace{(f(x) - \mathbb{E}[\hat{f}(x)])^2}_{\text{Bias}^2} + \underbrace{\mathbb{E}[(\hat{f}(x) - \mathbb{E}[\hat{f}(x)])^2]}_{\text{Variance}} + \underbrace{\sigma^2_\epsilon}_{\text{Noise}}$$
+
+**Components:**
+- **Bias:** Error from erroneous assumptions; how much the average prediction differs from true value
+- **Variance:** Error from sensitivity to training data; how much predictions vary across datasets
+- **Noise:** Irreducible error in the data
+
+### 2.11.2 Neural Network Capacity
+
+**Underfitting (High Bias):**
+- Network too small
+- Insufficient training
+- High training error, high test error
+
+**Overfitting (High Variance):**
+- Network too large
+- Too much training without regularization
+- Low training error, high test error
+
+### 2.11.3 Model Complexity vs. Error
+
+```
+Error
+  │   ╲  Total Error
+  │    ╲    /
+  │     ╲  /
+  │ Bias  ╲/  Variance
+  │  ─────╳─────
+  │       /╲
+  │      /  ╲
+  │_____/____╲________
+       Low  Optimal  High
+         Model Complexity
+```
+
+### 2.11.4 Controlling Capacity in Neural Networks
+
+**Increase Capacity (Reduce Bias):**
+- Add more layers (depth)
+- Add more neurons per layer (width)
+- Train longer
+- Use more sophisticated architectures
+
+**Decrease Capacity (Reduce Variance):**
+- Reduce network size
+- Add regularization (L1, L2, dropout)
+- Early stopping
+- Increase training data
+- Data augmentation
+
+### 2.11.5 Double Descent Phenomenon
+
+Recent research has revealed that beyond the classical U-shaped bias-variance curve, very large networks can exhibit a "double descent" where test error decreases again after interpolating the training data.
+
+**Phases:**
+1. Classical: Underfitting → Optimal → Overfitting
+2. Modern: Overfitting → Interpolation → Second descent
+
+This challenges traditional statistical learning theory and is an active research area.
+
+---
+
+## 2.12 Introduction to Regularization Theory
+
+### 2.12.1 Motivation
+
+Regularization techniques prevent overfitting by constraining the model or adding penalty terms to the loss function.
+
+**Goal:** Improve generalization by reducing variance at the cost of slightly increased bias.
+
+### 2.12.2 L2 Regularization (Weight Decay)
+
+**Regularized Loss:**
+$$\mathcal{L}_{reg}(\mathbf{w}) = \mathcal{L}(\mathbf{w}) + \frac{\lambda}{2}\|\mathbf{w}\|^2_2$$
+
+Where $\|\mathbf{w}\|^2_2 = \sum_{i} w_i^2$ and $\lambda$ is the regularization strength.
+
+**Gradient:**
+$$\nabla_{\mathbf{w}} \mathcal{L}_{reg} = \nabla_{\mathbf{w}} \mathcal{L} + \lambda \mathbf{w}$$
+
+**Weight Update:**
+$$\mathbf{w}_{t+1} = \mathbf{w}_t - \eta(\nabla_{\mathbf{w}} \mathcal{L} + \lambda \mathbf{w}_t) = (1 - \eta\lambda)\mathbf{w}_t - \eta\nabla_{\mathbf{w}} \mathcal{L}$$
+
+The $(1 - \eta\lambda)$ term causes weights to decay toward zero, hence "weight decay."
+
+**Effect:**
+- Prefers small weights
+- Distributes importance across features
+- Equivalent to MAP estimation with Gaussian prior
+
+### 2.12.3 L1 Regularization (Lasso)
+
+**Regularized Loss:**
+$$\mathcal{L}_{reg}(\mathbf{w}) = \mathcal{L}(\mathbf{w}) + \lambda\|\mathbf{w}\|_1$$
+
+Where $\|\mathbf{w}\|_1 = \sum_{i} |w_i|$.
+
+**Effect:**
+- Encourages sparsity (many weights become exactly zero)
+- Performs feature selection
+- Equivalent to MAP estimation with Laplace prior
+
+### 2.12.4 L1 vs L2 Regularization
+
+| Property | L2 (Ridge) | L1 (Lasso) |
+|----------|-----------|------------|
+| Penalty | $\sum w_i^2$ | $\sum \|w_i\|$ |
+| Solution | Unique | May not be unique |
+| Sparsity | Dense weights | Sparse weights |
+| Computation | Easy (differentiable) | Harder (non-differentiable at 0) |
+| Feature selection | No | Yes |
+
+### 2.12.5 Early Stopping
+
+**Concept:** Stop training when validation error starts increasing.
+
+**Mechanism:**
+1. Monitor validation loss during training
+2. Save best model
+3. Stop when validation loss hasn't improved for $p$ epochs (patience)
+
+**Why it works:** Training longer fits noise; early stopping limits capacity.
+
+**Connection to L2:**
+Early stopping is approximately equivalent to L2 regularization with appropriate stopping time.
+
+### 2.12.6 Dropout (Preview)
+
+**Concept:** Randomly set a fraction of neurons to zero during training.
+
+**Training:** For each neuron, with probability $p$:
+$$a^{[l]}_i \rightarrow \frac{a^{[l]}_i}{1-p} \cdot \mathbb{1}_{\text{keep}}$$
+
+**Testing:** Use all neurons (no dropout)
+
+**Interpretation:**
+- Ensemble of subnetworks
+- Prevents co-adaptation of features
+- Acts as strong regularizer
+
+### 2.12.7 Regularization Strength Selection
+
+**Cross-Validation:**
+1. Split data into training/validation/test sets
+2. Train models with different $\lambda$ values
+3. Select $\lambda$ with best validation performance
+4. Evaluate on test set
+
+**Typical Values:**
+- L2: $\lambda \in [10^{-5}, 10^{-2}]$
+- L1: $\lambda \in [10^{-5}, 10^{-1}]$
+- Dropout: $p \in [0.2, 0.5]$
+
+---
+
+## 2.13 Multi-Class Classification Theory
+
+### 2.13.1 Problem Formulation
+
+Given input $\mathbf{x}$, predict one of $K$ classes: $y \in \{1, 2, ..., K\}$.
+
+**Output Representation:**
+- Network outputs $K$ logits: $\mathbf{z} = [z_1, z_2, ..., z_K]^T$
+- Softmax converts to probabilities: $\hat{y}_k = P(y=k|\mathbf{x})$
+
+### 2.13.2 One-vs-Rest vs. Softmax
+
+**One-vs-Rest:**
+- Train $K$ binary classifiers
+- Each classifier distinguishes one class from all others
+- Problem: Probabilities may not sum to 1
+
+**Softmax:**
+- Single model with $K$ outputs
+- Probabilities guaranteed to sum to 1
+- Models class interdependencies
+
+### 2.13.3 Cross-Entropy for Multi-Class
+
+**Loss Function:**
+$$\mathcal{L} = -\sum_{k=1}^{K} y_k \log(\hat{y}_k)$$
+
+Where $\mathbf{y}$ is one-hot encoded: $y_k = 1$ if $k$ is the true class, 0 otherwise.
+
+**Simplified:**
+$$\mathcal{L} = -\log(\hat{y}_{y_{true}})$$
+
+**Information Theory Interpretation:**
+Cross-entropy measures the difference between true distribution $p$ and predicted distribution $q$:
+$$H(p, q) = -\sum_{k} p(k) \log q(k)$$
+
+### 2.13.4 Evaluation Metrics
+
+**Accuracy:**
+$$\text{Accuracy} = \frac{\text{correct predictions}}{\text{total predictions}}$$
+
+**Confusion Matrix:**
+
+| | Predicted 1 | Predicted 2 | ... | Predicted K |
+|---|-------------|-------------|-----|-------------|
+| **Actual 1** | $c_{11}$ | $c_{12}$ | ... | $c_{1K}$ |
+| **Actual 2** | $c_{21}$ | $c_{22}$ | ... | $c_{2K}$ |
+| **...** | ... | ... | ... | ... |
+| **Actual K** | $c_{K1}$ | $c_{K2}$ | ... | $c_{KK}$ |
+
+**Per-Class Metrics:**
+- Precision: $P_k = \frac{c_{kk}}{\sum_i c_{ik}}$
+- Recall: $R_k = \frac{c_{kk}}{\sum_j c_{kj}}$
+- F1-Score: $F1_k = 2 \cdot \frac{P_k \cdot R_k}{P_k + R_k}$
+
+**Macro vs. Micro Averaging:**
+- Macro: Average per-class metrics (treats all classes equally)
+- Micro: Aggregate all predictions (favors larger classes)
+
+---
+
+## 2.14 Keras API: Sequential vs. Functional
+
+### 2.14.1 Sequential API
+
+**When to Use:**
+- Linear stack of layers
+- Single input, single output
+- Simple feedforward networks
+
+**Example:**
+```python
+from tensorflow import keras
+
+model = keras.Sequential([
+    keras.layers.Dense(64, activation='relu', input_shape=(784,)),
+    keras.layers.Dense(64, activation='relu'),
+    keras.layers.Dense(10, activation='softmax')
+])
+```
+
+**Limitations:**
+- Cannot handle multiple inputs/outputs
+- Cannot share layers
+- Cannot have branching
+
+### 2.14.2 Functional API
+
+**When to Use:**
+- Multiple inputs/outputs
+- Shared layers
+- Residual connections
+- Directed acyclic graphs
+
+**Example:**
+```python
+from tensorflow import keras
+
+inputs = keras.Input(shape=(784,))
+x = keras.layers.Dense(64, activation='relu')(inputs)
+x = keras.layers.Dense(64, activation='relu')(x)
+outputs = keras.layers.Dense(10, activation='softmax')(x)
+
+model = keras.Model(inputs=inputs, outputs=outputs)
+```
+
+**Multi-Input Example:**
+```python
+# Text input
+ text_input = keras.Input(shape=(100,), name='text')
+ x1 = keras.layers.Embedding(10000, 128)(text_input)
+ x1 = keras.layers.LSTM(64)(x1)
+
+# Image input
+image_input = keras.Input(shape=(64, 64, 3), name='image')
+x2 = keras.layers.Conv2D(32, 3, activation='relu')(image_input)
+x2 = keras.layers.GlobalMaxPooling2D()(x2)
+
+# Combine
+combined = keras.layers.concatenate([x1, x2])
+output = keras.layers.Dense(1, activation='sigmoid')(combined)
+
+model = keras.Model(inputs=[text_input, image_input], outputs=output)
+```
+
+### 2.14.3 Model Subclassing
+
+For maximum flexibility, subclass `keras.Model`:
+
+```python
+class CustomModel(keras.Model):
+    def __init__(self):
+        super().__init__()
+        self.dense1 = keras.layers.Dense(64, activation='relu')
+        self.dense2 = keras.layers.Dense(64, activation='relu')
+        self.output_layer = keras.layers.Dense(10, activation='softmax')
+    
+    def call(self, inputs):
+        x = self.dense1(inputs)
+        x = self.dense2(x)
+        return self.output_layer(x)
+
+model = CustomModel()
+```
+
+---
+
+## Key Insights Summary
+
+### Critical Concepts
+
+1. **Perceptron Convergence:** Linearly separable data guarantees convergence; margin determines speed
+
+2. **Universal Approximation:** Single hidden layer sufficient for any continuous function, but depth provides efficiency
+
+3. **Backpropagation:** Chain rule enables efficient gradient computation; forward and backward passes have similar complexity
+
+4. **Activation Functions:** Non-linearity essential; ReLU popular for computational efficiency but has dying neuron problem
+
+5. **Weight Initialization:** Proper scaling prevents vanishing/exploding gradients; Xavier for tanh/sigmoid, He for ReLU
+
+6. **Loss Functions:** Cross-entropy preferred for classification due to better gradient properties
+
+7. **Bias-Variance:** Tradeoff controlled through network architecture, regularization, and training duration
+
+### Common Pitfalls
+
+| Pitfall | Problem | Solution |
+|---------|---------|----------|
+| Zero initialization | Symmetry, no learning | Random initialization |
+| Poor weight scaling | Vanishing/exploding gradients | Xavier/He initialization |
+| Sigmoid in deep networks | Vanishing gradients | Use ReLU or variants |
+| High learning rate | Divergence, instability | Use learning rate scheduling |
+| No regularization | Overfitting | Add dropout, L2, early stopping |
+| Ignoring data preprocessing | Slow convergence, poor performance | Normalize features |
+
+### Best Practices
+
+1. **Always normalize input features**
+2. **Use appropriate initialization for activation function**
+3. **Monitor gradient norms during training**
+4. **Start with simple architecture, increase complexity as needed**
+5. **Use validation set for hyperparameter tuning**
+6. **Apply regularization early, not as afterthought**
+
+---
+
+## Further Reading
+
+1. **Original Papers:**
+   - McCulloch & Pitts (1943): "A logical calculus of the ideas immanent in nervous activity"
+   - Rosenblatt (1958): "The Perceptron: A probabilistic model for information storage and organization in the brain"
+   - Rumelhart et al. (1986): "Learning representations by back-propagating errors"
+   - Glorot & Bengio (2010): "Understanding the difficulty of training deep feedforward neural networks"
+   - He et al. (2015): "Delving deep into rectifiers: Surpassing human-level performance on ImageNet classification"
+
+2. **Textbooks:**
+   - Goodfellow, Bengio, & Courville: "Deep Learning" (Chapters 6, 7, 8)
+   - Bishop: "Pattern Recognition and Machine Learning" (Chapter 5)
+   - Nielsen: "Neural Networks and Deep Learning" (Online, free)
+
+3. **Online Resources:**
+   - CS231n: Convolutional Neural Networks for Visual Recognition (Stanford)
+   - Fast.ai: Practical Deep Learning for Coders
+   - Distill.pub: Interactive explanations
+
+---
+
+*End of Module 2 Theoretical Content*

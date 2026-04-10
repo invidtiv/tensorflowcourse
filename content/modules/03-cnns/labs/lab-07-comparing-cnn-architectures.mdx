@@ -1,0 +1,442 @@
+---
+title: "Comparing CNN Architectures"
+module: 3
+labNumber: 7
+difficulty: "easy"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Comparing CNN Architectures
+
+## Objectives
+- Implement and compare multiple CNN architectures
+- Analyze parameter efficiency vs. accuracy
+- Understand design choices in different architectures
+
+## Prerequisites
+- Completion of Labs 3.3-3.5
+- Understanding of different CNN components
+
+```python
+"""
+Lab 3.6: Comparing CNN Architectures
+LeNet, AlexNet-style, VGG-style, ResNet comparison
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers, models
+from tensorflow.keras.datasets import cifar10
+from tensorflow.keras.utils import to_categorical
+import time
+
+# =============================================================================
+# Section 1: Architecture Definitions
+# =============================================================================
+
+def build_lenet(input_shape=(32, 32, 3), num_classes=10):
+    """LeNet-style architecture."""
+    model = models.Sequential([
+        layers.Conv2D(6, 5, activation='relu', input_shape=input_shape),
+        layers.AveragePooling2D(2),
+        layers.Conv2D(16, 5, activation='relu'),
+        layers.AveragePooling2D(2),
+        layers.Flatten(),
+        layers.Dense(120, activation='relu'),
+        layers.Dense(84, activation='relu'),
+        layers.Dense(num_classes, activation='softmax')
+    ], name='LeNet')
+    return model
+
+
+def build_alexnet(input_shape=(32, 32, 3), num_classes=10):
+    """AlexNet-style architecture (adapted for CIFAR-10)."""
+    model = models.Sequential([
+        layers.Conv2D(64, 3, padding='same', activation='relu', input_shape=input_shape),
+        layers.BatchNormalization(),
+        layers.MaxPooling2D(2),
+        layers.Dropout(0.25),
+        
+        layers.Conv2D(192, 3, padding='same', activation='relu'),
+        layers.BatchNormalization(),
+        layers.MaxPooling2D(2),
+        layers.Dropout(0.25),
+        
+        layers.Conv2D(384, 3, padding='same', activation='relu'),
+        layers.Conv2D(256, 3, padding='same', activation='relu'),
+        layers.Conv2D(256, 3, padding='same', activation='relu'),
+        layers.MaxPooling2D(2),
+        layers.Dropout(0.25),
+        
+        layers.Flatten(),
+        layers.Dense(512, activation='relu'),
+        layers.Dropout(0.5),
+        layers.Dense(512, activation='relu'),
+        layers.Dropout(0.5),
+        layers.Dense(num_classes, activation='softmax')
+    ], name='AlexNet')
+    return model
+
+
+def build_vgg(input_shape=(32, 32, 3), num_classes=10):
+    """VGG-style architecture (VGG-11 simplified)."""
+    model = models.Sequential([
+        # Block 1
+        layers.Conv2D(64, 3, padding='same', activation='relu', input_shape=input_shape),
+        layers.BatchNormalization(),
+        layers.MaxPooling2D(2),
+        
+        # Block 2
+        layers.Conv2D(128, 3, padding='same', activation='relu'),
+        layers.BatchNormalization(),
+        layers.MaxPooling2D(2),
+        
+        # Block 3
+        layers.Conv2D(256, 3, padding='same', activation='relu'),
+        layers.Conv2D(256, 3, padding='same', activation='relu'),
+        layers.BatchNormalization(),
+        layers.MaxPooling2D(2),
+        
+        # Block 4
+        layers.Conv2D(512, 3, padding='same', activation='relu'),
+        layers.Conv2D(512, 3, padding='same', activation='relu'),
+        layers.BatchNormalization(),
+        layers.MaxPooling2D(2),
+        
+        layers.Flatten(),
+        layers.Dense(512, activation='relu'),
+        layers.Dropout(0.5),
+        layers.Dense(num_classes, activation='softmax')
+    ], name='VGG')
+    return model
+
+
+def residual_block(x, filters, stride=1):
+    """Residual block helper."""
+    shortcut = x
+    
+    x = layers.Conv2D(filters, 3, strides=stride, padding='same', use_bias=False)(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.Activation('relu')(x)
+    
+    x = layers.Conv2D(filters, 3, strides=1, padding='same', use_bias=False)(x)
+    x = layers.BatchNormalization()(x)
+    
+    if stride != 1 or shortcut.shape[-1] != filters:
+        shortcut = layers.Conv2D(filters, 1, strides=stride, padding='same', use_bias=False)(shortcut)
+        shortcut = layers.BatchNormalization()(shortcut)
+    
+    x = layers.Add()([x, shortcut])
+    x = layers.Activation('relu')(x)
+    return x
+
+
+def build_resnet(input_shape=(32, 32, 3), num_classes=10):
+    """ResNet-18 style architecture."""
+    inputs = layers.Input(shape=input_shape)
+    
+    x = layers.Conv2D(64, 3, padding='same', use_bias=False)(inputs)
+    x = layers.BatchNormalization()(x)
+    x = layers.Activation('relu')(x)
+    
+    x = residual_block(x, 64)
+    x = residual_block(x, 64)
+    x = residual_block(x, 128, stride=2)
+    x = residual_block(x, 128)
+    x = residual_block(x, 256, stride=2)
+    x = residual_block(x, 256)
+    
+    x = layers.GlobalAveragePooling2D()(x)
+    outputs = layers.Dense(num_classes, activation='softmax')(x)
+    
+    return models.Model(inputs, outputs, name='ResNet')
+
+
+# =============================================================================
+# Section 2: Architecture Comparison
+# =============================================================================
+
+print("=" * 60)
+print("CNN ARCHITECTURE COMPARISON")
+print("=" * 60)
+
+# Build all models
+models_dict = {
+    'LeNet': build_lenet(),
+    'AlexNet': build_alexnet(),
+    'VGG': build_vgg(),
+    'ResNet': build_resnet()
+}
+
+# Compare architectures
+print("\n" + "-" * 60)
+print(f"{'Architecture':<15} {'Parameters':>15} {'Layers':>10}")
+print("-" * 60)
+
+for name, model in models_dict.items():
+    params = model.count_params()
+    num_layers = len(model.layers)
+    print(f"{name:<15} {params:>15,} {num_layers:>10}")
+
+print("-" * 60)
+
+
+# =============================================================================
+# Section 3: Visualize Architectures
+# =============================================================================
+
+def visualize_architecture_comparison():
+    """Visualize key characteristics of each architecture."""
+    
+    architectures = ['LeNet', 'AlexNet', 'VGG', 'ResNet']
+    params = [models_dict[name].count_params() for name in architectures]
+    
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    
+    # Parameter count
+    colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4']
+    bars = axes[0].bar(architectures, params, color=colors, edgecolor='black')
+    axes[0].set_title('Parameter Count by Architecture', fontsize=14)
+    axes[0].set_ylabel('Number of Parameters')
+    axes[0].set_yscale('log')
+    
+    # Add value labels
+    for bar, param in zip(bars, params):
+        height = bar.get_height()
+        axes[0].text(bar.get_x() + bar.get_width()/2., height,
+                    f'{param:,.0f}', ha='center', va='bottom', fontsize=10)
+    
+    # Architecture characteristics
+    characteristics = {
+        'LeNet': [2, 1, 1, 0],   # Conv, Pool, FC, Skip
+        'AlexNet': [5, 3, 3, 0],
+        'VGG': [8, 4, 2, 0],
+        'ResNet': [8, 0, 1, 6]   # Skip connections
+    }
+    
+    x = np.arange(len(architectures))
+    width = 0.2
+    
+    axes[1].bar(x - 1.5*width, [characteristics[a][0] for a in architectures], 
+               width, label='Conv Layers', color='#FF6B6B')
+    axes[1].bar(x - 0.5*width, [characteristics[a][1] for a in architectures], 
+               width, label='Pool Layers', color='#4ECDC4')
+    axes[1].bar(x + 0.5*width, [characteristics[a][2] for a in architectures], 
+               width, label='FC Layers', color='#45B7D1')
+    axes[1].bar(x + 1.5*width, [characteristics[a][3] for a in architectures], 
+               width, label='Skip Connections', color='#96CEB4')
+    
+    axes[1].set_title('Architecture Components', fontsize=14)
+    axes[1].set_ylabel('Count')
+    axes[1].set_xticks(x)
+    axes[1].set_xticklabels(architectures)
+    axes[1].legend()
+    
+    plt.tight_layout()
+    plt.savefig('/mnt/okcomputer/output/lab36_architecture_comparison.png', dpi=150)
+    plt.show()
+    print("\nComparison saved to: /mnt/okcomputer/output/lab36_architecture_comparison.png")
+
+
+visualize_architecture_comparison()
+
+
+# =============================================================================
+# Section 4: Training Comparison
+# =============================================================================
+
+def quick_train(model, X_train, y_train, X_test, y_test, epochs=5):
+    """Quick training for comparison."""
+    model.compile(optimizer='adam',
+                  loss='categorical_crossentropy',
+                  metrics=['accuracy'])
+    
+    start = time.time()
+    history = model.fit(X_train, y_train,
+                       batch_size=128,
+                       epochs=epochs,
+                       validation_data=(X_test, y_test),
+                       verbose=0)
+    train_time = time.time() - start
+    
+    return history, train_time
+
+
+# Load CIFAR-10
+(X_train, y_train), (X_test, y_test) = cifar10.load_data()
+X_train = X_train.astype('float32') / 255.0
+X_test = X_test.astype('float32') / 255.0
+y_train = to_categorical(y_train, 10)
+y_test = to_categorical(y_test, 10)
+
+# Use subset for quick comparison
+X_train_sub = X_train[:10000]
+y_train_sub = y_train[:10000]
+
+print("\n" + "=" * 60)
+print("TRAINING COMPARISON (5 epochs, 10K samples)")
+print("=" * 60)
+
+results = {}
+for name, model in models_dict.items():
+    print(f"\nTraining {name}...")
+    history, train_time = quick_train(model, X_train_sub, y_train_sub, X_test, y_test)
+    results[name] = {
+        'history': history,
+        'time': train_time,
+        'final_acc': history.history['val_accuracy'][-1]
+    }
+    print(f"  Final val accuracy: {results[name]['final_acc']:.4f}")
+    print(f"  Training time: {train_time:.2f}s")
+
+
+# =============================================================================
+# Section 5: Visualize Training Results
+# =============================================================================
+
+def plot_training_comparison(results):
+    """Plot training comparison."""
+    
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+    
+    # Accuracy over epochs
+    for name, data in results.items():
+        axes[0].plot(data['history'].history['val_accuracy'], 
+                    label=name, marker='o', linewidth=2)
+    axes[0].set_title('Validation Accuracy', fontsize=14)
+    axes[0].set_xlabel('Epoch')
+    axes[0].set_ylabel('Accuracy')
+    axes[0].legend()
+    axes[0].grid(True)
+    
+    # Loss over epochs
+    for name, data in results.items():
+        axes[1].plot(data['history'].history['val_loss'], 
+                    label=name, marker='o', linewidth=2)
+    axes[1].set_title('Validation Loss', fontsize=14)
+    axes[1].set_xlabel('Epoch')
+    axes[1].set_ylabel('Loss')
+    axes[1].legend()
+    axes[1].grid(True)
+    
+    # Accuracy vs Time
+    names = list(results.keys())
+    times = [results[n]['time'] for n in names]
+    accs = [results[n]['final_acc'] for n in names]
+    
+    scatter = axes[2].scatter(times, accs, s=200, c=range(len(names)), 
+                             cmap='viridis', edgecolors='black', linewidth=2)
+    for i, name in enumerate(names):
+        axes[2].annotate(name, (times[i], accs[i]), 
+                        xytext=(5, 5), textcoords='offset points',
+                        fontsize=11, fontweight='bold')
+    axes[2].set_title('Accuracy vs Training Time', fontsize=14)
+    axes[2].set_xlabel('Training Time (seconds)')
+    axes[2].set_ylabel('Validation Accuracy')
+    axes[2].grid(True)
+    
+    plt.tight_layout()
+    plt.savefig('/mnt/okcomputer/output/lab36_training_comparison.png', dpi=150)
+    plt.show()
+    print("\nTraining comparison saved to: /mnt/okcomputer/output/lab36_training_comparison.png")
+
+
+plot_training_comparison(results)
+
+
+# =============================================================================
+# Section 6: Efficiency Analysis
+# =============================================================================
+
+print("\n" + "=" * 60)
+print("EFFICIENCY ANALYSIS")
+print("=" * 60)
+
+print("\n" + "-" * 70)
+print(f"{'Architecture':<15} {'Params':>12} {'Time (s)':>10} {'Accuracy':>10} {'Efficiency':>12}")
+print("-" * 70)
+
+for name in models_dict.keys():
+    params = models_dict[name].count_params()
+    time_taken = results[name]['time']
+    acc = results[name]['final_acc']
+    efficiency = acc / (params / 1e6)  # Accuracy per million params
+    print(f"{name:<15} {params:>12,} {time_taken:>10.2f} {acc:>10.4f} {efficiency:>12.4f}")
+
+print("-" * 70)
+print("\nEfficiency = Accuracy / (Parameters in millions)")
+
+
+# =============================================================================
+# Section 7: Design Principles Summary
+# =============================================================================
+
+print("\n" + "=" * 60)
+print("CNN DESIGN PRINCIPLES")
+print("=" * 60)
+
+print("""
+1. LeNet (1998):
+   - Small, simple architecture
+   - Good for simple datasets
+   - Limited capacity for complex tasks
+
+2. AlexNet (2012):
+   - Deeper and wider
+   - ReLU activation, Dropout
+   - GPU training enabled
+
+3. VGG (2014):
+   - Small filters (3x3), deep stacks
+   - Consistent architecture
+   - High parameter count
+
+4. ResNet (2015):
+   - Skip connections solve vanishing gradients
+   - Enables very deep networks
+   - Better parameter efficiency
+
+Key Takeaways:
+- Deeper is better (with proper design)
+- Skip connections are crucial for deep networks
+- Balance depth, width, and parameters
+- Use batch normalization for stability
+""")
+
+
+# =============================================================================
+# Section 8: Exercises
+# =============================================================================
+
+print("\n" + "=" * 60)
+print("EXERCISES")
+print("=" * 60)
+
+print("""
+Exercise 1: MobileNet-style Architecture
+- Implement depthwise separable convolutions
+- Compare parameter efficiency
+
+Exercise 2: EfficientNet-style Scaling
+- Scale depth, width, and resolution together
+- Find optimal scaling
+
+Exercise 3: NAS-style Architecture Search
+- Implement random architecture search
+- Evaluate different configurations
+
+Exercise 4: Analyze FLOPs
+- Calculate FLOPs for each architecture
+- Compare with parameter count
+""")
+
+print("\n" + "=" * 60)
+print("Lab 3.6 Complete!")
+print("=" * 60)
+```
+
+---
+
+<a name="lab-37"></a>

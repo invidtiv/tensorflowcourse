@@ -1,0 +1,281 @@
+---
+title: "GAN Architecture Variations"
+module: 7
+labNumber: 4
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# GAN Architecture Variations
+
+## Objectives
+- Implement different generator architectures
+- Explore discriminator variations
+- Add noise to discriminator input
+- Implement mini-batch discrimination
+
+## Complete Implementation
+
+```python
+"""
+Lab 7.3: GAN Architecture Variations
+=====================================
+Exploring different architectural choices for GANs.
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+from tensorflow import keras
+from tensorflow.keras import layers
+
+# =============================================================================
+# Part 1: Generator Variations
+# =============================================================================
+
+class GeneratorArchitectures:
+    """Different generator architectures."""
+    
+    @staticmethod
+    def simple_generator(latent_dim, output_dim):
+        """Simple fully-connected generator."""
+        return keras.Sequential([
+            layers.Dense(256, input_shape=(latent_dim,)),
+            layers.ReLU(),
+            layers.Dense(512),
+            layers.ReLU(),
+            layers.Dense(output_dim, activation='tanh')
+        ], name='Simple_Generator')
+    
+    @staticmethod
+    def deep_generator(latent_dim, output_dim, num_layers=5):
+        """Deep generator with skip connections."""
+        inputs = keras.Input(shape=(latent_dim,))
+        x = inputs
+        
+        # Initial projection
+        x = layers.Dense(512)(x)
+        x = layers.LeakyReLU(0.2)(x)
+        x = layers.BatchNormalization()(x)
+        
+        # Deep layers with residual connections
+        for i in range(num_layers):
+            residual = x
+            x = layers.Dense(512)(x)
+            x = layers.LeakyReLU(0.2)(x)
+            x = layers.BatchNormalization()(x)
+            x = layers.Dense(512)(x)
+            x = layers.LeakyReLU(0.2)(x)
+            x = layers.BatchNormalization()(x)
+            x = layers.Add()([x, residual])  # Residual connection
+        
+        outputs = layers.Dense(output_dim, activation='tanh')(x)
+        return keras.Model(inputs, outputs, name='Deep_Generator')
+    
+    @staticmethod
+    def wide_generator(latent_dim, output_dim):
+        """Wide generator with many units per layer."""
+        return keras.Sequential([
+            layers.Dense(1024, input_shape=(latent_dim,)),
+            layers.LeakyReLU(0.2),
+            layers.BatchNormalization(),
+            layers.Dense(2048),
+            layers.LeakyReLU(0.2),
+            layers.BatchNormalization(),
+            layers.Dense(1024),
+            layers.LeakyReLU(0.2),
+            layers.BatchNormalization(),
+            layers.Dense(output_dim, activation='tanh')
+        ], name='Wide_Generator')
+
+# =============================================================================
+# Part 2: Discriminator Variations
+# =============================================================================
+
+class DiscriminatorArchitectures:
+    """Different discriminator architectures."""
+    
+    @staticmethod
+    def simple_discriminator(input_dim):
+        """Simple discriminator."""
+        return keras.Sequential([
+            layers.Dense(512, input_shape=(input_dim,)),
+            layers.LeakyReLU(0.2),
+            layers.Dropout(0.3),
+            layers.Dense(256),
+            layers.LeakyReLU(0.2),
+            layers.Dropout(0.3),
+            layers.Dense(1, activation='sigmoid')
+        ], name='Simple_Discriminator')
+    
+    @staticmethod
+    def noisy_discriminator(input_dim, noise_std=0.1):
+        """Discriminator with input noise (instance noise)."""
+        inputs = keras.Input(shape=(input_dim,))
+        
+        # Add Gaussian noise to input
+        x = layers.GaussianNoise(noise_std)(inputs)
+        
+        x = layers.Dense(512)(x)
+        x = layers.LeakyReLU(0.2)(x)
+        x = layers.Dropout(0.3)(x)
+        x = layers.Dense(256)(x)
+        x = layers.LeakyReLU(0.2)(x)
+        x = layers.Dropout(0.3)(x)
+        outputs = layers.Dense(1, activation='sigmoid')(x)
+        
+        return keras.Model(inputs, outputs, name='Noisy_Discriminator')
+    
+    @staticmethod
+    def minibatch_discriminator(input_dim):
+        """
+        Discriminator with mini-batch discrimination.
+        Helps prevent mode collapse by considering batch statistics.
+        """
+        inputs = keras.Input(shape=(input_dim,))
+        
+        x = layers.Dense(512)(inputs)
+        x = layers.LeakyReLU(0.2)(x)
+        
+        # Mini-batch discrimination layer
+        # Compute L1 distance between all pairs in batch
+        features = layers.Dense(100)(x)
+        
+        # Expand dimensions for pairwise computation
+        f_i = tf.expand_dims(features, 0)  # [1, batch, features]
+        f_j = tf.expand_dims(features, 1)  # [batch, 1, features]
+        
+        # Compute pairwise L1 distances
+        distances = tf.reduce_sum(tf.abs(f_i - f_j), axis=2)  # [batch, batch]
+        
+        # Apply negative exponential
+        minibatch_features = tf.reduce_sum(tf.exp(-distances), axis=1, keepdims=True)
+        
+        # Concatenate with original features
+        x = layers.Concatenate()([x, minibatch_features])
+        
+        x = layers.Dense(256)(x)
+        x = layers.LeakyReLU(0.2)(x)
+        x = layers.Dropout(0.3)(x)
+        outputs = layers.Dense(1, activation='sigmoid')(x)
+        
+        return keras.Model(inputs, outputs, name='Minibatch_Discriminator')
+
+# =============================================================================
+# Part 3: Spectral Normalization
+# =============================================================================
+
+class SpectralNormalization(layers.Wrapper):
+    """
+    Spectral Normalization wrapper for layers.
+    Constrains the Lipschitz constant of the layer.
+    """
+    
+    def __init__(self, layer, iteration=1, **kwargs):
+        super().__init__(layer, **kwargs)
+        self.iteration = iteration
+    
+    def build(self, input_shape):
+        super().build(input_shape)
+        
+        if hasattr(self.layer, 'kernel'):
+            self.w = self.layer.kernel
+            self.w_shape = self.w.shape.as_list()
+            
+            # Initialize u vector for power iteration
+            self.u = self.add_weight(
+                shape=(1, self.w_shape[-1]),
+                initializer='random_normal',
+                trainable=False,
+                name='sn_u'
+            )
+    
+    def call(self, inputs, training=None):
+        if hasattr(self.layer, 'kernel'):
+            # Power iteration for spectral norm
+            w_reshaped = tf.reshape(self.w, [-1, self.w_shape[-1]])
+            
+            u_hat = self.u
+            for _ in range(self.iteration):
+                v_hat = tf.nn.l2_normalize(tf.matmul(u_hat, w_reshaped, transpose_b=True))
+                u_hat = tf.nn.l2_normalize(tf.matmul(v_hat, w_reshaped))
+            
+            # Compute spectral norm
+            sigma = tf.matmul(tf.matmul(v_hat, w_reshaped), u_hat, transpose_b=True)
+            
+            # Normalize weight
+            w_norm = self.w / sigma
+            self.layer.kernel = w_norm
+            
+            # Update u
+            self.u.assign(u_hat)
+        
+        return self.layer(inputs)
+
+def build_sn_discriminator(input_dim):
+    """Build discriminator with spectral normalization."""
+    model = keras.Sequential([
+        SpectralNormalization(layers.Dense(512), input_shape=(input_dim,)),
+        layers.LeakyReLU(0.2),
+        SpectralNormalization(layers.Dense(256)),
+        layers.LeakyReLU(0.2),
+        SpectralNormalization(layers.Dense(1, activation='sigmoid'))
+    ], name='SN_Discriminator')
+    return model
+
+# =============================================================================
+# Part 4: Compare Architectures
+# =============================================================================
+
+def compare_architectures():
+    """Compare different GAN architectures."""
+    
+    # Create data
+    data = create_real_data(10000)
+    dataset = tf.data.Dataset.from_tensor_slices(data).batch(256)
+    
+    architectures = {
+        'Simple': (GeneratorArchitectures.simple_generator, 
+                   DiscriminatorArchitectures.simple_discriminator),
+        'Noisy Input': (GeneratorArchitectures.simple_generator,
+                        DiscriminatorArchitectures.noisy_discriminator),
+        'Deep Generator': (GeneratorArchitectures.deep_generator,
+                          DiscriminatorArchitectures.simple_discriminator),
+    }
+    
+    results = {}
+    
+    for name, (gen_fn, disc_fn) in architectures.items():
+        print(f"\n{'='*50}")
+        print(f"Training: {name}")
+        print('='*50)
+        
+        # Build models
+        generator = gen_fn(2, 2)
+        discriminator = disc_fn(2)
+        
+        # Create GAN
+        gan = CustomGAN(latent_dim=2, data_dim=2)
+        gan.generator = generator
+        gan.discriminator = discriminator
+        gan.compile()
+        
+        # Train
+        history = gan.fit(dataset, epochs=50, verbose=0)
+        
+        results[name] = {
+            'd_loss': history.history['d_loss'],
+            'g_loss': history.history['g_loss'],
+            'generator': generator
+        }
+        
+        print(f"Final D Loss: {history.history['d_loss'][-1]:.4f}")
+        print(f"Final G Loss: {history.history['g_loss'][-1]:.4f}")
+    
+    return results
+
+# Run comparison
+results = compare_architectures()
+```
+
+---

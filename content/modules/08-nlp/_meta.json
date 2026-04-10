@@ -1,0 +1,21 @@
+{
+  "id": "08-nlp",
+  "number": 8,
+  "title": "Natural Language Processing",
+  "shortTitle": "NLP",
+  "description": "Embeddings, RNN/LSTM/GRU, attention mechanisms, Transformer architecture, and BERT/GPT concepts with TensorFlow.",
+  "duration": "2 weeks",
+  "difficulty": "intermediate",
+  "prerequisites": [
+    4
+  ],
+  "objectives": [
+    "Master word embeddings and Word2Vec",
+    "Implement RNN, LSTM, and GRU networks",
+    "Understand attention mechanisms",
+    "Build Transformer components from scratch",
+    "Use pretrained embeddings for NLP tasks"
+  ],
+  "icon": "text",
+  "color": "#06b6d4"
+}

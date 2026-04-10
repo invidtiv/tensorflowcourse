@@ -1,0 +1,403 @@
+---
+title: "Building LeNet-5 Architecture"
+module: 3
+labNumber: 4
+difficulty: "easy"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Building LeNet-5 Architecture
+
+## Objectives
+- Implement the classic LeNet-5 architecture from scratch
+- Train on MNIST dataset
+- Understand the evolution of CNN architectures
+
+## Prerequisites
+- Understanding of convolution and pooling operations
+- Basic knowledge of Keras API
+
+```python
+"""
+Lab 3.3: Building LeNet-5 Architecture
+The classic CNN architecture by Yann LeCun (1998)
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers, models, optimizers
+from tensorflow.keras.datasets import mnist
+from tensorflow.keras.utils import to_categorical
+import time
+
+# =============================================================================
+# Section 1: LeNet-5 Architecture Overview
+# =============================================================================
+
+print("=" * 60)
+print("LeNet-5 ARCHITECTURE")
+print("=" * 60)
+
+print("""
+LeNet-5 Architecture (1998):
+===========================
+
+Input: 32x32x1 grayscale image
+
+Layer 1: C1 - Convolution
+  - 6 filters, 5x5, stride 1
+  - Output: 28x28x6
+  - Parameters: (5*5*1 + 1) * 6 = 156
+
+Layer 2: S2 - Average Pooling (Subsampling)
+  - 2x2, stride 2
+  - Output: 14x14x6
+  - Parameters: 6 * 2 = 12 (trainable coefficients)
+
+Layer 3: C3 - Convolution
+  - 16 filters, 5x5, stride 1
+  - Output: 10x10x16
+  - Parameters: (5*5*6 + 1) * 16 = 2,416
+
+Layer 4: S4 - Average Pooling
+  - 2x2, stride 2
+  - Output: 5x5x16
+  - Parameters: 16 * 2 = 32
+
+Layer 5: C5 - Convolution (Fully Connected)
+  - 120 filters, 5x5
+  - Output: 1x1x120
+  - Parameters: (5*5*16 + 1) * 120 = 48,120
+
+Layer 6: F6 - Fully Connected
+  - 84 units
+  - Output: 84
+  - Parameters: (120 + 1) * 84 = 10,164
+
+Layer 7: Output - Fully Connected
+  - 10 units (for 10 digits)
+  - Parameters: (84 + 1) * 10 = 850
+
+Total Parameters: ~61,706
+""")
+
+
+# =============================================================================
+# Section 2: Data Preparation
+# =============================================================================
+
+def load_and_preprocess_mnist():
+    """Load and preprocess MNIST dataset for LeNet-5."""
+    
+    print("\n" + "=" * 60)
+    print("LOADING MNIST DATASET")
+    print("=" * 60)
+    
+    # Load data
+    (X_train, y_train), (X_test, y_test) = mnist.load_data()
+    
+    print(f"\nOriginal training data: {X_train.shape}")
+    print(f"Original test data: {X_test.shape}")
+    
+    # LeNet-5 expects 32x32 images, MNIST is 28x28
+    # Pad with zeros to make 32x32
+    X_train = np.pad(X_train, ((0, 0), (2, 2), (2, 2)), mode='constant')
+    X_test = np.pad(X_test, ((0, 0), (2, 2), (2, 2)), mode='constant')
+    
+    # Normalize to [0, 1]
+    X_train = X_train.astype('float32') / 255.0
+    X_test = X_test.astype('float32') / 255.0
+    
+    # Add channel dimension
+    X_train = np.expand_dims(X_train, axis=-1)
+    X_test = np.expand_dims(X_test, axis=-1)
+    
+    # Convert labels to categorical
+    y_train = to_categorical(y_train, 10)
+    y_test = to_categorical(y_test, 10)
+    
+    print(f"\nPreprocessed training data: {X_train.shape}")
+    print(f"Preprocessed test data: {X_test.shape}")
+    print(f"Training labels: {y_train.shape}")
+    
+    return (X_train, y_train), (X_test, y_test)
+
+
+(X_train, y_train), (X_test, y_test) = load_and_preprocess_mnist()
+
+
+# =============================================================================
+# Section 3: Build LeNet-5 Model
+# =============================================================================
+
+def build_lenet5():
+    """
+    Build the LeNet-5 architecture using Keras.
+    """
+    
+    print("\n" + "=" * 60)
+    print("BUILDING LeNet-5 MODEL")
+    print("=" * 60)
+    
+    model = models.Sequential([
+        # Layer 1: C1 - Convolution
+        layers.Conv2D(6, kernel_size=5, strides=1, activation='tanh',
+                     input_shape=(32, 32, 1), name='C1'),
+        
+        # Layer 2: S2 - Average Pooling
+        layers.AveragePooling2D(pool_size=2, strides=2, name='S2'),
+        
+        # Layer 3: C3 - Convolution
+        layers.Conv2D(16, kernel_size=5, strides=1, activation='tanh', name='C3'),
+        
+        # Layer 4: S4 - Average Pooling
+        layers.AveragePooling2D(pool_size=2, strides=2, name='S4'),
+        
+        # Layer 5: C5 - Convolution (acts as FC)
+        layers.Conv2D(120, kernel_size=5, strides=1, activation='tanh', name='C5'),
+        
+        # Flatten for fully connected layers
+        layers.Flatten(),
+        
+        # Layer 6: F6 - Fully Connected
+        layers.Dense(84, activation='tanh', name='F6'),
+        
+        # Layer 7: Output - Fully Connected with softmax
+        layers.Dense(10, activation='softmax', name='Output')
+    ])
+    
+    return model
+
+
+# Build model
+lenet5 = build_lenet5()
+lenet5.summary()
+
+# Compile model
+lenet5.compile(optimizer=optimizers.SGD(learning_rate=0.01, momentum=0.9),
+               loss='categorical_crossentropy',
+               metrics=['accuracy'])
+
+
+# =============================================================================
+# Section 4: Train LeNet-5
+# =============================================================================
+
+def train_lenet5(model, X_train, y_train, X_test, y_test, epochs=10):
+    """Train the LeNet-5 model."""
+    
+    print("\n" + "=" * 60)
+    print("TRAINING LeNet-5")
+    print("=" * 60)
+    
+    start_time = time.time()
+    
+    history = model.fit(X_train, y_train,
+                       batch_size=128,
+                       epochs=epochs,
+                       validation_split=0.1,
+                       verbose=1)
+    
+    training_time = time.time() - start_time
+    
+    print(f"\nTraining completed in {training_time:.2f} seconds")
+    
+    # Evaluate on test set
+    test_loss, test_acc = model.evaluate(X_test, y_test, verbose=0)
+    print(f"Test accuracy: {test_acc:.4f}")
+    print(f"Test loss: {test_loss:.4f}")
+    
+    return history
+
+
+history = train_lenet5(lenet5, X_train, y_train, X_test, y_test, epochs=10)
+
+
+# =============================================================================
+# Section 5: Visualize Training History
+# =============================================================================
+
+def plot_training_history(history):
+    """Plot training and validation metrics."""
+    
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    
+    # Plot accuracy
+    axes[0].plot(history.history['accuracy'], label='Training')
+    axes[0].plot(history.history['val_accuracy'], label='Validation')
+    axes[0].set_title('Model Accuracy')
+    axes[0].set_xlabel('Epoch')
+    axes[0].set_ylabel('Accuracy')
+    axes[0].legend()
+    axes[0].grid(True)
+    
+    # Plot loss
+    axes[1].plot(history.history['loss'], label='Training')
+    axes[1].plot(history.history['val_loss'], label='Validation')
+    axes[1].set_title('Model Loss')
+    axes[1].set_xlabel('Epoch')
+    axes[1].set_ylabel('Loss')
+    axes[1].legend()
+    axes[1].grid(True)
+    
+    plt.tight_layout()
+    plt.savefig('/mnt/okcomputer/output/lab33_lenet5_training.png', dpi=150)
+    plt.show()
+    print("\nTraining history saved to: /mnt/okcomputer/output/lab33_lenet5_training.png")
+
+
+plot_training_history(history)
+
+
+# =============================================================================
+# Section 6: Visualize Predictions
+# =============================================================================
+
+def visualize_predictions(model, X_test, y_test, num_samples=10):
+    """Visualize model predictions on test samples."""
+    
+    # Get predictions
+    predictions = model.predict(X_test[:num_samples])
+    predicted_labels = np.argmax(predictions, axis=1)
+    true_labels = np.argmax(y_test[:num_samples], axis=1)
+    
+    fig, axes = plt.subplots(2, 5, figsize=(15, 6))
+    axes = axes.flatten()
+    
+    for i in range(num_samples):
+        axes[i].imshow(X_test[i, 2:-2, 2:-2, 0], cmap='gray')
+        color = 'green' if predicted_labels[i] == true_labels[i] else 'red'
+        axes[i].set_title(f'True: {true_labels[i]}\nPred: {predicted_labels[i]}', 
+                         color=color)
+        axes[i].axis('off')
+    
+    plt.tight_layout()
+    plt.savefig('/mnt/okcomputer/output/lab33_lenet5_predictions.png', dpi=150)
+    plt.show()
+    print("\nPredictions saved to: /mnt/okcomputer/output/lab33_lenet5_predictions.png")
+
+
+visualize_predictions(lenet5, X_test, y_test)
+
+
+# =============================================================================
+# Section 7: Modern LeNet Variants
+# =============================================================================
+
+def build_modern_lenet():
+    """
+    Build a modernized LeNet with ReLU and MaxPooling.
+    """
+    
+    print("\n" + "=" * 60)
+    print("MODERN LeNet VARIANT")
+    print("=" * 60)
+    
+    model = models.Sequential([
+        layers.Conv2D(6, 5, activation='relu', input_shape=(32, 32, 1)),
+        layers.BatchNormalization(),
+        layers.MaxPooling2D(2),
+        
+        layers.Conv2D(16, 5, activation='relu'),
+        layers.BatchNormalization(),
+        layers.MaxPooling2D(2),
+        
+        layers.Conv2D(120, 5, activation='relu'),
+        layers.Flatten(),
+        
+        layers.Dense(84, activation='relu'),
+        layers.Dropout(0.5),
+        layers.Dense(10, activation='softmax')
+    ])
+    
+    return model
+
+
+# Build and compare
+modern_lenet = build_modern_lenet()
+modern_lenet.summary()
+
+modern_lenet.compile(optimizer='adam',
+                    loss='categorical_crossentropy',
+                    metrics=['accuracy'])
+
+print("\nTraining modern LeNet variant...")
+modern_history = modern_lenet.fit(X_train, y_train,
+                                  batch_size=128,
+                                  epochs=5,
+                                  validation_split=0.1,
+                                  verbose=1)
+
+
+# =============================================================================
+# Section 8: Compare Architectures
+# =============================================================================
+
+def compare_architectures(history1, history2, label1='Original LeNet', label2='Modern LeNet'):
+    """Compare two architectures."""
+    
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    
+    # Accuracy comparison
+    axes[0].plot(history1.history['val_accuracy'], label=label1)
+    axes[0].plot(history2.history['val_accuracy'], label=label2)
+    axes[0].set_title('Validation Accuracy Comparison')
+    axes[0].set_xlabel('Epoch')
+    axes[0].set_ylabel('Accuracy')
+    axes[0].legend()
+    axes[0].grid(True)
+    
+    # Loss comparison
+    axes[1].plot(history1.history['val_loss'], label=label1)
+    axes[1].plot(history2.history['val_loss'], label=label2)
+    axes[1].set_title('Validation Loss Comparison')
+    axes[1].set_xlabel('Epoch')
+    axes[1].set_ylabel('Loss')
+    axes[1].legend()
+    axes[1].grid(True)
+    
+    plt.tight_layout()
+    plt.savefig('/mnt/okcomputer/output/lab33_architecture_comparison.png', dpi=150)
+    plt.show()
+    print("\nComparison saved to: /mnt/okcomputer/output/lab33_architecture_comparison.png")
+
+
+compare_architectories(history, modern_history)
+
+
+# =============================================================================
+# Section 9: Exercises
+# =============================================================================
+
+print("\n" + "=" * 60)
+print("EXERCISES")
+print("=" * 60)
+
+print("""
+Exercise 1: Modify LeNet Architecture
+- Change the number of filters in each layer
+- Observe the effect on performance and parameter count
+
+Exercise 2: Add Regularization
+- Add L2 regularization to convolutional layers
+- Compare with dropout
+
+Exercise 3: Different Optimizers
+- Train with SGD, Adam, RMSprop
+- Compare convergence speed
+
+Exercise 4: Learning Rate Scheduling
+- Implement step decay or exponential decay
+- Plot learning rate vs. epoch
+""")
+
+print("\n" + "=" * 60)
+print("Lab 3.3 Complete!")
+print("=" * 60)
+```
+
+---
+
+<a name="lab-34"></a>

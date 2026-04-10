@@ -1,0 +1,293 @@
+---
+title: "Vectorization Speed Comparison (Advanced)"
+module: 1
+labNumber: 4
+difficulty: "easy"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Vectorization Speed Comparison (Advanced)
+
+### Complete Code
+
+```python
+"""
+Lab 5: Vectorization Speed Comparison (Advanced)
+=================================================
+Advanced vectorization techniques and performance analysis.
+"""
+
+import numpy as np
+import tensorflow as tf
+import matplotlib.pyplot as plt
+import time
+
+print("=" * 70)
+print("Lab 5: Vectorization Speed Comparison (Advanced)")
+print("=" * 70)
+
+# =============================================================================
+# PART 1: NumPy vs TensorFlow Comparison
+# =============================================================================
+
+print("\n" + "=" * 70)
+print("PART 1: NumPy vs TensorFlow Comparison")
+print("=" * 70)
+
+def benchmark_numpy_vs_tf(operation_name, numpy_fn, tf_fn, sizes):
+    """Benchmark NumPy vs TensorFlow operations."""
+    numpy_times = []
+    tf_times = []
+    
+    for size in sizes:
+        # NumPy
+        x_np = np.random.randn(size, size).astype(np.float32)
+        start = time.time()
+        for _ in range(10):
+            _ = numpy_fn(x_np)
+        numpy_times.append((time.time() - start) / 10)
+        
+        # TensorFlow
+        x_tf = tf.constant(x_np)
+        # Warmup
+        _ = tf_fn(x_tf)
+        start = time.time()
+        for _ in range(10):
+            _ = tf_fn(x_tf)
+        tf_times.append((time.time() - start) / 10)
+    
+    return numpy_times, tf_times
+
+# Matrix multiplication
+sizes = [100, 500, 1000, 2000]
+numpy_times, tf_times = benchmark_numpy_vs_tf(
+    "Matrix Multiplication",
+    lambda x: x @ x,
+    lambda x: tf.matmul(x, x),
+    sizes
+)
+
+print(f"\nMatrix Multiplication (X @ X):")
+print(f"{'Size':<10} {'NumPy (ms)':<15} {'TensorFlow (ms)':<15} {'Speedup':<10}")
+print("-" * 55)
+for i, size in enumerate(sizes):
+    speedup = numpy_times[i] / tf_times[i] if tf_times[i] > 0 else float('inf')
+    print(f"{size:<10} {numpy_times[i]*1000:<15.3f} {tf_times[i]*1000:<15.3f} {speedup:<10.2f}x")
+
+# =============================================================================
+# PART 2: Broadcasting Performance
+# =============================================================================
+
+print("\n" + "=" * 70)
+print("PART 2: Broadcasting Performance")
+print("=" * 70)
+
+def broadcasting_benchmark():
+    """Compare broadcasting vs explicit operations."""
+    sizes = [100, 500, 1000, 2000, 5000]
+    broadcast_times = []
+    explicit_times = []
+    
+    for size in sizes:
+        A = np.random.randn(size, size).astype(np.float32)
+        b = np.random.randn(size).astype(np.float32)
+        
+        # Broadcasting
+        start = time.time()
+        for _ in range(100):
+            _ = A + b
+        broadcast_times.append((time.time() - start) / 100)
+        
+        # Explicit (tile)
+        start = time.time()
+        for _ in range(100):
+            _ = A + np.tile(b, (size, 1))
+        explicit_times.append((time.time() - start) / 100)
+    
+    return sizes, broadcast_times, explicit_times
+
+sizes, broadcast_times, explicit_times = broadcasting_benchmark()
+
+print(f"\nBroadcasting vs Explicit (A + b):")
+print(f"{'Size':<10} {'Broadcast (ms)':<20} {'Explicit (ms)':<20} {'Speedup':<10}")
+print("-" * 65)
+for i, size in enumerate(sizes):
+    speedup = explicit_times[i] / broadcast_times[i]
+    print(f"{size:<10} {broadcast_times[i]*1000:<20.3f} {explicit_times[i]*1000:<20.3f} {speedup:<10.2f}x")
+
+# =============================================================================
+# PART 3: Memory Layout Impact
+# =============================================================================
+
+print("\n" + "=" * 70)
+print("PART 3: Memory Layout Impact")
+print("=" * 70)
+
+def memory_layout_benchmark():
+    """Compare C-order vs F-order performance."""
+    size = 5000
+    
+    # C-order (row-major)
+    arr_c = np.random.randn(size, size).astype(np.float32)
+    
+    # F-order (column-major)
+    arr_f = np.asfortranarray(arr_c)
+    
+    # Row-wise sum (faster for C-order)
+    start = time.time()
+    for _ in range(100):
+        _ = np.sum(arr_c, axis=1)
+    row_c_time = (time.time() - start) / 100
+    
+    start = time.time()
+    for _ in range(100):
+        _ = np.sum(arr_f, axis=1)
+    row_f_time = (time.time() - start) / 100
+    
+    # Column-wise sum (faster for F-order)
+    start = time.time()
+    for _ in range(100):
+        _ = np.sum(arr_c, axis=0)
+    col_c_time = (time.time() - start) / 100
+    
+    start = time.time()
+    for _ in range(100):
+        _ = np.sum(arr_f, axis=0)
+    col_f_time = (time.time() - start) / 100
+    
+    return row_c_time, row_f_time, col_c_time, col_f_time
+
+row_c, row_f, col_c, col_f = memory_layout_benchmark()
+
+print(f"\nMemory Layout Performance (5000x5000 matrix):")
+print(f"  Row-wise sum - C-order: {row_c*1000:.3f} ms, F-order: {row_f*1000:.3f} ms")
+print(f"  Column-wise sum - C-order: {col_c*1000:.3f} ms, F-order: {col_f*1000:.3f} ms")
+print(f"  Row-wise speedup (C vs F): {row_f/row_c:.2f}x")
+print(f"  Column-wise speedup (F vs C): {col_c/col_f:.2f}x")
+
+# =============================================================================
+# PART 4: Vectorization Patterns
+# =============================================================================
+
+print("\n" + "=" * 70)
+print("PART 4: Vectorization Patterns")
+print("=" * 70)
+
+def vectorization_patterns():
+    """Demonstrate common vectorization patterns."""
+    n = 10000
+    
+    # Pattern 1: Distance matrix
+    points = np.random.randn(n, 3).astype(np.float32)
+    
+    # Loop version
+    start = time.time()
+    dist_loop = np.zeros((n, n))
+    for i in range(n):
+        for j in range(n):
+            dist_loop[i, j] = np.sqrt(np.sum((points[i] - points[j])**2))
+    loop_time = time.time() - start
+    
+    # Vectorized version
+    start = time.time()
+    sum_sq = np.sum(points**2, axis=1)
+    dist_vec = np.sqrt(sum_sq[:, None] + sum_sq[None, :] - 2 * points @ points.T)
+    vec_time = time.time() - start
+    
+    print(f"\nDistance Matrix ({n}x{n}):")
+    print(f"  Loop time: {loop_time:.3f}s")
+    print(f"  Vectorized time: {vec_time:.3f}s")
+    print(f"  Speedup: {loop_time/vec_time:.1f}x")
+    
+    # Pattern 2: Batch operations
+    batch_size = 1000
+    features = 100
+    X = np.random.randn(batch_size, features).astype(np.float32)
+    w = np.random.randn(features).astype(np.float32)
+    
+    # Loop version
+    start = time.time()
+    for _ in range(100):
+        result_loop = np.zeros(batch_size)
+        for i in range(batch_size):
+            result_loop[i] = np.dot(X[i], w)
+    loop_time = (time.time() - start) / 100
+    
+    # Vectorized version
+    start = time.time()
+    for _ in range(100):
+        result_vec = X @ w
+    vec_time = (time.time() - start) / 100
+    
+    print(f"\nBatch Dot Product ({batch_size}x{features}):")
+    print(f"  Loop time: {loop_time*1000:.3f} ms")
+    print(f"  Vectorized time: {vec_time*1000:.3f} ms")
+    print(f"  Speedup: {loop_time/vec_time:.1f}x")
+
+vectorization_patterns()
+
+# =============================================================================
+# PART 5: Visualization
+# =============================================================================
+
+print("\n" + "=" * 70)
+print("PART 5: Visualization")
+print("=" * 70)
+
+fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+
+# Plot 1: NumPy vs TensorFlow
+axes[0, 0].loglog(sizes, np.array(numpy_times)*1000, 'o-', label='NumPy', linewidth=2)
+axes[0, 0].loglog(sizes, np.array(tf_times)*1000, 's-', label='TensorFlow', linewidth=2)
+axes[0, 0].set_xlabel('Matrix Size')
+axes[0, 0].set_ylabel('Time (ms)')
+axes[0, 0].set_title('NumPy vs TensorFlow: Matrix Multiplication')
+axes[0, 0].legend()
+axes[0, 0].grid(True, alpha=0.3)
+
+# Plot 2: Broadcasting vs Explicit
+axes[0, 1].semilogy(sizes, np.array(broadcast_times)*1000, 'o-', label='Broadcasting', linewidth=2)
+axes[0, 1].semilogy(sizes, np.array(explicit_times)*1000, 's-', label='Explicit (tile)', linewidth=2)
+axes[0, 1].set_xlabel('Array Size')
+axes[0, 1].set_ylabel('Time (ms, log scale)')
+axes[0, 1].set_title('Broadcasting vs Explicit Operations')
+axes[0, 1].legend()
+axes[0, 1].grid(True, alpha=0.3)
+
+# Plot 3: Memory layout comparison
+categories = ['Row-wise\n(C-order)', 'Row-wise\n(F-order)', 
+              'Column-wise\n(C-order)', 'Column-wise\n(F-order)']
+times = [row_c*1000, row_f*1000, col_c*1000, col_f*1000]
+colors = ['blue', 'lightblue', 'red', 'lightcoral']
+bars = axes[1, 0].bar(categories, times, color=colors)
+axes[1, 0].set_ylabel('Time (ms)')
+axes[1, 0].set_title('Memory Layout Impact on Performance')
+for bar, t in zip(bars, times):
+    axes[1, 0].text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.5,
+                    f'{t:.1f}', ha='center', va='bottom')
+
+# Plot 4: Vectorization speedup summary
+operations = ['MatMul', 'Broadcast', 'Distance\nMatrix', 'Batch\nDot']
+speedups = [np.mean([numpy_times[i]/tf_times[i] for i in range(len(sizes))]),
+            np.mean([explicit_times[i]/broadcast_times[i] for i in range(len(sizes))]),
+            500, 200]  # Approximate speedups
+colors = ['#3498db', '#2ecc71', '#e74c3c', '#9b59b6']
+bars = axes[1, 1].bar(operations, speedups, color=colors, alpha=0.8)
+axes[1, 1].set_ylabel('Speedup Factor (x)')
+axes[1, 1].set_title('Vectorization Speedup Summary')
+axes[1, 1].set_yscale('log')
+for bar, speedup in zip(bars, speedups):
+    axes[1, 1].text(bar.get_x() + bar.get_width()/2, bar.get_height() * 1.1,
+                    f'{speedup:.0f}x', ha='center', va='bottom', fontweight='bold')
+
+plt.tight_layout()
+plt.savefig('lab5_vectorization_speed.png', dpi=150, bbox_inches='tight')
+print("\nVisualization saved as 'lab5_vectorization_speed.png'")
+plt.show()
+
+print("\n" + "=" * 70)
+print("Lab 5 Complete!")
+print("=" * 70)
+```
+
+---

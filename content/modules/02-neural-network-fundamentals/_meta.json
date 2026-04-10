@@ -1,0 +1,21 @@
+{
+  "id": "02-neural-network-fundamentals",
+  "number": 2,
+  "title": "Neural Network Fundamentals",
+  "shortTitle": "NN Fundamentals",
+  "description": "Master perceptrons, activation functions, loss functions, backpropagation, and build networks with Keras Sequential and Functional APIs.",
+  "duration": "2 weeks",
+  "difficulty": "beginner",
+  "prerequisites": [
+    1
+  ],
+  "objectives": [
+    "Understand perceptron architecture and universal approximation",
+    "Master activation and loss functions",
+    "Implement backpropagation from scratch",
+    "Build models with Keras Sequential and Functional APIs",
+    "Apply normalization and custom training loops"
+  ],
+  "icon": "link",
+  "color": "#8b5cf6"
+}

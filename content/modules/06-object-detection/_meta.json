@@ -1,0 +1,21 @@
+{
+  "id": "06-object-detection",
+  "number": 6,
+  "title": "Object Detection Systems",
+  "shortTitle": "Object Detection",
+  "description": "Anchors, IoU, Feature Pyramid Networks, YOLO evolution, and Transformer-based detection with the TF Object Detection API.",
+  "duration": "1 week",
+  "difficulty": "intermediate",
+  "prerequisites": [
+    3
+  ],
+  "objectives": [
+    "Understand anchor-based detection",
+    "Implement IoU and Non-Max Suppression",
+    "Master YOLO family architectures",
+    "Use TF Object Detection API",
+    "Apply Feature Pyramid Networks"
+  ],
+  "icon": "target",
+  "color": "#ef4444"
+}

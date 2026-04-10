@@ -1,0 +1,680 @@
+---
+title: "End-to-End TFX Pipeline"
+module: 10
+labNumber: 12
+difficulty: "hard"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# End-to-End TFX Pipeline
+
+## Objectives
+- Build a complete TFX pipeline
+- Run pipeline locally
+- Understand pipeline orchestration
+- Implement continuous training workflow
+
+## Complete Implementation
+
+```python
+"""
+Lab 10.11: End-to-End TFX Pipeline
+==================================
+Build and run a complete TFX pipeline with all components.
+"""
+
+import tensorflow as tf
+from tfx import v1 as tfx
+from tfx.orchestration.local.local_dag_runner import LocalDagRunner
+from tfx.orchestration.metadata import sqlite_metadata_connection_config
+import pandas as pd
+import numpy as np
+import os
+
+print("=" * 60)
+print("Lab 10.11: End-to-End TFX Pipeline")
+print("=" * 60)
+
+# ============================================================
+# PART 1: Pipeline Setup
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 1: Pipeline Setup")
+print("=" * 60)
+
+# Pipeline configuration
+PIPELINE_NAME = "end_to_end_pipeline"
+PIPELINE_ROOT = os.path.join(os.getcwd(), 'tfx_pipeline', PIPELINE_NAME)
+METADATA_PATH = os.path.join(PIPELINE_ROOT, 'metadata.sqlite')
+DATA_PATH = os.path.join(PIPELINE_ROOT, 'data')
+SERVING_PATH = os.path.join(PIPELINE_ROOT, 'serving_model')
+
+# Create directories
+for path in [PIPELINE_ROOT, DATA_PATH, SERVING_PATH, 
+             os.path.join(PIPELINE_ROOT, 'modules')]:
+    os.makedirs(path, exist_ok=True)
+
+print(f"Pipeline Name: {PIPELINE_NAME}")
+print(f"Pipeline Root: {PIPELINE_ROOT}")
+print(f"Data Path: {DATA_PATH}")
+print(f"Serving Path: {SERVING_PATH}")
+
+# ============================================================
+# PART 2: Generate Sample Data
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 2: Generate Sample Data")
+print("=" * 60)
+
+# Generate synthetic churn prediction dataset
+np.random.seed(42)
+n_samples = 2000
+
+data = pd.DataFrame({
+    'customer_tenure': np.random.randint(1, 72, n_samples),
+    'monthly_charges': np.random.uniform(20, 120, n_samples),
+    'total_charges': np.random.uniform(100, 8000, n_samples),
+    'contract_type': np.random.choice(['Month-to-month', 'One year', 'Two year'], n_samples),
+    'payment_method': np.random.choice(['Electronic check', 'Mailed check', 
+                                        'Bank transfer', 'Credit card'], n_samples),
+    'internet_service': np.random.choice(['DSL', 'Fiber optic', 'No'], n_samples),
+    'tech_support': np.random.choice(['Yes', 'No'], n_samples),
+    'online_security': np.random.choice(['Yes', 'No'], n_samples),
+    'churn': np.random.choice([0, 1], n_samples, p=[0.7, 0.3])
+})
+
+# Add some missing values
+data.loc[np.random.choice(n_samples, 100, replace=False), 'monthly_charges'] = np.nan
+
+# Save data
+data_file = os.path.join(DATA_PATH, 'churn_data.csv')
+data.to_csv(data_file, index=False)
+
+print(f"Dataset created: {data_file}")
+print(f"Samples: {len(data)}")
+print(f"Features: {len(data.columns) - 1}")
+print(f"\nClass distribution:")
+print(data['churn'].value_counts())
+print(f"\nFirst 5 rows:")
+print(data.head())
+
+# ============================================================
+# PART 3: Create Pipeline Modules
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 3: Creating Pipeline Modules")
+print("=" * 60)
+
+MODULES_PATH = os.path.join(PIPELINE_ROOT, 'modules')
+
+# Transform module
+TRANSFORM_MODULE = os.path.join(MODULES_PATH, 'transform.py')
+transform_code = '''
+import tensorflow as tf
+import tensorflow_transform as tft
+
+NUMERIC_FEATURES = [
+    'customer_tenure', 'monthly_charges', 'total_charges'
+]
+
+CATEGORICAL_FEATURES = [
+    'contract_type', 'payment_method', 'internet_service',
+    'tech_support', 'online_security'
+]
+
+LABEL_KEY = 'churn'
+
+def preprocessing_fn(inputs):
+    """Transform raw inputs into transformed features."""
+    outputs = {}
+    
+    # Process numeric features
+    for key in NUMERIC_FEATURES:
+        # Fill missing values
+        filled = tft.sparse_tensor_to_dense_with_missing(
+            inputs[key], default_value=0.0
+        )
+        # Scale to [0, 1]
+        outputs[key + '_scaled'] = tft.scale_to_0_1(filled)
+    
+    # Process categorical features
+    for key in CATEGORICAL_FEATURES:
+        outputs[key + '_indexed'] = tft.compute_and_apply_vocabulary(
+            inputs[key],
+            num_oov_buckets=1
+        )
+    
+    # Label
+    outputs[LABEL_KEY] = inputs[LABEL_KEY]
+    
+    return outputs
+'''
+
+with open(TRANSFORM_MODULE, 'w') as f:
+    f.write(transform_code)
+print(f"Transform module: {TRANSFORM_MODULE}")
+
+# Trainer module
+TRAINER_MODULE = os.path.join(MODULES_PATH, 'trainer.py')
+trainer_code = '''
+import tensorflow as tf
+from tfx import v1 as tfx
+from tfx_bsl.public import tfxio
+from tensorflow_transform import TFTransformOutput
+
+NUMERIC_FEATURES = ['customer_tenure_scaled', 'monthly_charges_scaled', 'total_charges_scaled']
+CATEGORICAL_FEATURES = ['contract_type_indexed', 'payment_method_indexed', 
+                        'internet_service_indexed', 'tech_support_indexed', 'online_security_indexed']
+LABEL_KEY = 'churn'
+
+def _input_fn(file_pattern, data_accessor, tf_transform_output, batch_size=64):
+    """Create input dataset."""
+    dataset = data_accessor.tf_dataset_factory(
+        file_pattern,
+        tfxio.TensorFlowDatasetOptions(batch_size=batch_size, label_key=LABEL_KEY),
+        tf_transform_output.transformed_metadata.schema
+    )
+    return dataset
+
+def _build_model(tf_transform_output):
+    """Build Keras model."""
+    # Numeric inputs
+    numeric_inputs = []
+    for key in NUMERIC_FEATURES:
+        numeric_inputs.append(tf.keras.Input(shape=(1,), name=key))
+    
+    # Categorical inputs with embeddings
+    categorical_inputs = []
+    vocab_sizes = {}
+    for key in CATEGORICAL_FEATURES:
+        vocab_size = tf_transform_output.vocabulary_size_by_name(key.replace('_indexed', ''))
+        vocab_sizes[key] = vocab_size
+        categorical_inputs.append(tf.keras.Input(shape=(1,), name=key, dtype=tf.int64))
+    
+    # Embedding layers for categorical features
+    embedded = []
+    for i, key in enumerate(CATEGORICAL_FEATURES):
+        vocab_size = vocab_sizes[key]
+        embed_dim = min(50, (vocab_size + 1) // 2)
+        embed = tf.keras.layers.Embedding(vocab_size + 1, embed_dim)(categorical_inputs[i])
+        embed = tf.keras.layers.Flatten()(embed)
+        embedded.append(embed)
+    
+    # Concatenate all features
+    all_features = numeric_inputs + embedded
+    concatenated = tf.keras.layers.concatenate(all_features)
+    
+    # Hidden layers
+    x = tf.keras.layers.Dense(128, activation='relu')(concatenated)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Dropout(0.3)(x)
+    x = tf.keras.layers.Dense(64, activation='relu')(x)
+    x = tf.keras.layers.Dropout(0.3)(x)
+    x = tf.keras.layers.Dense(32, activation='relu')(x)
+    
+    # Output
+    output = tf.keras.layers.Dense(1, activation='sigmoid', name='output')(x)
+    
+    # Create model
+    model = tf.keras.Model(
+        inputs=numeric_inputs + categorical_inputs,
+        outputs=output
+    )
+    
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+        loss='binary_crossentropy',
+        metrics=[
+            'accuracy',
+            tf.keras.metrics.AUC(name='auc'),
+            tf.keras.metrics.Precision(name='precision'),
+            tf.keras.metrics.Recall(name='recall')
+        ]
+    )
+    
+    return model
+
+def run_fn(fn_args):
+    """Training function."""
+    tf_transform_output = TFTransformOutput(fn_args.transform_output)
+    
+    train_dataset = _input_fn(
+        fn_args.train_files,
+        fn_args.data_accessor,
+        tf_transform_output,
+        batch_size=64
+    )
+    
+    eval_dataset = _input_fn(
+        fn_args.eval_files,
+        fn_args.data_accessor,
+        tf_transform_output,
+        batch_size=64
+    )
+    
+    model = _build_model(tf_transform_output)
+    
+    # Callbacks
+    callbacks = [
+        tf.keras.callbacks.EarlyStopping(
+            monitor='val_auc',
+            patience=5,
+            restore_best_weights=True
+        ),
+        tf.keras.callbacks.ReduceLROnPlateau(
+            monitor='val_loss',
+            factor=0.5,
+            patience=3
+        )
+    ]
+    
+    # Train
+    history = model.fit(
+        train_dataset,
+        validation_data=eval_dataset,
+        epochs=20,
+        callbacks=callbacks,
+        steps_per_epoch=100,
+        validation_steps=20
+    )
+    
+    # Save model
+    model.save(fn_args.serving_model_dir, save_format='tf')
+    
+    # Print final metrics
+    print("\\nFinal training metrics:")
+    for metric, values in history.history.items():
+        print(f"  {metric}: {values[-1]:.4f}")
+'''
+
+with open(TRAINER_MODULE, 'w') as f:
+    f.write(trainer_code)
+print(f"Trainer module: {TRAINER_MODULE}")
+
+# ============================================================
+# PART 4: Build Pipeline
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 4: Building Pipeline")
+print("=" * 60)
+
+def create_pipeline(pipeline_name, pipeline_root, data_path, serving_path, 
+                    transform_module, trainer_module):
+    """Create TFX pipeline."""
+    
+    from tfx.proto import example_gen_pb2, trainer_pb2, pusher_pb2
+    import tensorflow_model_analysis as tfma
+    
+    # 1. ExampleGen - Data ingestion
+    example_gen = tfx.components.CsvExampleGen(
+        input_base=data_path,
+        output_config=example_gen_pb2.Output(
+            split_config=example_gen_pb2.SplitConfig(splits=[
+                example_gen_pb2.SplitConfig.Split(name='train', hash_buckets=8),
+                example_gen_pb2.SplitConfig.Split(name='eval', hash_buckets=2)
+            ])
+        )
+    )
+    
+    # 2. StatisticsGen - Compute statistics
+    statistics_gen = tfx.components.StatisticsGen(
+        examples=example_gen.outputs['examples']
+    )
+    
+    # 3. SchemaGen - Generate schema
+    schema_gen = tfx.components.SchemaGen(
+        statistics=statistics_gen.outputs['statistics'],
+        infer_feature_shape=True
+    )
+    
+    # 4. ExampleValidator - Validate data
+    example_validator = tfx.components.ExampleValidator(
+        statistics=statistics_gen.outputs['statistics'],
+        schema=schema_gen.outputs['schema']
+    )
+    
+    # 5. Transform - Feature engineering
+    transform = tfx.components.Transform(
+        examples=example_gen.outputs['examples'],
+        schema=schema_gen.outputs['schema'],
+        module_file=transform_module
+    )
+    
+    # 6. Trainer - Train model
+    trainer = tfx.components.Trainer(
+        module_file=trainer_module,
+        examples=transform.outputs['transformed_examples'],
+        transform_graph=transform.outputs['transform_graph'],
+        schema=schema_gen.outputs['schema'],
+        train_args=trainer_pb2.TrainArgs(num_steps=100),
+        eval_args=trainer_pb2.EvalArgs(num_steps=20)
+    )
+    
+    # 7. Evaluator - Evaluate model
+    eval_config = tfma.EvalConfig(
+        model_specs=[
+            tfma.ModelSpec(
+                label_key='churn',
+                prediction_key='output'
+            )
+        ],
+        slicing_specs=[
+            tfma.SlicingSpec(),  # Overall
+            tfma.SlicingSpec(feature_keys=['contract_type_indexed']),
+            tfma.SlicingSpec(feature_keys=['internet_service_indexed'])
+        ],
+        metrics_specs=[
+            tfma.MetricsSpec(metrics=[
+                tfma.MetricConfig(class_name='AUC'),
+                tfma.MetricConfig(class_name='Accuracy'),
+                tfma.MetricConfig(class_name='Precision'),
+                tfma.MetricConfig(class_name='Recall'),
+                tfma.MetricConfig(class_name='ExampleCount')
+            ])
+        ]
+    )
+    
+    evaluator = tfx.components.Evaluator(
+        examples=example_gen.outputs['examples'],
+        model=trainer.outputs['model'],
+        eval_config=eval_config
+    )
+    
+    # 8. Pusher - Deploy model
+    pusher = tfx.components.Pusher(
+        model=trainer.outputs['model'],
+        model_blessing=evaluator.outputs['blessing'],
+        push_destination=pusher_pb2.PushDestination(
+            filesystem=pusher_pb2.PushDestination.Filesystem(
+                base_directory=serving_path
+            )
+        )
+    )
+    
+    # Create pipeline
+    components = [
+        example_gen,
+        statistics_gen,
+        schema_gen,
+        example_validator,
+        transform,
+        trainer,
+        evaluator,
+        pusher
+    ]
+    
+    return tfx.dsl.Pipeline(
+        pipeline_name=pipeline_name,
+        pipeline_root=pipeline_root,
+        components=components,
+        metadata_connection_config=sqlite_metadata_connection_config(METADATA_PATH)
+    )
+
+# Create the pipeline
+print("Creating pipeline...")
+pipeline = create_pipeline(
+    PIPELINE_NAME,
+    PIPELINE_ROOT,
+    DATA_PATH,
+    SERVING_PATH,
+    TRANSFORM_MODULE,
+    TRAINER_MODULE
+)
+
+print(f"Pipeline created with {len(pipeline.components)} components")
+
+# ============================================================
+# PART 5: Run Pipeline
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 5: Running Pipeline")
+print("=" * 60)
+
+print("""
+Note: Running the full pipeline may take several minutes.
+For this lab, we'll show the structure and describe what happens.
+
+To actually run the pipeline, uncomment the following code:
+""")
+
+# Uncomment to run:
+# print("Starting pipeline execution...")
+# LocalDagRunner().run(pipeline)
+# print("Pipeline execution completed!")
+
+print("""
+Pipeline Execution Flow:
+========================
+
+1. ExampleGen
+   - Reads churn_data.csv
+   - Splits into train (80%) and eval (20%)
+   - Outputs TFRecord files
+
+2. StatisticsGen
+   - Computes statistics for all features
+   - Generates data distribution info
+
+3. SchemaGen
+   - Infers schema from statistics
+   - Defines feature types and ranges
+
+4. ExampleValidator
+   - Checks for anomalies
+   - Reports missing values, type mismatches
+
+5. Transform
+   - Scales numeric features to [0, 1]
+   - Converts categorical to indices
+   - Saves transform graph
+
+6. Trainer
+   - Builds model with embeddings
+   - Trains for up to 20 epochs
+   - Saves best model
+
+7. Evaluator
+   - Computes AUC, Accuracy, Precision, Recall
+   - Analyzes by contract type and internet service
+   - Blesses model if metrics meet thresholds
+
+8. Pusher
+   - Copies blessed model to serving directory
+   - Ready for TensorFlow Serving
+""")
+
+# ============================================================
+# PART 6: Pipeline Visualization
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 6: Pipeline Visualization")
+print("=" * 60)
+
+print("""
+Pipeline DAG Structure:
+=======================
+
+                    ┌─────────────┐
+                    │ ExampleGen  │
+                    └──────┬──────┘
+                           │
+           ┌───────────────┼───────────────┐
+           ▼               ▼               ▼
+    ┌────────────┐  ┌────────────┐  ┌────────────┐
+    │StatisticsGen│  │   Schema   │  │  Example   │
+    └─────┬──────┘  │    Gen     │  │ Validator  │
+          │         └─────┬──────┘  └────────────┘
+          │               │
+          └───────┬───────┘
+                  ▼
+           ┌────────────┐
+           │  Transform │
+           └─────┬──────┘
+                 │
+                 ▼
+           ┌────────────┐
+           │   Trainer  │
+           └─────┬──────┘
+                 │
+                 ▼
+           ┌────────────┐
+           │  Evaluator │
+           └─────┬──────┘
+                 │
+                 ▼
+           ┌────────────┐
+           │   Pusher   │
+           └────────────┘
+""")
+
+# ============================================================
+# PART 7: Continuous Training Setup
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 7: Continuous Training Setup")
+print("=" * 60)
+
+continuous_training_code = '''
+#!/usr/bin/env python3
+"""
+Continuous Training Script
+Run periodically (e.g., via cron) to retrain model with new data.
+"""
+
+import os
+import sys
+from datetime import datetime
+
+def run_pipeline():
+    """Run the TFX pipeline."""
+    
+    # Add pipeline directory to path
+    sys.path.insert(0, 'tfx_pipeline')
+    
+    # Import pipeline definition
+    from pipeline import create_pipeline
+    
+    # Configuration
+    PIPELINE_NAME = "end_to_end_pipeline"
+    PIPELINE_ROOT = os.path.join(os.getcwd(), 'tfx_pipeline', PIPELINE_NAME)
+    
+    # Create and run pipeline
+    pipeline = create_pipeline(
+        pipeline_name=PIPELINE_NAME,
+        pipeline_root=PIPELINE_ROOT,
+        data_path=os.path.join(PIPELINE_ROOT, 'data'),
+        serving_path=os.path.join(PIPELINE_ROOT, 'serving_model'),
+        transform_module=os.path.join(PIPELINE_ROOT, 'modules', 'transform.py'),
+        trainer_module=os.path.join(PIPELINE_ROOT, 'modules', 'trainer.py')
+    )
+    
+    from tfx.orchestration.local.local_dag_runner import LocalDagRunner
+    
+    print(f"[{datetime.now()}] Starting pipeline execution...")
+    LocalDagRunner().run(pipeline)
+    print(f"[{datetime.now()}] Pipeline execution completed!")
+
+if __name__ == '__main__':
+    run_pipeline()
+'''
+
+with open('continuous_training.py', 'w') as f:
+    f.write(continuous_training_code)
+
+print("Continuous training script created: continuous_training.py")
+print("""
+To schedule continuous training:
+
+1. Using cron (Linux/Mac):
+   # Edit crontab
+   crontab -e
+   
+   # Add line to run daily at 2 AM
+   0 2 * * * cd /path/to/project && python continuous_training.py >> logs/training.log 2>&1
+
+2. Using Airflow:
+   - Create DAG that runs pipeline
+   - Schedule with desired frequency
+
+3. Using Kubeflow:
+   - Deploy pipeline to Kubeflow Pipelines
+   - Configure recurring run
+""")
+
+# ============================================================
+# PART 8: Summary
+# ============================================================
+
+print("\n" + "=" * 60)
+print("SUMMARY: End-to-End TFX Pipeline")
+print("=" * 60)
+
+print("""
+What We Built:
+==============
+
+1. Complete ML Pipeline:
+   - Data ingestion → Validation → Transformation
+   - Training → Evaluation → Deployment
+
+2. Production-Ready Features:
+   - Data validation and anomaly detection
+   - Feature engineering with consistent transforms
+   - Model evaluation with slicing
+   - Automated model blessing and deployment
+
+3. Key Files Created:
+   - tfx_pipeline/end_to_end_pipeline/
+     ├── data/churn_data.csv
+     ├── modules/transform.py
+     ├── modules/trainer.py
+     └── serving_model/ (output)
+
+Best Practices:
+===============
+
+1. Data Quality:
+   - Always validate data before training
+   - Monitor for anomalies
+   - Version your data
+
+2. Feature Engineering:
+   - Use Transform for consistent preprocessing
+   - Save transformation graph for serving
+   - Document feature logic
+
+3. Model Training:
+   - Use early stopping to prevent overfitting
+   - Track multiple metrics
+   - Save best model
+
+4. Evaluation:
+   - Evaluate on multiple slices
+   - Compare against baseline
+   - Set clear blessing criteria
+
+5. Deployment:
+   - Automate model deployment
+   - Monitor serving performance
+   - Have rollback plan
+""")
+
+# Cleanup
+import shutil
+for d in ['tfx_pipeline', '__pycache__']:
+    if os.path.exists(d):
+        shutil.rmtree(d)
+for f in ['continuous_training.py']:
+    if os.path.exists(f):
+        os.remove(f)
+print("\nCleanup completed!")
+```
+
+---

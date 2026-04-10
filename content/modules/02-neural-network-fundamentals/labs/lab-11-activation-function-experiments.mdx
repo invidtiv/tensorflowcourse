@@ -1,0 +1,452 @@
+---
+title: "Activation Function Experiments"
+module: 2
+labNumber: 11
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-04-part4.md"
+---
+# Activation Function Experiments
+
+## Objectives
+- Compare different activation functions
+- Understand vanishing/exploding gradients
+- Implement custom activations
+- Visualize activation function behavior
+
+---
+
+```python
+"""
+Lab 2.4: Activation Function Experiments
+Comprehensive comparison and analysis of activation functions.
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+
+print("=" * 60)
+print("LAB 2.4: Activation Function Experiments")
+print("=" * 60)
+
+# ============================================================
+# STEP 1: Implement Common Activation Functions
+# ============================================================
+print("\n[STEP 1] Implementing activation functions from scratch...")
+
+class ActivationFunctions:
+    """Collection of activation functions with derivatives."""
+    
+    @staticmethod
+    def sigmoid(x):
+        """Sigmoid: sigma(x) = 1 / (1 + e^(-x))"""
+        return 1 / (1 + np.exp(-x))
+    
+    @staticmethod
+    def sigmoid_derivative(x):
+        """Derivative of sigmoid: sigma'(x) = sigma(x) * (1 - sigma(x))"""
+        s = ActivationFunctions.sigmoid(x)
+        return s * (1 - s)
+    
+    @staticmethod
+    def tanh(x):
+        """Hyperbolic tangent: tanh(x) = (e^x - e^(-x)) / (e^x + e^(-x))"""
+        return np.tanh(x)
+    
+    @staticmethod
+    def tanh_derivative(x):
+        """Derivative of tanh: tanh'(x) = 1 - tanh^2(x)"""
+        return 1 - np.tanh(x) ** 2
+    
+    @staticmethod
+    def relu(x):
+        """ReLU: f(x) = max(0, x)"""
+        return np.maximum(0, x)
+    
+    @staticmethod
+    def relu_derivative(x):
+        """Derivative of ReLU: f'(x) = 1 if x > 0, else 0"""
+        return np.where(x > 0, 1, 0)
+    
+    @staticmethod
+    def leaky_relu(x, alpha=0.01):
+        """Leaky ReLU: f(x) = x if x > 0, else alpha*x"""
+        return np.where(x > 0, x, alpha * x)
+    
+    @staticmethod
+    def leaky_relu_derivative(x, alpha=0.01):
+        """Derivative of Leaky ReLU"""
+        return np.where(x > 0, 1, alpha)
+    
+    @staticmethod
+    def elu(x, alpha=1.0):
+        """ELU: f(x) = x if x > 0, else alpha*(e^x - 1)"""
+        return np.where(x > 0, x, alpha * (np.exp(x) - 1))
+    
+    @staticmethod
+    def swish(x, beta=1.0):
+        """Swish: f(x) = x * sigma(beta*x)"""
+        return x * ActivationFunctions.sigmoid(beta * x)
+    
+    @staticmethod
+    def gelu(x):
+        """GELU: f(x) = x * Phi(x) where Phi is CDF of standard normal"""
+        return 0.5 * x * (1 + np.tanh(np.sqrt(2 / np.pi) * (x + 0.044715 * x ** 3)))
+    
+    @staticmethod
+    def softmax(x):
+        """Softmax: sigma(x)_i = e^(x_i) / sum_j e^(x_j)"""
+        exp_x = np.exp(x - np.max(x, axis=-1, keepdims=True))
+        return exp_x / np.sum(exp_x, axis=-1, keepdims=True)
+    
+    @staticmethod
+    def mish(x):
+        """Mish: f(x) = x * tanh(softplus(x))"""
+        return x * np.tanh(np.log(1 + np.exp(x)))
+
+# ============================================================
+# STEP 2: Visualize Activation Functions
+# ============================================================
+print("\n[STEP 2] Visualizing activation functions...")
+
+x = np.linspace(-5, 5, 1000)
+
+fig, axes = plt.subplots(3, 3, figsize=(15, 12))
+axes = axes.flatten()
+
+activations = [
+    ('Sigmoid', ActivationFunctions.sigmoid(x), ActivationFunctions.sigmoid_derivative(x)),
+    ('Tanh', ActivationFunctions.tanh(x), ActivationFunctions.tanh_derivative(x)),
+    ('ReLU', ActivationFunctions.relu(x), ActivationFunctions.relu_derivative(x)),
+    ('Leaky ReLU (alpha=0.1)', ActivationFunctions.leaky_relu(x, 0.1), 
+     ActivationFunctions.leaky_relu_derivative(x, 0.1)),
+    ('ELU (alpha=1.0)', ActivationFunctions.elu(x), None),
+    ('Swish', ActivationFunctions.swish(x), None),
+    ('GELU', ActivationFunctions.gelu(x), None),
+    ('Mish', ActivationFunctions.mish(x), None),
+]
+
+for idx, (name, func, deriv) in enumerate(activations):
+    ax = axes[idx]
+    ax.plot(x, func, 'b-', linewidth=2, label=f'{name}')
+    if deriv is not None:
+        ax.plot(x, deriv, 'r--', linewidth=2, label=f"{name}'")
+    ax.axhline(y=0, color='k', linestyle='-', alpha=0.3)
+    ax.axvline(x=0, color='k', linestyle='-', alpha=0.3)
+    ax.set_xlabel('x')
+    ax.set_ylabel('f(x)')
+    ax.set_title(name, fontweight='bold')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    ax.set_xlim(-5, 5)
+
+# Softmax visualization (different - it is for vectors)
+ax = axes[8]
+x_softmax = np.linspace(-2, 2, 100)
+y_softmax = ActivationFunctions.softmax(np.column_stack([x_softmax, -x_softmax]))
+ax.plot(x_softmax, y_softmax[:, 0], 'b-', linewidth=2, label='Softmax(x)')
+ax.plot(x_softmax, y_softmax[:, 1], 'r-', linewidth=2, label='Softmax(-x)')
+ax.axhline(y=0.5, color='k', linestyle='--', alpha=0.3)
+ax.set_xlabel('x')
+ax.set_ylabel('Probability')
+ax.set_title('Softmax', fontweight='bold')
+ax.legend()
+ax.grid(True, alpha=0.3)
+
+plt.suptitle('Activation Functions and Their Derivatives', fontsize=14, fontweight='bold')
+plt.tight_layout()
+plt.savefig('/mnt/okcomputer/output/activation_functions.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+print("\nVisualization saved!")
+
+# ============================================================
+# STEP 3: Compare Properties
+# ============================================================
+print("\n[STEP 3] Comparing activation function properties...")
+
+properties = {
+    'Sigmoid': {
+        'Range': '(0, 1)',
+        'Zero-centered': 'No',
+        'Vanishing Gradient': 'Yes',
+        'Dead Neurons': 'No',
+        'Use Case': 'Binary classification output'
+    },
+    'Tanh': {
+        'Range': '(-1, 1)',
+        'Zero-centered': 'Yes',
+        'Vanishing Gradient': 'Yes',
+        'Dead Neurons': 'No',
+        'Use Case': 'Hidden layers (RNNs)'
+    },
+    'ReLU': {
+        'Range': '[0, inf)',
+        'Zero-centered': 'No',
+        'Vanishing Gradient': 'No',
+        'Dead Neurons': 'Yes',
+        'Use Case': 'Default for hidden layers'
+    },
+    'Leaky ReLU': {
+        'Range': '(-inf, inf)',
+        'Zero-centered': 'No',
+        'Vanishing Gradient': 'No',
+        'Dead Neurons': 'No',
+        'Use Case': 'When dead neurons are a problem'
+    },
+    'ELU': {
+        'Range': '(-alpha, inf)',
+        'Zero-centered': 'Approximately',
+        'Vanishing Gradient': 'No',
+        'Dead Neurons': 'No',
+        'Use Case': 'When smooth negative values help'
+    },
+    'Swish': {
+        'Range': '(-inf, inf)',
+        'Zero-centered': 'Approximately',
+        'Vanishing Gradient': 'No',
+        'Dead Neurons': 'No',
+        'Use Case': 'Deep networks (Google recommendation)'
+    },
+    'GELU': {
+        'Range': '(-inf, inf)',
+        'Zero-centered': 'Approximately',
+        'Vanishing Gradient': 'No',
+        'Dead Neurons': 'No',
+        'Use Case': 'Transformers, BERT'
+    }
+}
+
+print("\n" + "=" * 80)
+print(f"{'Function':<15} {'Range':<15} {'Zero-Centered':<15} {'Vanishing Grad':<15} {'Dead Neurons':<15}")
+print("=" * 80)
+for name, props in properties.items():
+    print(f"{name:<15} {props['Range']:<15} {props['Zero-centered']:<15} "
+          f"{props['Vanishing Gradient']:<15} {props['Dead Neurons']:<15}")
+print("=" * 80)
+
+# ============================================================
+# STEP 4: Vanishing Gradient Demonstration
+# ============================================================
+print("\n[STEP 4] Demonstrating vanishing gradients...")
+
+def demonstrate_vanishing_gradient(activation_name, depth=20):
+    """Show how gradients vanish with depth for different activations."""
+    
+    # Initialize weights with small random values
+    np.random.seed(42)
+    weights = [np.random.randn(10, 10) * 0.01 for _ in range(depth)]
+    
+    # Input
+    x = np.random.randn(1, 10)
+    
+    # Forward pass
+    activations_dict = {'sigmoid': ActivationFunctions.sigmoid,
+                   'tanh': ActivationFunctions.tanh,
+                   'relu': ActivationFunctions.relu}
+    
+    activation = activations_dict.get(activation_name, ActivationFunctions.sigmoid)
+    
+    layer_outputs = [x]
+    current = x
+    for w in weights:
+        z = current @ w
+        current = activation(z)
+        layer_outputs.append(current)
+    
+    # Calculate gradient magnitudes (simplified)
+    gradient_magnitudes = [np.mean(np.abs(out)) for out in layer_outputs]
+    
+    return gradient_magnitudes
+
+# Compare gradient flow
+depths = range(21)
+fig, ax = plt.subplots(figsize=(10, 6))
+
+for activation in ['sigmoid', 'tanh', 'relu']:
+    magnitudes = demonstrate_vanishing_gradient(activation, depth=20)
+    ax.plot(depths, magnitudes, 'o-', linewidth=2, label=activation.capitalize())
+
+ax.set_xlabel('Layer Depth')
+ax.set_ylabel('Mean Activation Magnitude')
+ax.set_title('Vanishing Gradient Problem', fontweight='bold')
+ax.legend()
+ax.grid(True, alpha=0.3)
+ax.set_yscale('log')
+
+plt.tight_layout()
+plt.savefig('/mnt/okcomputer/output/vanishing_gradients.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+print("\nGradient flow visualization saved!")
+
+# ============================================================
+# STEP 5: Training Comparison
+# ============================================================
+print("\n[STEP 5] Comparing training with different activations...")
+
+# Generate data
+np.random.seed(42)
+X_train = np.random.randn(2000, 50)
+y_train = np.random.randint(0, 10, 2000)
+y_train_cat = tf.keras.utils.to_categorical(y_train, 10)
+
+X_test = np.random.randn(400, 50)
+y_test = np.random.randint(0, 10, 400)
+y_test_cat = tf.keras.utils.to_categorical(y_test, 10)
+
+# Test different activations
+activations_to_test = ['relu', 'tanh', 'sigmoid', 'elu', 'swish']
+results = {}
+
+for activation in activations_to_test:
+    print(f"\nTraining with {activation}...")
+    
+    # Build model
+    model = tf.keras.Sequential([
+        tf.keras.layers.Dense(128, activation=activation, input_shape=(50,)),
+        tf.keras.layers.Dropout(0.3),
+        tf.keras.layers.Dense(64, activation=activation),
+        tf.keras.layers.Dropout(0.3),
+        tf.keras.layers.Dense(10, activation='softmax')
+    ])
+    
+    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+    
+    # Train
+    history = model.fit(
+        X_train, y_train_cat,
+        validation_split=0.2,
+        epochs=20,
+        batch_size=64,
+        verbose=0
+    )
+    
+    # Evaluate
+    test_loss, test_acc = model.evaluate(X_test, y_test_cat, verbose=0)
+    
+    results[activation] = {
+        'history': history.history,
+        'test_accuracy': test_acc,
+        'final_val_loss': history.history['val_loss'][-1]
+    }
+    
+    print(f"  Test Accuracy: {test_acc:.4f}")
+    print(f"  Final Val Loss: {history.history['val_loss'][-1]:.4f}")
+
+# ============================================================
+# STEP 6: Visualize Training Results
+# ============================================================
+print("\n[STEP 6] Visualizing training results...")
+
+fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+# Training accuracy
+ax1 = axes[0]
+for activation, result in results.items():
+    ax1.plot(result['history']['val_accuracy'], label=activation, linewidth=2)
+ax1.set_xlabel('Epoch')
+ax1.set_ylabel('Validation Accuracy')
+ax1.set_title('Validation Accuracy by Activation Function', fontweight='bold')
+ax1.legend()
+ax1.grid(True, alpha=0.3)
+
+# Training loss
+ax2 = axes[1]
+for activation, result in results.items():
+    ax2.plot(result['history']['val_loss'], label=activation, linewidth=2)
+ax2.set_xlabel('Epoch')
+ax2.set_ylabel('Validation Loss')
+ax2.set_title('Validation Loss by Activation Function', fontweight='bold')
+ax2.legend()
+ax2.grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.savefig('/mnt/okcomputer/output/activation_training_comparison.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+# ============================================================
+# STEP 7: Custom Activation Function
+# ============================================================
+print("\n[STEP 7] Creating custom activation function...")
+
+class CustomActivation(tf.keras.layers.Layer):
+    """
+    Custom activation: Smooth Leaky ReLU variant.
+    
+    f(x) = x if x >= 0
+    f(x) = alpha * x / (1 - x/beta) if x < 0
+    
+    This provides smooth transition while maintaining negative gradients.
+    """
+    
+    def __init__(self, alpha=0.1, beta=5.0, **kwargs):
+        super().__init__(**kwargs)
+        self.alpha = alpha
+        self.beta = beta
+    
+    def call(self, inputs):
+        # Positive part
+        positive = tf.nn.relu(inputs)
+        
+        # Negative part (smooth)
+        negative_mask = tf.cast(inputs < 0, tf.float32)
+        negative = self.alpha * inputs / (1 - inputs / self.beta) * negative_mask
+        
+        return positive + negative
+    
+    def get_config(self):
+        config = super().get_config()
+        config.update({'alpha': self.alpha, 'beta': self.beta})
+        return config
+
+# Test custom activation
+x_test = tf.constant([-5.0, -2.0, -1.0, 0.0, 1.0, 2.0, 5.0])
+custom_activation = CustomActivation(alpha=0.1, beta=5.0)
+result = custom_activation(x_test)
+
+print(f"\nCustom activation test:")
+print(f"Input: {x_test.numpy()}")
+print(f"Output: {result.numpy()}")
+
+# Compare with standard activations
+relu_result = tf.nn.relu(x_test)
+leaky_relu_result = tf.nn.leaky_relu(x_test, alpha=0.1)
+
+print(f"\nReLU: {relu_result.numpy()}")
+print(f"Leaky ReLU: {leaky_relu_result.numpy()}")
+
+# ============================================================
+# STEP 8: Best Practices Summary
+# ============================================================
+print("\n[STEP 8] Best practices for choosing activation functions:")
+print("=" * 60)
+print("""
+1. HIDDEN LAYERS:
+   - Default: ReLU (fast, no vanishing gradient)
+   - If dead neurons: Leaky ReLU or ELU
+   - Deep networks: Swish or GELU
+   - RNNs/LSTMs: Tanh or sigmoid (for gates)
+
+2. OUTPUT LAYERS:
+   - Binary classification: Sigmoid
+   - Multi-class classification: Softmax
+   - Regression: Linear (no activation)
+   - Multi-label: Sigmoid (independent probabilities)
+
+3. AVOID:
+   - Sigmoid/Tanh in deep hidden layers (vanishing gradients)
+   - ReLU if many neurons die during training
+   - Complex activations unless necessary (slower)
+
+4. EXPERIMENT:
+   - Start with ReLU
+   - Try Swish/GELU for deep networks
+   - Monitor dead neurons and gradient flow
+""")
+
+print("\n" + "=" * 60)
+print("LAB 2.4 COMPLETED SUCCESSFULLY!")
+print("=" * 60)
+```

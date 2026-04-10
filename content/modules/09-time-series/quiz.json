@@ -1,0 +1,136 @@
+{
+  "version": 1,
+  "passingScore": 80,
+  "questions": [
+    {
+      "id": "m9-q1",
+      "type": "multiple-choice",
+      "difficulty": "easy",
+      "topic": "Stationarity",
+      "question": "A stationary time series has:",
+      "options": [
+        {
+          "text": "Statistical properties (mean, variance, autocorrelation) that do not depend on time",
+          "correct": true
+        },
+        {
+          "text": "A constant value over time",
+          "correct": false
+        },
+        {
+          "text": "No seasonality only if the mean is zero",
+          "correct": false
+        },
+        {
+          "text": "Values that are all identical",
+          "correct": false
+        }
+      ],
+      "explanation": "Weak stationarity requires constant mean and autocovariance that depends only on lag, not on absolute time."
+    },
+    {
+      "id": "m9-q2",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "ARIMA",
+      "question": "In ARIMA(p, d, q), the parameter d represents:",
+      "options": [
+        {
+          "text": "The number of differencing operations applied to make the series stationary",
+          "correct": true
+        },
+        {
+          "text": "The number of data points per day",
+          "correct": false
+        },
+        {
+          "text": "The damping factor of the AR term",
+          "correct": false
+        },
+        {
+          "text": "The Kalman filter order",
+          "correct": false
+        }
+      ],
+      "explanation": "d is the integration order \u2014 how many times the series is differenced before fitting the ARMA(p, q) model."
+    },
+    {
+      "id": "m9-q3",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Forecasting Strategies",
+      "question": "What is a disadvantage of recursive multi-step forecasting vs. direct forecasting?",
+      "options": [
+        {
+          "text": "Recursive forecasting requires retraining for each horizon",
+          "correct": false
+        },
+        {
+          "text": "Errors compound because predictions are fed back as inputs",
+          "correct": true
+        },
+        {
+          "text": "It cannot handle multivariate data",
+          "correct": false
+        },
+        {
+          "text": "It only works with linear models",
+          "correct": false
+        }
+      ],
+      "explanation": "Recursive forecasting feeds predicted values into the next step, so forecasting error accumulates across the horizon."
+    },
+    {
+      "id": "m9-q4",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "LSTM",
+      "question": "What does the forget gate of an LSTM control?",
+      "options": [
+        {
+          "text": "How much of the previous cell state to retain",
+          "correct": true
+        },
+        {
+          "text": "Which inputs are discarded entirely before processing",
+          "correct": false
+        },
+        {
+          "text": "The learning rate for that time step",
+          "correct": false
+        },
+        {
+          "text": "The gradient clipping threshold",
+          "correct": false
+        }
+      ],
+      "explanation": "The forget gate produces values in [0,1] that elementwise multiply the previous cell state, deciding what to retain."
+    },
+    {
+      "id": "m9-q5",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "Windowing",
+      "question": "When using a sliding window for sequence modeling, the window size should be chosen based on:",
+      "options": [
+        {
+          "text": "The GPU memory only",
+          "correct": false
+        },
+        {
+          "text": "The relevant temporal dependency in the data (plus memory constraints)",
+          "correct": true
+        },
+        {
+          "text": "The number of classes",
+          "correct": false
+        },
+        {
+          "text": "The optimizer learning rate",
+          "correct": false
+        }
+      ],
+      "explanation": "The window must be long enough to capture relevant temporal dependencies (seasonality, lag structure) without exceeding memory budgets."
+    }
+  ]
+}

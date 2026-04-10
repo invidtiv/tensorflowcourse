@@ -1,0 +1,337 @@
+---
+title: "3: Handling Missing Values and Outliers"
+module: 2
+labNumber: 5
+difficulty: "easy"
+estimatedTime: "45-60 minutes"
+source: "lab-02-part2.md"
+---
+# 3: Handling Missing Values and Outliers
+
+```python
+"""
+Lab 2.1.3: Handling Missing Values and Outliers
+Advanced preprocessing techniques for real-world data challenges.
+"""
+
+import tensorflow as tf
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+print("=" * 60)
+print("LAB 2.1.3: Handling Missing Values and Outliers")
+print("=" * 60)
+
+# ============================================================
+# STEP 1: Create Dataset with Missing Values and Outliers
+# ============================================================
+print("\n[STEP 1] Creating dataset with missing values and outliers...")
+
+np.random.seed(42)
+n_samples = 1000
+
+# Create base data
+data = pd.DataFrame({
+    'feature_1': np.random.normal(50, 10, n_samples),
+    'feature_2': np.random.normal(100, 20, n_samples),
+    'feature_3': np.random.exponential(30, n_samples),
+    'target': np.random.normal(0, 1, n_samples)
+})
+
+# Introduce missing values (5-10% randomly)
+missing_indices_1 = np.random.choice(n_samples, size=int(n_samples * 0.05), replace=False)
+missing_indices_2 = np.random.choice(n_samples, size=int(n_samples * 0.08), replace=False)
+data.loc[missing_indices_1, 'feature_1'] = np.nan
+data.loc[missing_indices_2, 'feature_2'] = np.nan
+
+# Introduce outliers (2% of data)
+outlier_indices = np.random.choice(n_samples, size=int(n_samples * 0.02), replace=False)
+data.loc[outlier_indices[:len(outlier_indices)//2], 'feature_1'] *= 5
+data.loc[outlier_indices[len(outlier_indices)//2:], 'feature_3'] *= 10
+
+print(f"Dataset shape: {data.shape}")
+print(f"\nMissing values per column:")
+print(data.isnull().sum())
+print(f"\nData statistics:")
+print(data.describe())
+
+# ============================================================
+# STEP 2: Detect Outliers Using Different Methods
+# ============================================================
+print("\n[STEP 2] Detecting outliers using different methods...")
+
+class OutlierDetector:
+    """Collection of outlier detection methods."""
+    
+    @staticmethod
+    def z_score_method(data, threshold=3):
+        """Detect outliers using Z-score method."""
+        z_scores = np.abs((data - data.mean()) / data.std())
+        return z_scores > threshold
+    
+    @staticmethod
+    def iqr_method(data, k=1.5):
+        """Detect outliers using IQR method."""
+        q1 = data.quantile(0.25)
+        q3 = data.quantile(0.75)
+        iqr = q3 - q1
+        lower_bound = q1 - k * iqr
+        upper_bound = q3 + k * iqr
+        return (data < lower_bound) | (data > upper_bound)
+    
+    @staticmethod
+    def modified_z_score(data, threshold=3.5):
+        """Detect outliers using Modified Z-score (MAD-based)."""
+        median = data.median()
+        mad = np.median(np.abs(data - median))
+        modified_z = 0.6745 * (data - median) / mad
+        return np.abs(modified_z) > threshold
+
+# Apply outlier detection
+for col in ['feature_1', 'feature_2', 'feature_3']:
+    print(f"\n{col}:")
+    z_outliers = OutlierDetector.z_score_method(data[col]).sum()
+    iqr_outliers = OutlierDetector.iqr_method(data[col]).sum()
+    mad_outliers = OutlierDetector.modified_z_score(data[col]).sum()
+    print(f"  Z-score outliers: {z_outliers}")
+    print(f"  IQR outliers: {iqr_outliers}")
+    print(f"  Modified Z-score outliers: {mad_outliers}")
+
+# ============================================================
+# STEP 3: Visualize Outliers
+# ============================================================
+print("\n[STEP 3] Visualizing outliers...")
+
+fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+
+for idx, col in enumerate(['feature_1', 'feature_2', 'feature_3']):
+    ax = axes[idx]
+    
+    # Box plot
+    bp = ax.boxplot(data[col].dropna(), patch_artist=True)
+    bp['boxes'][0].set_facecolor('lightblue')
+    bp['boxes'][0].set_alpha(0.7)
+    
+    # Highlight outliers
+    outliers = OutlierDetector.iqr_method(data[col])
+    outlier_values = data.loc[outliers, col].dropna()
+    ax.scatter(np.ones(len(outlier_values)) * 1.2, outlier_values, 
+               color='red', alpha=0.5, s=30, label=f'Outliers: {len(outlier_values)}')
+    
+    ax.set_title(f'{col}', fontweight='bold')
+    ax.set_ylabel('Value')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+
+plt.suptitle('Outlier Detection Visualization', fontsize=14, fontweight='bold')
+plt.tight_layout()
+plt.savefig('/mnt/okcomputer/output/outlier_detection.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+# ============================================================
+# STEP 4: Handle Missing Values
+# ============================================================
+print("\n[STEP 4] Handling missing values...")
+
+class MissingValueHandler:
+    """Collection of missing value handling strategies."""
+    
+    @staticmethod
+    def mean_imputation(data):
+        """Fill missing values with column mean."""
+        return data.fillna(data.mean())
+    
+    @staticmethod
+    def median_imputation(data):
+        """Fill missing values with column median (robust to outliers)."""
+        return data.fillna(data.median())
+    
+    @staticmethod
+    def forward_fill(data):
+        """Forward fill missing values."""
+        return data.fillna(method='ffill')
+    
+    @staticmethod
+    def knn_imputation(data, n_neighbors=5):
+        """KNN imputation (simplified version)."""
+        from sklearn.impute import KNNImputer
+        imputer = KNNImputer(n_neighbors=n_neighbors)
+        return pd.DataFrame(imputer.fit_transform(data), columns=data.columns)
+
+# Apply different imputation strategies
+strategies = {
+    'Mean Imputation': MissingValueHandler.mean_imputation,
+    'Median Imputation': MissingValueHandler.median_imputation,
+    'KNN Imputation': MissingValueHandler.knn_imputation
+}
+
+imputed_data = {}
+for name, strategy in strategies.items():
+    imputed = strategy(data.copy())
+    imputed_data[name] = imputed
+    print(f"\n{name}:")
+    print(f"  Missing values after: {imputed.isnull().sum().sum()}")
+    print(f"  Mean of feature_1: {imputed['feature_1'].mean():.2f}")
+
+# ============================================================
+# STEP 5: TensorFlow Imputation Layers
+# ============================================================
+print("\n[STEP 5] Creating TensorFlow imputation layers...")
+
+# Method 1: Using tf.where for simple imputation
+def create_imputation_layer(strategy='mean'):
+    """Create a custom imputation layer."""
+    
+    class ImputationLayer(tf.keras.layers.Layer):
+        def __init__(self, strategy='mean', fill_value=None, **kwargs):
+            super().__init__(**kwargs)
+            self.strategy = strategy
+            self.fill_value = fill_value
+            self.statistics = None
+        
+        def adapt(self, data):
+            """Learn statistics from data."""
+            if self.strategy == 'mean':
+                # Handle NaN in computation
+                mask = ~tf.math.is_nan(data)
+                masked_data = tf.where(mask, data, 0.0)
+                self.statistics = tf.reduce_sum(masked_data, axis=0) / tf.reduce_sum(tf.cast(mask, tf.float32), axis=0)
+            elif self.strategy == 'median':
+                # For median, we'll use a simple approximation
+                sorted_data = tf.sort(data, axis=0)
+                mid = tf.shape(data)[0] // 2
+                self.statistics = sorted_data[mid]
+            elif self.strategy == 'constant':
+                self.statistics = tf.constant(self.fill_value, dtype=tf.float32)
+        
+        def call(self, inputs):
+            if self.statistics is None:
+                raise ValueError("Layer must be adapted before use!")
+            
+            # Replace NaN with learned statistics
+            mask = tf.math.is_nan(inputs)
+            filled = tf.where(mask, self.statistics, inputs)
+            return filled
+    
+    return ImputationLayer(strategy=strategy, fill_value=fill_value)
+
+# Create and test imputation layer
+imputation_layer = create_imputation_layer(strategy='mean')
+
+# Prepare data with NaN
+sample_with_nan = tf.constant([
+    [1.0, 2.0, 3.0],
+    [float('nan'), 3.0, 4.0],
+    [3.0, float('nan'), 5.0],
+    [4.0, 5.0, float('nan')]
+], dtype=tf.float32)
+
+print(f"\nInput with NaN:\n{sample_with_nan.numpy()}")
+
+# Adapt the layer
+imputation_layer.adapt(sample_with_nan)
+print(f"\nLearned statistics: {imputation_layer.statistics.numpy()}")
+
+# Apply imputation
+filled = imputation_layer(sample_with_nan)
+print(f"\nAfter imputation:\n{filled.numpy()}")
+
+# ============================================================
+# STEP 6: Complete Preprocessing with Missing Values
+# ============================================================
+print("\n[STEP 6] Building complete preprocessing pipeline with missing values...")
+
+# Prepare training data
+train_data = data.sample(frac=0.8, random_state=42)
+test_data = data.drop(train_data.index)
+
+# Extract features and target
+X_train = train_data[['feature_1', 'feature_2', 'feature_3']].values
+y_train = train_data['target'].values
+X_test = test_data[['feature_1', 'feature_2', 'feature_3']].values
+y_test = test_data['target'].values
+
+print(f"Training data shape: {X_train.shape}")
+print(f"Missing values in training: {np.isnan(X_train).sum()}")
+
+# Create preprocessing pipeline using sklearn (for comparison)
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler
+
+sklearn_pipeline = Pipeline([
+    ('imputer', SimpleImputer(strategy='median')),
+    ('scaler', StandardScaler())
+])
+
+X_train_processed = sklearn_pipeline.fit_transform(X_train)
+X_test_processed = sklearn_pipeline.transform(X_test)
+
+print(f"\nAfter preprocessing:")
+print(f"  Missing values: {np.isnan(X_train_processed).sum()}")
+print(f"  Mean: {X_train_processed.mean(axis=0)}")
+print(f"  Std: {X_train_processed.std(axis=0)}")
+
+# ============================================================
+# STEP 7: Build Model with Preprocessed Data
+# ============================================================
+print("\n[STEP 7] Training model with preprocessed data...")
+
+model = tf.keras.Sequential([
+    tf.keras.layers.Dense(64, activation='relu', input_shape=(3,)),
+    tf.keras.layers.Dropout(0.2),
+    tf.keras.layers.Dense(32, activation='relu'),
+    tf.keras.layers.Dense(1)
+])
+
+model.compile(optimizer='adam', loss='mse', metrics=['mae'])
+
+history = model.fit(
+    X_train_processed, y_train,
+    validation_split=0.2,
+    epochs=30,
+    batch_size=32,
+    verbose=0
+)
+
+# Evaluate
+test_loss, test_mae = model.evaluate(X_test_processed, y_test, verbose=0)
+print(f"\nTest Loss: {test_loss:.4f}")
+print(f"Test MAE: {test_mae:.4f}")
+
+# ============================================================
+# STEP 8: Best Practices Summary
+# ============================================================
+print("\n[STEP 8] Best Practices for Handling Missing Values and Outliers:")
+print("=" * 60)
+print("""
+MISSING VALUES:
+1. Always check for missing values before training
+2. Understand WHY data is missing (MCAR, MAR, MNAR)
+3. Simple imputation (mean/median) works for small amounts
+4. KNN or iterative imputation for complex patterns
+5. Consider adding 'missing indicator' features
+6. TensorFlow layers can handle imputation in the model
+
+OUTLIERS:
+1. Visualize data first to understand distribution
+2. Use domain knowledge to identify true outliers
+3. IQR method is robust and widely used
+4. Modified Z-score for skewed distributions
+5. Consider winsorization (capping) instead of removal
+6. Log transform for highly skewed data
+
+PREPROCESSING PIPELINE:
+1. Fit preprocessing on training data only
+2. Apply same transformation to test/validation
+3. Save preprocessing parameters with model
+4. Use TensorFlow layers for production deployment
+""")
+
+print("\n" + "=" * 60)
+print("LAB 2.1.3 COMPLETED SUCCESSFULLY!")
+print("=" * 60)
+```
+
+---

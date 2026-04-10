@@ -1,0 +1,654 @@
+---
+title: "Model Performance Monitoring"
+module: 10
+labNumber: 14
+difficulty: "hard"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Model Performance Monitoring
+
+## Objectives
+- Monitor model performance in production
+- Track prediction distributions
+- Implement alerting systems
+- Create monitoring dashboards
+
+## Complete Implementation
+
+```python
+"""
+Lab 10.13: Model Performance Monitoring
+========================================
+Comprehensive model performance monitoring for production ML systems.
+"""
+
+import tensorflow as tf
+import numpy as np
+import pandas as pd
+from datetime import datetime, timedelta
+import json
+import matplotlib.pyplot as plt
+from collections import defaultdict, deque
+import warnings
+warnings.filterwarnings('ignore')
+
+print("=" * 60)
+print("Lab 10.13: Model Performance Monitoring")
+print("=" * 60)
+
+# ============================================================
+# PART 1: Create Simulated Production Environment
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 1: Create Simulated Production Environment")
+print("=" * 60)
+
+class SimulatedModel:
+    """Simulated model for demonstration."""
+    
+    def __init__(self, degradation_rate=0.0):
+        self.degradation_rate = degradation_rate
+        self.prediction_count = 0
+    
+    def predict(self, X):
+        """Make predictions with optional degradation."""
+        self.prediction_count += len(X)
+        
+        # Simulate predictions
+        true_probs = 1 / (1 + np.exp(-X[:, 0] - X[:, 1] * 0.5))
+        
+        # Add degradation over time
+        noise_level = 0.1 + self.degradation_rate * self.prediction_count / 1000
+        noise = np.random.normal(0, noise_level, len(X))
+        
+        predictions = np.clip(true_probs + noise, 0, 1)
+        return predictions
+
+class ProductionSimulator:
+    """Simulate production environment with varying conditions."""
+    
+    def __init__(self, model, n_features=5):
+        self.model = model
+        self.n_features = n_features
+        self.time_step = 0
+    
+    def generate_batch(self, batch_size=100, scenario='normal'):
+        """Generate a batch of production data."""
+        self.time_step += 1
+        
+        if scenario == 'normal':
+            # Normal operation
+            X = np.random.randn(batch_size, self.n_features)
+            y = (X[:, 0] + X[:, 1] * 0.5 + np.random.randn(batch_size) * 0.1) > 0
+        
+        elif scenario == 'shift':
+            # Data distribution shift
+            X = np.random.randn(batch_size, self.n_features) + 0.5
+            y = (X[:, 0] + X[:, 1] * 0.5 + np.random.randn(batch_size) * 0.1) > 0
+        
+        elif scenario == 'noisy':
+            # High noise period
+            X = np.random.randn(batch_size, self.n_features)
+            y = (X[:, 0] + X[:, 1] * 0.5 + np.random.randn(batch_size) * 0.5) > 0
+        
+        elif scenario == 'adversarial':
+            # Adversarial inputs
+            X = np.random.randn(batch_size, self.n_features) * 3
+            y = (X[:, 0] + X[:, 1] * 0.5 + np.random.randn(batch_size) * 0.1) > 0
+        
+        else:
+            raise ValueError(f"Unknown scenario: {scenario}")
+        
+        # Get predictions
+        predictions = self.model.predict(X)
+        
+        return {
+            'timestamp': datetime.now() + timedelta(hours=self.time_step),
+            'features': X,
+            'predictions': predictions,
+            'labels': y.astype(int),
+            'scenario': scenario
+        }
+
+# Create simulated environment
+print("Creating simulated production environment...")
+model = SimulatedModel(degradation_rate=0.05)
+production = ProductionSimulator(model)
+
+# Generate initial batch
+test_batch = production.generate_batch(batch_size=100)
+print(f"Generated batch with {len(test_batch['predictions'])} predictions")
+
+# ============================================================
+# PART 2: Performance Metrics Calculator
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 2: Performance Metrics Calculator")
+print("=" * 60)
+
+class PerformanceMetrics:
+    """Calculate various performance metrics."""
+    
+    @staticmethod
+    def accuracy(y_true, y_pred):
+        """Calculate accuracy."""
+        return np.mean(y_true == (y_pred > 0.5).astype(int))
+    
+    @staticmethod
+    def precision(y_true, y_pred):
+        """Calculate precision."""
+        pred_labels = (y_pred > 0.5).astype(int)
+        tp = np.sum((pred_labels == 1) & (y_true == 1))
+        fp = np.sum((pred_labels == 1) & (y_true == 0))
+        return tp / (tp + fp) if (tp + fp) > 0 else 0
+    
+    @staticmethod
+    def recall(y_true, y_pred):
+        """Calculate recall."""
+        pred_labels = (y_pred > 0.5).astype(int)
+        tp = np.sum((pred_labels == 1) & (y_true == 1))
+        fn = np.sum((pred_labels == 0) & (y_true == 1))
+        return tp / (tp + fn) if (tp + fn) > 0 else 0
+    
+    @staticmethod
+    def f1_score(y_true, y_pred):
+        """Calculate F1 score."""
+        prec = PerformanceMetrics.precision(y_true, y_pred)
+        rec = PerformanceMetrics.recall(y_true, y_pred)
+        return 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0
+    
+    @staticmethod
+    def auc_roc(y_true, y_pred):
+        """Calculate AUC-ROC using simple approximation."""
+        # Simple trapezoidal approximation
+        sorted_indices = np.argsort(y_pred)[::-1]
+        y_true_sorted = y_true[sorted_indices]
+        
+        n_pos = np.sum(y_true)
+        n_neg = len(y_true) - n_pos
+        
+        if n_pos == 0 or n_neg == 0:
+            return 0.5
+        
+        cum_pos = np.cumsum(y_true_sorted)
+        cum_neg = np.arange(1, len(y_true) + 1) - cum_pos
+        
+        tpr = cum_pos / n_pos
+        fpr = cum_neg / n_neg
+        
+        return np.trapz(tpr, fpr)
+    
+    @staticmethod
+    def log_loss(y_true, y_pred):
+        """Calculate binary cross-entropy loss."""
+        eps = 1e-15
+        y_pred = np.clip(y_pred, eps, 1 - eps)
+        return -np.mean(y_true * np.log(y_pred) + (1 - y_true) * np.log(1 - y_pred))
+    
+    @staticmethod
+    def calculate_all(y_true, y_pred):
+        """Calculate all metrics."""
+        return {
+            'accuracy': PerformanceMetrics.accuracy(y_true, y_pred),
+            'precision': PerformanceMetrics.precision(y_true, y_pred),
+            'recall': PerformanceMetrics.recall(y_true, y_pred),
+            'f1_score': PerformanceMetrics.f1_score(y_true, y_pred),
+            'auc_roc': PerformanceMetrics.auc_roc(y_true, y_pred),
+            'log_loss': PerformanceMetrics.log_loss(y_true, y_pred)
+        }
+
+# Test metrics
+print("\nTesting metrics calculation...")
+y_true = test_batch['labels']
+y_pred = test_batch['predictions']
+
+metrics = PerformanceMetrics.calculate_all(y_true, y_pred)
+print("\nMetrics:")
+for metric, value in metrics.items():
+    print(f"  {metric}: {value:.4f}")
+
+# ============================================================
+# PART 3: Prediction Distribution Monitoring
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 3: Prediction Distribution Monitoring")
+print("=" * 60)
+
+class PredictionMonitor:
+    """Monitor prediction distributions."""
+    
+    def __init__(self, window_size=1000):
+        self.window_size = window_size
+        self.predictions_history = deque(maxlen=window_size)
+        self.timestamps = deque(maxlen=window_size)
+    
+    def add_predictions(self, predictions, timestamp):
+        """Add new predictions to monitor."""
+        self.predictions_history.extend(predictions)
+        self.timestamps.extend([timestamp] * len(predictions))
+    
+    def get_distribution_stats(self):
+        """Get statistics about prediction distribution."""
+        if len(self.predictions_history) == 0:
+            return {}
+        
+        preds = np.array(self.predictions_history)
+        
+        return {
+            'mean': np.mean(preds),
+            'std': np.std(preds),
+            'min': np.min(preds),
+            'max': np.max(preds),
+            'median': np.median(preds),
+            'percentile_5': np.percentile(preds, 5),
+            'percentile_95': np.percentile(preds, 95),
+            'fraction_positive': np.mean(preds > 0.5)
+        }
+    
+    def detect_distribution_shift(self, reference_stats, threshold=0.1):
+        """Detect if prediction distribution has shifted."""
+        current_stats = self.get_distribution_stats()
+        
+        if not current_stats:
+            return {'shift_detected': False}
+        
+        # Compare key statistics
+        mean_diff = abs(current_stats['mean'] - reference_stats.get('mean', 0))
+        std_diff = abs(current_stats['std'] - reference_stats.get('std', 0))
+        
+        shift_detected = mean_diff > threshold or std_diff > threshold
+        
+        return {
+            'shift_detected': shift_detected,
+            'mean_difference': mean_diff,
+            'std_difference': std_diff,
+            'current_stats': current_stats
+        }
+
+# Create prediction monitor
+pred_monitor = PredictionMonitor(window_size=500)
+pred_monitor.add_predictions(test_batch['predictions'], test_batch['timestamp'])
+
+print("\nPrediction distribution stats:")
+stats = pred_monitor.get_distribution_stats()
+for key, value in stats.items():
+    print(f"  {key}: {value:.4f}")
+
+# ============================================================
+# PART 4: Comprehensive Model Monitor
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 4: Comprehensive Model Monitor")
+print("=" * 60)
+
+class ModelMonitor:
+    """Comprehensive production model monitoring."""
+    
+    def __init__(self, model_name, alert_thresholds=None):
+        self.model_name = model_name
+        self.alert_thresholds = alert_thresholds or {
+            'accuracy': 0.7,
+            'precision': 0.6,
+            'recall': 0.6,
+            'f1_score': 0.65,
+            'auc_roc': 0.7,
+            'log_loss': 1.0
+        }
+        
+        self.metrics_history = []
+        self.prediction_monitor = PredictionMonitor()
+        self.alert_history = []
+    
+    def process_batch(self, batch_data):
+        """Process a batch of production data."""
+        y_true = batch_data['labels']
+        y_pred = batch_data['predictions']
+        timestamp = batch_data['timestamp']
+        
+        # Calculate metrics
+        metrics = PerformanceMetrics.calculate_all(y_true, y_pred)
+        metrics['timestamp'] = timestamp
+        metrics['batch_size'] = len(y_true)
+        metrics['scenario'] = batch_data.get('scenario', 'unknown')
+        
+        self.metrics_history.append(metrics)
+        
+        # Update prediction monitor
+        self.prediction_monitor.add_predictions(y_pred, timestamp)
+        
+        # Check for alerts
+        alerts = self._check_alerts(metrics)
+        if alerts:
+            self.alert_history.extend(alerts)
+        
+        return metrics, alerts
+    
+    def _check_alerts(self, metrics):
+        """Check if any metrics breach thresholds."""
+        alerts = []
+        
+        for metric_name, threshold in self.alert_thresholds.items():
+            if metric_name in metrics:
+                value = metrics[metric_name]
+                
+                # For log_loss, higher is worse
+                if metric_name == 'log_loss':
+                    if value > threshold:
+                        alerts.append({
+                            'timestamp': metrics['timestamp'],
+                            'metric': metric_name,
+                            'value': value,
+                            'threshold': threshold,
+                            'severity': 'WARNING' if value < threshold * 1.5 else 'CRITICAL'
+                        })
+                else:
+                    if value < threshold:
+                        alerts.append({
+                            'timestamp': metrics['timestamp'],
+                            'metric': metric_name,
+                            'value': value,
+                            'threshold': threshold,
+                            'severity': 'WARNING' if value > threshold * 0.9 else 'CRITICAL'
+                        })
+        
+        return alerts
+    
+    def get_summary(self):
+        """Get monitoring summary."""
+        if not self.metrics_history:
+            return {"error": "No data collected"}
+        
+        df = pd.DataFrame(self.metrics_history)
+        
+        summary = {
+            'total_batches': len(self.metrics_history),
+            'total_predictions': df['batch_size'].sum(),
+            'time_range': {
+                'start': df['timestamp'].min(),
+                'end': df['timestamp'].max()
+            },
+            'average_metrics': {
+                'accuracy': df['accuracy'].mean(),
+                'precision': df['precision'].mean(),
+                'recall': df['recall'].mean(),
+                'f1_score': df['f1_score'].mean(),
+                'auc_roc': df['auc_roc'].mean()
+            },
+            'alert_count': len(self.alert_history),
+            'critical_alerts': len([a for a in self.alert_history if a['severity'] == 'CRITICAL'])
+        }
+        
+        return summary
+    
+    def plot_metrics_trend(self):
+        """Plot metrics over time."""
+        if not self.metrics_history:
+            print("No data to plot")
+            return
+        
+        df = pd.DataFrame(self.metrics_history)
+        
+        fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+        metrics_to_plot = ['accuracy', 'precision', 'recall', 'f1_score', 'auc_roc', 'log_loss']
+        
+        for idx, metric in enumerate(metrics_to_plot):
+            ax = axes[idx // 3, idx % 3]
+            ax.plot(df['timestamp'], df[metric], marker='o', linewidth=2)
+            
+            # Add threshold line if applicable
+            if metric in self.alert_thresholds:
+                threshold = self.alert_thresholds[metric]
+                ax.axhline(y=threshold, color='r', linestyle='--', alpha=0.5)
+            
+            ax.set_title(f'{metric.upper()} Over Time')
+            ax.set_xlabel('Time')
+            ax.set_ylabel(metric)
+            ax.grid(True, alpha=0.3)
+            ax.tick_params(axis='x', rotation=45)
+        
+        plt.tight_layout()
+        plt.savefig('metrics_trend.png', dpi=150, bbox_inches='tight')
+        print("\nMetrics trend saved to: metrics_trend.png")
+        plt.show()
+
+# Create model monitor
+print("\nCreating model monitor...")
+monitor = ModelMonitor('churn_prediction_model')
+
+# ============================================================
+# PART 5: Simulate Production Monitoring
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 5: Simulate Production Monitoring")
+print("=" * 60)
+
+# Reset production simulator
+model = SimulatedModel(degradation_rate=0.02)
+production = ProductionSimulator(model)
+
+# Simulate different scenarios over time
+scenarios = [
+    ('normal', 5),      # 5 batches normal
+    ('shift', 3),       # 3 batches with data shift
+    ('normal', 4),      # 4 batches normal
+    ('noisy', 3),       # 3 batches with high noise
+    ('normal', 3),      # 3 batches normal
+]
+
+print("\nSimulating production batches...")
+for scenario, n_batches in scenarios:
+    print(f"\nScenario: {scenario} ({n_batches} batches)")
+    
+    for _ in range(n_batches):
+        batch = production.generate_batch(batch_size=100, scenario=scenario)
+        metrics, alerts = monitor.process_batch(batch)
+        
+        print(f"  Accuracy: {metrics['accuracy']:.3f}, "
+              f"F1: {metrics['f1_score']:.3f}, "
+              f"AUC: {metrics['auc_roc']:.3f}")
+        
+        if alerts:
+            for alert in alerts:
+                print(f"    ALERT: {alert['severity']} - {alert['metric']} "
+                      f"({alert['value']:.3f} vs {alert['threshold']:.3f})")
+
+# ============================================================
+# PART 6: Generate Monitoring Report
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 6: Monitoring Report")
+print("=" * 60)
+
+summary = monitor.get_summary()
+
+print("\n" + "=" * 50)
+print("MODEL MONITORING REPORT")
+print("=" * 50)
+print(f"Model: {monitor.model_name}")
+print(f"Report Generated: {datetime.now()}")
+print("-" * 50)
+
+print(f"\nData Summary:")
+print(f"  Total Batches: {summary['total_batches']}")
+print(f"  Total Predictions: {summary['total_predictions']}")
+print(f"  Time Range: {summary['time_range']['start']} to {summary['time_range']['end']}")
+
+print(f"\nAverage Metrics:")
+for metric, value in summary['average_metrics'].items():
+    threshold = monitor.alert_thresholds.get(metric, 'N/A')
+    status = "✓" if (metric == 'log_loss' and value < threshold) or \
+                    (metric != 'log_loss' and value > threshold) else "✗"
+    print(f"  {metric}: {value:.4f} (threshold: {threshold}) {status}")
+
+print(f"\nAlerts:")
+print(f"  Total Alerts: {summary['alert_count']}")
+print(f"  Critical Alerts: {summary['critical_alerts']}")
+
+if monitor.alert_history:
+    print(f"\nRecent Alerts:")
+    for alert in monitor.alert_history[-5:]:
+        print(f"  [{alert['timestamp'].strftime('%H:%M')}] "
+              f"{alert['severity']}: {alert['metric']} = {alert['value']:.3f}")
+
+# Plot trends
+monitor.plot_metrics_trend()
+
+# ============================================================
+# PART 7: Alerting System
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 7: Alerting System")
+print("=" * 60)
+
+class AlertingSystem:
+    """Production alerting system."""
+    
+    def __init__(self):
+        self.alert_handlers = []
+    
+    def add_handler(self, handler):
+        """Add an alert handler."""
+        self.alert_handlers.append(handler)
+    
+    def send_alert(self, alert):
+        """Send alert through all handlers."""
+        for handler in self.alert_handlers:
+            handler(alert)
+    
+    @staticmethod
+    def console_handler(alert):
+        """Print alert to console."""
+        print(f"\n🚨 ALERT [{alert['severity']}]: {alert['metric']}")
+        print(f"   Value: {alert['value']:.4f}")
+        print(f"   Threshold: {alert['threshold']:.4f}")
+        print(f"   Time: {alert['timestamp']}")
+    
+    @staticmethod
+    def log_handler(alert):
+        """Log alert to file."""
+        log_entry = {
+            'timestamp': alert['timestamp'].isoformat(),
+            'severity': alert['severity'],
+            'metric': alert['metric'],
+            'value': alert['value'],
+            'threshold': alert['threshold']
+        }
+        
+        with open('alerts.log', 'a') as f:
+            f.write(json.dumps(log_entry) + '\n')
+
+# Create alerting system
+alerting = AlertingSystem()
+alerting.add_handler(AlertingSystem.console_handler)
+alerting.add_handler(AlertingSystem.log_handler)
+
+# Simulate sending alerts
+print("\nSimulating alert system...")
+for alert in monitor.alert_history[:3]:
+    alerting.send_alert(alert)
+
+# ============================================================
+# PART 8: Summary
+# ============================================================
+
+print("\n" + "=" * 60)
+print("SUMMARY: Model Performance Monitoring")
+print("=" * 60)
+
+print("""
+Model Monitoring Best Practices:
+================================
+
+1. Metrics to Monitor:
+   - Performance metrics (accuracy, precision, recall, F1, AUC)
+   - Prediction distribution (mean, std, percentiles)
+   - Data drift indicators
+   - Latency and throughput
+
+2. Alerting Strategy:
+   - Set appropriate thresholds
+   - Use multiple severity levels
+   - Avoid alert fatigue
+   - Include context in alerts
+
+3. Monitoring Frequency:
+   - Real-time for critical models
+   - Hourly/daily for most models
+   - Weekly for stable models
+
+4. Response Procedures:
+   - Document escalation paths
+   - Have rollback procedures
+   - Automate retraining triggers
+
+5. Dashboards and Reporting:
+   - Visualize trends over time
+   - Compare to baselines
+   - Track alert history
+   - Share reports with stakeholders
+
+Key Takeaways:
+==============
+- Monitor both performance and prediction distributions
+- Set up automated alerting
+- Track metrics over time for trend analysis
+- Have procedures for responding to alerts
+- Regular review and adjustment of thresholds
+""")
+
+# Cleanup
+import os
+for f in ['metrics_trend.png', 'alerts.log']:
+    if os.path.exists(f):
+        os.remove(f)
+print("\nCleanup completed!")
+```
+
+---
+
+# Module 10 Summary
+
+## Labs Completed
+
+### Model Quantization (3 Labs)
+1. **Lab 10.1**: Post-Training Quantization - Dynamic range, full integer, and Float16 quantization
+2. **Lab 10.2**: Quantization-Aware Training (QAT) - Training with quantization constraints
+3. **Lab 10.3**: Quantization Comparison - Comprehensive benchmarking and visualization
+
+### TensorFlow Lite (3 Labs)
+4. **Lab 10.4**: TFLite Model Conversion - Converting various model types to TFLite
+5. **Lab 10.5**: TFLite Mobile Deployment - Mobile-optimized inference and wrappers
+6. **Lab 10.6**: TFLite Optimization - Pruning, clustering, and hardware acceleration
+
+### TensorFlow Serving (3 Labs)
+7. **Lab 10.7**: TensorFlow Serving Setup - Model versioning and configuration
+8. **Lab 10.8**: REST API with TensorFlow Serving - Building API clients and Flask wrappers
+9. **Lab 10.9**: TensorFlow Serving with Docker - Production deployment with Docker Compose
+
+### TFX Pipeline (2 Labs)
+10. **Lab 10.10**: TFX Pipeline Components - Individual component implementation
+11. **Lab 10.11**: End-to-End TFX Pipeline - Complete ML pipeline with all components
+
+### Model Monitoring (2 Labs)
+12. **Lab 10.12**: Data and Concept Drift Detection - Statistical drift detection methods
+13. **Lab 10.13**: Model Performance Monitoring - Production monitoring and alerting
+
+## Key Skills Acquired
+
+- Model optimization techniques (quantization, pruning, clustering)
+- Mobile deployment with TensorFlow Lite
+- Production serving with TensorFlow Serving
+- ML pipeline orchestration with TFX
+- Production monitoring and drift detection
+
+## Output Files
+
+All labs saved to: `/mnt/okcomputer/output/module10_labs.md`

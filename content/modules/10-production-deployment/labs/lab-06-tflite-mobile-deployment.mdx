@@ -1,0 +1,497 @@
+---
+title: "TFLite Mobile Deployment"
+module: 10
+labNumber: 6
+difficulty: "hard"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# TFLite Mobile Deployment
+
+## Objectives
+- Prepare TFLite models for mobile deployment
+- Implement preprocessing and postprocessing
+- Create inference wrappers
+- Handle different input types (images, text, sensors)
+
+## Complete Implementation
+
+```python
+"""
+Lab 10.5: TFLite Mobile Deployment
+==================================
+Prepare and optimize TFLite models for mobile deployment
+with proper preprocessing and inference wrappers.
+"""
+
+import tensorflow as tf
+import numpy as np
+import cv2
+from PIL import Image
+import os
+
+print("=" * 60)
+print("Lab 10.5: TFLite Mobile Deployment")
+print("=" * 60)
+
+# ============================================================
+# PART 1: Image Classification Model for Mobile
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 1: Creating Mobile-Optimized Image Classifier")
+print("=" * 60)
+
+# Create a lightweight CNN for mobile
+def create_mobile_classifier():
+    """Create a mobile-optimized image classifier."""
+    model = tf.keras.Sequential([
+        # Mobile-friendly: depthwise separable convolutions
+        tf.keras.layers.SeparableConv2D(32, 3, activation='relu', 
+                                        input_shape=(224, 224, 3)),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.MaxPooling2D(2),
+        
+        tf.keras.layers.SeparableConv2D(64, 3, activation='relu'),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.MaxPooling2D(2),
+        
+        tf.keras.layers.SeparableConv2D(128, 3, activation='relu'),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.GlobalAveragePooling2D(),
+        
+        tf.keras.layers.Dense(64, activation='relu'),
+        tf.keras.layers.Dropout(0.3),
+        tf.keras.layers.Dense(10, activation='softmax')
+    ])
+    return model
+
+# Create model
+model = create_mobile_classifier()
+model.summary()
+
+# Save model for conversion
+model.save('mobile_classifier')
+
+# ============================================================
+# PART 2: Convert to TFLite with Mobile Optimizations
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 2: Converting to Mobile-Optimized TFLite")
+print("=" * 60)
+
+# Convert with optimizations for mobile
+converter = tf.lite.TFLiteConverter.from_saved_model('mobile_classifier')
+
+# Enable optimizations
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+
+# For mobile deployment, use these settings:
+converter.target_spec.supported_ops = [
+    tf.lite.OpsSet.TFLITE_BUILTINS,  # Use TFLite built-in ops
+]
+
+# Optional: Full integer quantization for maximum mobile performance
+def representative_dataset():
+    for _ in range(100):
+        data = np.random.rand(1, 224, 224, 3).astype(np.float32)
+        yield [data]
+
+converter.representative_dataset = representative_dataset
+converter.inference_input_type = tf.uint8   # Mobile-friendly input
+converter.inference_output_type = tf.uint8  # Mobile-friendly output
+
+tflite_model = converter.convert()
+
+# Save mobile model
+mobile_model_path = 'mobile_classifier.tflite'
+with open(mobile_model_path, 'wb') as f:
+    f.write(tflite_model)
+
+print(f"Mobile model saved: {mobile_model_path}")
+print(f"Model size: {len(tflite_model)/1024:.2f} KB")
+
+# ============================================================
+# PART 3: Mobile Inference Wrapper
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 3: Mobile Inference Wrapper Class")
+print("=" * 60)
+
+class TFLiteMobileClassifier:
+    """
+    Mobile-ready TFLite classifier wrapper.
+    
+    This class handles:
+    - Model loading and initialization
+    - Image preprocessing
+    - Inference execution
+    - Result postprocessing
+    """
+    
+    def __init__(self, model_path, num_threads=4):
+        """
+        Initialize the classifier.
+        
+        Args:
+            model_path: Path to TFLite model
+            num_threads: Number of threads for inference (mobile optimization)
+        """
+        self.interpreter = tf.lite.Interpreter(
+            model_path=model_path,
+            num_threads=num_threads  # Optimize for mobile CPU
+        )
+        self.interpreter.allocate_tensors()
+        
+        self.input_details = self.interpreter.get_input_details()
+        self.output_details = self.interpreter.get_output_details()
+        
+        # Get input specifications
+        self.input_shape = self.input_details[0]['shape']
+        self.input_dtype = self.input_details[0]['dtype']
+        self.input_quantization = self.input_details[0].get('quantization_parameters')
+        
+        print(f"Model loaded successfully")
+        print(f"Input shape: {self.input_shape}")
+        print(f"Input dtype: {self.input_dtype}")
+        
+    def preprocess_image(self, image, target_size=(224, 224)):
+        """
+        Preprocess image for inference.
+        
+        Args:
+            image: PIL Image, numpy array, or file path
+            target_size: Target size (height, width)
+        
+        Returns:
+            Preprocessed image array
+        """
+        # Load image if path provided
+        if isinstance(image, str):
+            image = Image.open(image)
+        
+        # Convert to numpy if PIL Image
+        if isinstance(image, Image.Image):
+            image = np.array(image)
+        
+        # Resize
+        image = cv2.resize(image, target_size)
+        
+        # Convert to RGB if needed
+        if len(image.shape) == 2:
+            image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+        elif image.shape[2] == 4:
+            image = cv2.cvtColor(image, cv2.COLOR_RGBA2RGB)
+        
+        # Normalize
+        image = image.astype(np.float32) / 255.0
+        
+        # Add batch dimension
+        image = np.expand_dims(image, axis=0)
+        
+        # Quantize if needed (for uint8 models)
+        if self.input_dtype == np.uint8:
+            if self.input_quantization:
+                scale, zero_point = self.input_quantization['scales'][0], \
+                                     self.input_quantization['zero_points'][0]
+                image = (image / scale + zero_point).astype(np.uint8)
+            else:
+                image = (image * 255).astype(np.uint8)
+        
+        return image
+    
+    def predict(self, image):
+        """
+        Run inference on an image.
+        
+        Args:
+            image: Input image
+        
+        Returns:
+            Dictionary with predictions
+        """
+        # Preprocess
+        processed = self.preprocess_image(image)
+        
+        # Set input tensor
+        self.interpreter.set_tensor(
+            self.input_details[0]['index'], 
+            processed
+        )
+        
+        # Run inference
+        self.interpreter.invoke()
+        
+        # Get output
+        output = self.interpreter.get_tensor(
+            self.output_details[0]['index']
+        )
+        
+        # Dequantize if needed
+        if self.output_details[0]['dtype'] == np.uint8:
+            quant_params = self.output_details[0].get('quantization_parameters')
+            if quant_params:
+                scale = quant_params['scales'][0]
+                zero_point = quant_params['zero_points'][0]
+                output = (output.astype(np.float32) - zero_point) * scale
+        
+        # Get top predictions
+        top_indices = np.argsort(output[0])[-5:][::-1]
+        
+        return {
+            'probabilities': output[0],
+            'top_predictions': [
+                {'class': int(idx), 'confidence': float(output[0][idx])}
+                for idx in top_indices
+            ]
+        }
+    
+    def benchmark(self, num_runs=100):
+        """Benchmark inference speed."""
+        import time
+        
+        dummy_input = np.random.rand(*self.input_shape).astype(np.float32)
+        
+        # Warm-up
+        for _ in range(10):
+            self.interpreter.set_tensor(self.input_details[0]['index'], dummy_input)
+            self.interpreter.invoke()
+        
+        # Benchmark
+        times = []
+        for _ in range(num_runs):
+            start = time.time()
+            self.interpreter.set_tensor(self.input_details[0]['index'], dummy_input)
+            self.interpreter.invoke()
+            times.append(time.time() - start)
+        
+        avg_time = np.mean(times) * 1000  # ms
+        std_time = np.std(times) * 1000
+        
+        return {
+            'average_ms': avg_time,
+            'std_ms': std_time,
+            'fps': 1000 / avg_time
+        }
+
+# Initialize classifier
+print("\nInitializing mobile classifier...")
+classifier = TFLiteMobileClassifier(mobile_model_path)
+
+# Test with random image
+print("\nTesting inference...")
+test_image = np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8)
+result = classifier.predict(test_image)
+print(f"Top prediction: Class {result['top_predictions'][0]['class']} "
+      f"({result['top_predictions'][0]['confidence']:.4f})")
+
+# Benchmark
+print("\nBenchmarking...")
+benchmark = classifier.benchmark()
+print(f"Average inference time: {benchmark['average_ms']:.2f} ms")
+print(f"Throughput: {benchmark['fps']:.1f} FPS")
+
+# ============================================================
+# PART 4: Handling Different Input Types
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 4: Handling Different Input Types")
+print("=" * 60)
+
+class MobileInputProcessor:
+    """Process various input types for mobile deployment."""
+    
+    @staticmethod
+    def process_camera_frame(frame, target_size=(224, 224)):
+        """
+        Process camera frame from mobile camera.
+        
+        Mobile cameras typically return:
+        - RGB or YUV format
+        - Various resolutions
+        - May need rotation
+        """
+        # Handle rotation (mobile cameras often need 90-degree rotation)
+        # frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+        
+        # Resize maintaining aspect ratio with padding
+        h, w = frame.shape[:2]
+        target_h, target_w = target_size
+        
+        scale = min(target_w / w, target_h / h)
+        new_w = int(w * scale)
+        new_h = int(h * scale)
+        
+        resized = cv2.resize(frame, (new_w, new_h))
+        
+        # Pad to target size
+        pad_h = (target_h - new_h) // 2
+        pad_w = (target_w - new_w) // 2
+        
+        padded = cv2.copyMakeBorder(
+            resized, pad_h, target_h - new_h - pad_h,
+            pad_w, target_w - new_w - pad_w,
+            cv2.BORDER_CONSTANT, value=[0, 0, 0]
+        )
+        
+        return padded
+    
+    @staticmethod
+    def process_sensor_data(sensor_readings, window_size=100):
+        """
+        Process sensor data (accelerometer, gyroscope, etc.)
+        
+        Args:
+            sensor_readings: List of (x, y, z) readings
+            window_size: Number of readings to include
+        """
+        # Normalize sensor data
+        data = np.array(sensor_readings[-window_size:])
+        
+        # Pad if needed
+        if len(data) < window_size:
+            pad_length = window_size - len(data)
+            data = np.pad(data, ((pad_length, 0), (0, 0)), mode='edge')
+        
+        # Normalize
+        mean = np.mean(data, axis=0)
+        std = np.std(data, axis=0)
+        normalized = (data - mean) / (std + 1e-8)
+        
+        return normalized.flatten()
+
+# Test camera frame processing
+print("\nTesting camera frame processing...")
+camera_frame = np.random.randint(0, 255, (1080, 1920, 3), dtype=np.uint8)
+processed = MobileInputProcessor.process_camera_frame(camera_frame)
+print(f"Processed frame shape: {processed.shape}")
+
+# ============================================================
+# PART 5: Mobile Model Metadata
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 5: Adding Model Metadata")
+print("=" * 60)
+
+"""
+Model metadata helps mobile apps understand:
+- Input/output specifications
+- Preprocessing requirements
+- Label mappings
+- Model description
+"""
+
+from tflite_support import metadata as _metadata
+from tflite_support import metadata_schema_py_generated as _metadata_schema
+
+# Create metadata (requires tflite-support package)
+try:
+    # Load model
+    model_buffer = open(mobile_model_path, 'rb').read()
+    
+    # Create model metadata
+    model_meta = _metadata_schema.ModelMetadataT()
+    model_meta.name = "Mobile Image Classifier"
+    model_meta.description = "Lightweight CNN for image classification"
+    model_meta.version = "v1"
+    model_meta.author = "TensorFlow Course"
+    
+    # Create input metadata
+    input_meta = _metadata_schema.TensorMetadataT()
+    input_meta.name = "image"
+    input_meta.description = "Input image to be classified"
+    input_meta.content = _metadata_schema.ContentT()
+    input_meta.content.contentProperties = _metadata_schema.ImagePropertiesT()
+    input_meta.content.contentProperties.colorSpace = \
+        _metadata_schema.ColorSpaceType.RGB
+    input_meta.content.contentProperties.defaultValue = 0
+    
+    # Create output metadata
+    output_meta = _metadata_schema.TensorMetadataT()
+    output_meta.name = "probabilities"
+    output_meta.description = "Probabilities for each class"
+    output_meta.content = _metadata_schema.ContentT()
+    output_meta.content.contentProperties = _metadata_schema.FeaturePropertiesT()
+    
+    # Associate with model
+    model_meta.subgraphMetadata = [_metadata_schema.SubGraphMetadataT()]
+    model_meta.subgraphMetadata[0].inputTensorMetadata = [input_meta]
+    model_meta.subgraphMetadata[0].outputTensorMetadata = [output_meta]
+    
+    # Save model with metadata
+    # (Implementation depends on tflite-support version)
+    print("Model metadata created successfully!")
+    
+except ImportError:
+    print("tflite-support not installed. Install with: pip install tflite-support")
+    print("Model metadata skipped.")
+
+# ============================================================
+# PART 6: Summary
+# ============================================================
+
+print("\n" + "=" * 60)
+print("SUMMARY: Mobile Deployment Checklist")
+print("=" * 60)
+
+print("""
+Mobile Deployment Checklist:
+============================
+
+1. Model Optimization:
+   [ ] Use depthwise separable convolutions
+   [ ] Apply quantization (int8 for best performance)
+   [ ] Minimize model size (< 10MB ideal for mobile)
+   [ ] Test inference speed on target device
+
+2. Preprocessing:
+   [ ] Handle different image formats
+   [ ] Implement proper normalization
+   [ ] Consider camera rotation
+   [ ] Add input validation
+
+3. Inference:
+   [ ] Use appropriate number of threads
+   [ ] Warm up model before first use
+   [ ] Batch inference when possible
+   [ ] Handle errors gracefully
+
+4. Integration:
+   [ ] Add model metadata
+   [ ] Document input/output specs
+   [ ] Provide example code
+   [ ] Test on actual devices
+
+Platform-Specific Notes:
+========================
+
+Android:
+- Use TensorFlow Lite Android Support Library
+- Enable NNAPI delegate for acceleration
+- Consider GPU delegate for compatible devices
+
+iOS:
+- Use TensorFlow Lite Swift/Objective-C API
+- Enable CoreML delegate for Apple devices
+- Test on various iPhone/iPad models
+
+Flutter/React Native:
+- Use platform channels for native TFLite
+- Consider tflite_flutter or react-native-tflite
+""")
+
+# Cleanup
+import shutil
+for f in ['mobile_classifier.tflite']:
+    if os.path.exists(f):
+        os.remove(f)
+if os.path.exists('mobile_classifier'):
+    shutil.rmtree('mobile_classifier')
+print("\nCleanup completed!")
+```
+
+---

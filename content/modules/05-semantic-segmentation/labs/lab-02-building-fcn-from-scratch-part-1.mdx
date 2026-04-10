@@ -1,0 +1,434 @@
+---
+title: "Building FCN from Scratch - Part 1"
+module: 5
+labNumber: 2
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Building FCN from Scratch - Part 1
+
+## Objectives
+- Understand the Fully Convolutional Network (FCN) architecture
+- Implement FCN-32s from scratch using TensorFlow/Keras
+- Learn about upsampling and transposed convolutions
+- Apply FCN to a simple segmentation task
+
+## Prerequisites
+- TensorFlow 2.x installed
+- Basic understanding of CNNs
+- Familiarity with Keras Functional API
+
+## Theory Overview
+
+FCN replaces fully connected layers with convolutional layers, allowing:
+- Input of arbitrary size
+- Output of spatial maps instead of classification scores
+- End-to-end dense prediction
+
+## Complete Implementation
+
+```python
+"""
+Lab 5.1: Building FCN from Scratch - Part 1
+FCN-32s Implementation
+"""
+
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers, Model
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Set random seeds for reproducibility
+tf.random.set_seed(42)
+np.random.seed(42)
+
+print(f"TensorFlow version: {tf.__version__}")
+
+# =============================================================================
+# Section 1: Understanding Transposed Convolution (Upsampling)
+# =============================================================================
+
+def demonstrate_transposed_conv():
+    """
+    Demonstrate how transposed convolution works for upsampling.
+    This is the core operation for upsampling in FCN.
+    """
+    print("\n" + "="*60)
+    print("DEMONSTRATING TRANSPOSED CONVOLUTION")
+    print("="*60)
+    
+    # Create a small input feature map
+    input_feat = tf.constant([[[[1.0], [2.0]],
+                                [[3.0], [4.0]]]])  # Shape: (1, 2, 2, 1)
+    
+    print(f"Input shape: {input_feat.shape}")
+    print(f"Input values:\n{input_feat.numpy().squeeze()}")
+    
+    # Define a transposed convolution layer
+    # stride=2 will double the spatial dimensions
+    trans_conv = layers.Conv2DTranspose(
+        filters=1,
+        kernel_size=3,
+        strides=2,
+        padding='same',
+        kernel_initializer=tf.constant_initializer(1.0)
+    )
+    
+    output = trans_conv(input_feat)
+    print(f"\nOutput shape after transposed conv: {output.shape}")
+    print(f"Output values:\n{output.numpy().squeeze()}")
+    
+    # Alternative: Using UpSampling2D + Conv2D
+    upsample_conv = keras.Sequential([
+        layers.UpSampling2D(size=(2, 2), interpolation='bilinear'),
+        layers.Conv2D(1, kernel_size=3, padding='same', 
+                      kernel_initializer='ones')
+    ])
+    
+    output2 = upsample_conv(input_feat)
+    print(f"\nOutput shape with Upsampling + Conv: {output2.shape}")
+
+demonstrate_transposed_conv()
+
+# =============================================================================
+# Section 2: Building the Encoder (VGG-style Backbone)
+# =============================================================================
+
+def build_vgg_encoder(input_shape=(224, 224, 3)):
+    """
+    Build a VGG-style encoder for FCN.
+    This encoder extracts features at multiple scales.
+    """
+    print("\n" + "="*60)
+    print("BUILDING VGG ENCODER")
+    print("="*60)
+    
+    inputs = layers.Input(shape=input_shape)
+    
+    # Block 1
+    x = layers.Conv2D(64, 3, padding='same', activation='relu', name='block1_conv1')(inputs)
+    x = layers.Conv2D(64, 3, padding='same', activation='relu', name='block1_conv2')(x)
+    x = layers.MaxPooling2D(2, strides=2, name='block1_pool')(x)  # 112x112
+    
+    # Block 2
+    x = layers.Conv2D(128, 3, padding='same', activation='relu', name='block2_conv1')(x)
+    x = layers.Conv2D(128, 3, padding='same', activation='relu', name='block2_conv2')(x)
+    x = layers.MaxPooling2D(2, strides=2, name='block2_pool')(x)  # 56x56
+    
+    # Block 3
+    x = layers.Conv2D(256, 3, padding='same', activation='relu', name='block3_conv1')(x)
+    x = layers.Conv2D(256, 3, padding='same', activation='relu', name='block3_conv2')(x)
+    x = layers.Conv2D(256, 3, padding='same', activation='relu', name='block3_conv3')(x)
+    x = layers.MaxPooling2D(2, strides=2, name='block3_pool')(x)  # 28x28
+    
+    # Block 4
+    x = layers.Conv2D(512, 3, padding='same', activation='relu', name='block4_conv1')(x)
+    x = layers.Conv2D(512, 3, padding='same', activation='relu', name='block4_conv2')(x)
+    x = layers.Conv2D(512, 3, padding='same', activation='relu', name='block4_conv3')(x)
+    pool4 = layers.MaxPooling2D(2, strides=2, name='block4_pool')(x)  # 14x14
+    
+    # Block 5
+    x = layers.Conv2D(512, 3, padding='same', activation='relu', name='block5_conv1')(pool4)
+    x = layers.Conv2D(512, 3, padding='same', activation='relu', name='block5_conv2')(x)
+    x = layers.Conv2D(512, 3, padding='same', activation='relu', name='block5_conv3')(x)
+    pool5 = layers.MaxPooling2D(2, strides=2, name='block5_pool')(x)  # 7x7
+    
+    encoder = Model(inputs, [pool4, pool5], name='VGG_Encoder')
+    
+    print(f"Encoder input shape: {encoder.input_shape}")
+    print(f"Encoder output shapes: pool4={encoder.outputs[0].shape}, pool5={encoder.outputs[1].shape}")
+    
+    return encoder
+
+encoder = build_vgg_encoder()
+encoder.summary()
+
+# =============================================================================
+# Section 3: Building FCN-32s (Simplest FCN variant)
+# =============================================================================
+
+def build_fcn32s(input_shape=(224, 224, 3), num_classes=21):
+    """
+    Build FCN-32s architecture.
+    
+    FCN-32s:
+    - Uses only the final feature map (pool5)
+    - Upsamples by 32x to get back to input resolution
+    - Simplest but coarsest segmentation
+    
+    Args:
+        input_shape: Input image shape (H, W, C)
+        num_classes: Number of segmentation classes
+    
+    Returns:
+        FCN-32s model
+    """
+    print("\n" + "="*60)
+    print("BUILDING FCN-32s")
+    print("="*60)
+    
+    inputs = layers.Input(shape=input_shape)
+    
+    # ============ ENCODER (VGG-16 style) ============
+    
+    # Block 1
+    x = layers.Conv2D(64, 3, padding='same', activation='relu')(inputs)
+    x = layers.Conv2D(64, 3, padding='same', activation='relu')(x)
+    x = layers.MaxPooling2D(2, strides=2)(x)  # 112x112
+    
+    # Block 2
+    x = layers.Conv2D(128, 3, padding='same', activation='relu')(x)
+    x = layers.Conv2D(128, 3, padding='same', activation='relu')(x)
+    x = layers.MaxPooling2D(2, strides=2)(x)  # 56x56
+    
+    # Block 3
+    x = layers.Conv2D(256, 3, padding='same', activation='relu')(x)
+    x = layers.Conv2D(256, 3, padding='same', activation='relu')(x)
+    x = layers.Conv2D(256, 3, padding='same', activation='relu')(x)
+    x = layers.MaxPooling2D(2, strides=2)(x)  # 28x28
+    
+    # Block 4
+    x = layers.Conv2D(512, 3, padding='same', activation='relu')(x)
+    x = layers.Conv2D(512, 3, padding='same', activation='relu')(x)
+    x = layers.Conv2D(512, 3, padding='same', activation='relu')(x)
+    x = layers.MaxPooling2D(2, strides=2)(x)  # 14x14
+    
+    # Block 5
+    x = layers.Conv2D(512, 3, padding='same', activation='relu')(x)
+    x = layers.Conv2D(512, 3, padding='same', activation='relu')(x)
+    x = layers.Conv2D(512, 3, padding='same', activation='relu')(x)
+    x = layers.MaxPooling2D(2, strides=2)(x)  # 7x7
+    
+    # ============ FULLY CONVOLUTIONAL LAYERS ============
+    
+    # FC6 as convolution
+    x = layers.Conv2D(4096, 7, padding='same', activation='relu')(x)
+    x = layers.Dropout(0.5)(x)
+    
+    # FC7 as convolution
+    x = layers.Conv2D(4096, 1, padding='same', activation='relu')(x)
+    x = layers.Dropout(0.5)(x)
+    
+    # Classification layer (1x1 conv)
+    x = layers.Conv2D(num_classes, 1, padding='same', activation=None)(x)
+    
+    # ============ UPSAMPLING (32x) ============
+    
+    # Upsample by 32x using transposed convolution
+    outputs = layers.Conv2DTranspose(
+        num_classes,
+        kernel_size=64,
+        strides=32,
+        padding='same',
+        activation='softmax',
+        name='output'
+    )(x)
+    
+    model = Model(inputs, outputs, name='FCN-32s')
+    
+    print(f"FCN-32s input shape: {model.input_shape}")
+    print(f"FCN-32s output shape: {model.output_shape}")
+    
+    return model
+
+# Build and summarize the model
+fcn32s = build_fcn32s(input_shape=(224, 224, 3), num_classes=21)
+fcn32s.summary()
+
+# =============================================================================
+# Section 4: Test with Random Data
+# =============================================================================
+
+def test_fcn32s():
+    """Test FCN-32s with random data."""
+    print("\n" + "="*60)
+    print("TESTING FCN-32s WITH RANDOM DATA")
+    print("="*60)
+    
+    # Create random input
+    batch_size = 2
+    test_input = np.random.randn(batch_size, 224, 224, 3).astype(np.float32)
+    
+    print(f"Test input shape: {test_input.shape}")
+    
+    # Forward pass
+    output = fcn32s.predict(test_input, verbose=0)
+    
+    print(f"Output shape: {output.shape}")
+    print(f"Output value range: [{output.min():.4f}, {output.max():.4f}]")
+    print(f"Output sum (should be ~1.0 per pixel): {output[0, 100, 100].sum():.4f}")
+    
+    return output
+
+output = test_fcn32s()
+
+# =============================================================================
+# Section 5: Visualization Function
+# =============================================================================
+
+def visualize_segmentation(image, prediction, num_classes=21):
+    """
+    Visualize segmentation results.
+    
+    Args:
+        image: Input image (H, W, 3)
+        prediction: Segmentation prediction (H, W, num_classes)
+        num_classes: Number of classes
+    """
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+    
+    # Original image
+    axes[0].imshow(image)
+    axes[0].set_title('Input Image')
+    axes[0].axis('off')
+    
+    # Class prediction
+    pred_mask = np.argmax(prediction, axis=-1)
+    axes[1].imshow(pred_mask, cmap='tab20')
+    axes[1].set_title('Predicted Classes')
+    axes[1].axis('off')
+    
+    # Confidence (max probability)
+    confidence = np.max(prediction, axis=-1)
+    im = axes[2].imshow(confidence, cmap='hot')
+    axes[2].set_title('Prediction Confidence')
+    axes[2].axis('off')
+    plt.colorbar(im, ax=axes[2])
+    
+    plt.tight_layout()
+    plt.savefig('/mnt/okcomputer/output/fcn32s_visualization.png', dpi=150)
+    plt.show()
+    print("Visualization saved to /mnt/okcomputer/output/fcn32s_visualization.png")
+
+# Create a synthetic test image
+test_image = np.random.rand(224, 224, 3)
+test_pred = fcn32s.predict(test_image[np.newaxis, ...], verbose=0)[0]
+visualize_segmentation(test_image, test_pred)
+
+# =============================================================================
+# Section 6: Exercise - Modify FCN-32s
+# =============================================================================
+
+print("\n" + "="*60)
+print("EXERCISE: MODIFY FCN-32s")
+print("="*60)
+
+print("""
+EXERCISE 1: Modify FCN-32s Architecture
+-----------------------------------------
+1. Change the number of filters in FC layers from 4096 to 2048
+2. Add batch normalization after each convolutional block
+3. Replace transposed convolution with bilinear upsampling + conv
+
+EXERCISE 2: Calculate Model Parameters
+--------------------------------------
+Calculate the number of parameters in:
+- The encoder (convolutional backbone)
+- The fully convolutional layers (FC6, FC7)
+- The upsampling layer
+
+SOLUTION:
+""")
+
+def build_modified_fcn32s(input_shape=(224, 224, 3), num_classes=21):
+    """Modified FCN-32s with batch normalization and different upsampling."""
+    inputs = layers.Input(shape=input_shape)
+    
+    # Encoder with batch normalization
+    x = layers.Conv2D(64, 3, padding='same', use_bias=False)(inputs)
+    x = layers.BatchNormalization()(x)
+    x = layers.ReLU()(x)
+    x = layers.Conv2D(64, 3, padding='same', use_bias=False)(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.ReLU()(x)
+    x = layers.MaxPooling2D(2, strides=2)(x)
+    
+    # Simplified for brevity - continue with remaining blocks...
+    x = layers.Conv2D(128, 3, padding='same', activation='relu')(x)
+    x = layers.MaxPooling2D(2, strides=2)(x)
+    
+    x = layers.Conv2D(256, 3, padding='same', activation='relu')(x)
+    x = layers.MaxPooling2D(2, strides=2)(x)
+    
+    x = layers.Conv2D(512, 3, padding='same', activation='relu')(x)
+    x = layers.MaxPooling2D(2, strides=2)(x)
+    
+    x = layers.Conv2D(512, 3, padding='same', activation='relu')(x)
+    x = layers.MaxPooling2D(2, strides=2)(x)
+    
+    # FC layers with 2048 filters
+    x = layers.Conv2D(2048, 7, padding='same', activation='relu')(x)
+    x = layers.Dropout(0.5)(x)
+    x = layers.Conv2D(2048, 1, padding='same', activation='relu')(x)
+    x = layers.Dropout(0.5)(x)
+    x = layers.Conv2D(num_classes, 1, padding='same')(x)
+    
+    # Alternative upsampling: Bilinear + Conv
+    x = layers.UpSampling2D(size=(32, 32), interpolation='bilinear')(x)
+    outputs = layers.Conv2D(num_classes, 3, padding='same', activation='softmax')(x)
+    
+    return Model(inputs, outputs)
+
+modified_fcn = build_modified_fcn32s()
+print(f"\nModified FCN-32s parameters: {modified_fcn.count_params():,}")
+
+# =============================================================================
+# Summary
+# =============================================================================
+
+print("\n" + "="*60)
+print("LAB 5.1 SUMMARY")
+print("="*60)
+print("""
+Key Takeaways:
+1. FCN replaces fully connected layers with convolutional layers
+2. Transposed convolution (Conv2DTranspose) is used for upsampling
+3. FCN-32s upsamples the final feature map by 32x
+4. The encoder extracts features at multiple scales
+5. 1x1 convolutions replace fully connected layers
+
+Next: Lab 5.2 will implement FCN-16s and FCN-8s with skip connections.
+""")
+```
+
+## Expected Output
+
+```
+TensorFlow version: 2.x.x
+
+============================================================
+DEMONSTRATING TRANSPOSED CONVOLUTION
+============================================================
+Input shape: (1, 2, 2, 1)
+Input values:
+[[1. 2.]
+ [3. 4.]]
+
+Output shape after transposed conv: (1, 4, 4, 1)
+
+============================================================
+BUILDING VGG ENCODER
+============================================================
+Encoder input shape: (None, 224, 224, 3)
+Encoder output shapes: pool4=(None, 14, 14, 512), pool5=(None, 7, 7, 512)
+
+============================================================
+BUILDING FCN-32s
+============================================================
+FCN-32s input shape: (None, 224, 224, 3)
+FCN-32s output shape: (None, 224, 224, 21)
+
+Total params: ~134M (most from FC6 and FC7 layers)
+```
+
+## Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| Out of memory | Reduce batch size or use smaller input resolution |
+| Output shape mismatch | Check padding='same' in all layers |
+| NaN losses | Add gradient clipping, reduce learning rate |
+
+---

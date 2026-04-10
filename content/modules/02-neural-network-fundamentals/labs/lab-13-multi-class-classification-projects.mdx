@@ -1,0 +1,240 @@
+---
+title: "Multi-class Classification Projects"
+module: 2
+labNumber: 13
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-05-part5.md"
+---
+# Multi-class Classification Projects
+
+## Objectives
+- Build multi-class classification models
+- Handle class imbalance
+- Implement evaluation metrics
+- Create confusion matrices
+
+---
+
+```python
+"""
+Lab 2.6: Multi-class Classification Projects
+Complete multi-class classification workflow.
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.metrics import confusion_matrix, classification_report
+import seaborn as sns
+
+print("=" * 60)
+print("LAB 2.6: Multi-class Classification Projects")
+print("=" * 60)
+
+# ============================================================
+# STEP 1: Load and Prepare Fashion-MNIST Dataset
+# ============================================================
+print("\n[STEP 1] Loading Fashion-MNIST dataset...")
+
+# Load data
+(X_train, y_train), (X_test, y_test) = tf.keras.datasets.fashion_mnist.load_data()
+
+# Normalize
+X_train = X_train.astype('float32') / 255.0
+X_test = X_test.astype('float32') / 255.0
+
+# Add channel dimension
+X_train = X_train.reshape(-1, 28, 28, 1)
+X_test = X_test.reshape(-1, 28, 28, 1)
+
+# Class names
+class_names = ['T-shirt/top', 'Trouser', 'Pullover', 'Dress', 'Coat',
+               'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle boot']
+
+print(f"Training samples: {X_train.shape[0]}")
+print(f"Test samples: {X_test.shape[0]}")
+print(f"Image shape: {X_train.shape[1:]}")
+print(f"Number of classes: {len(class_names)}")
+
+# ============================================================
+# STEP 2: Visualize Sample Images
+# ============================================================
+print("\n[STEP 2] Visualizing sample images...")
+
+fig, axes = plt.subplots(2, 5, figsize=(15, 6))
+axes = axes.flatten()
+
+for i in range(10):
+    # Find first image of each class
+    idx = np.where(y_train == i)[0][0]
+    axes[i].imshow(X_train[idx].reshape(28, 28), cmap='gray')
+    axes[i].set_title(class_names[i])
+    axes[i].axis('off')
+
+plt.suptitle('Fashion-MNIST Sample Images', fontsize=14, fontweight='bold')
+plt.tight_layout()
+plt.savefig('/mnt/okcomputer/output/fashion_mnist_samples.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+# ============================================================
+# STEP 3: Build Multi-class Classification Model
+# ============================================================
+print("\n[STEP 3] Building classification model...")
+
+def create_model():
+    """Create CNN for Fashion-MNIST classification."""
+    model = tf.keras.Sequential([
+        # First conv block
+        tf.keras.layers.Conv2D(32, (3, 3), padding='same', input_shape=(28, 28, 1)),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation('relu'),
+        tf.keras.layers.Conv2D(32, (3, 3), padding='same'),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation('relu'),
+        tf.keras.layers.MaxPooling2D((2, 2)),
+        tf.keras.layers.Dropout(0.25),
+        
+        # Second conv block
+        tf.keras.layers.Conv2D(64, (3, 3), padding='same'),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation('relu'),
+        tf.keras.layers.Conv2D(64, (3, 3), padding='same'),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation('relu'),
+        tf.keras.layers.MaxPooling2D((2, 2)),
+        tf.keras.layers.Dropout(0.25),
+        
+        # Classifier
+        tf.keras.layers.Flatten(),
+        tf.keras.layers.Dense(128),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation('relu'),
+        tf.keras.layers.Dropout(0.5),
+        tf.keras.layers.Dense(10, activation='softmax')
+    ])
+    
+    return model
+
+model = create_model()
+model.compile(
+    optimizer='adam',
+    loss='sparse_categorical_crossentropy',
+    metrics=['accuracy']
+)
+
+print("\nModel architecture:")
+model.summary()
+
+# ============================================================
+# STEP 4: Train the Model
+# ============================================================
+print("\n[STEP 4] Training the model...")
+
+# Use subset for faster training
+X_train_sub = X_train[:10000]
+y_train_sub = y_train[:10000]
+
+history = model.fit(
+    X_train_sub, y_train_sub,
+    validation_split=0.2,
+    epochs=15,
+    batch_size=64,
+    verbose=1
+)
+
+# ============================================================
+# STEP 5: Evaluate and Visualize Results
+# ============================================================
+print("\n[STEP 5] Evaluating model...")
+
+# Evaluate on test set
+test_loss, test_acc = model.evaluate(X_test, y_test, verbose=0)
+print(f"\nTest accuracy: {test_acc:.4f}")
+
+# Get predictions
+y_pred = model.predict(X_test, verbose=0)
+y_pred_classes = np.argmax(y_pred, axis=1)
+
+# Confusion matrix
+cm = confusion_matrix(y_test, y_pred_classes)
+
+fig, axes = plt.subplots(1, 2, figsize=(15, 5))
+
+# Plot confusion matrix
+ax1 = axes[0]
+sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=ax1,
+            xticklabels=class_names, yticklabels=class_names)
+ax1.set_xlabel('Predicted')
+ax1.set_ylabel('True')
+ax1.set_title('Confusion Matrix', fontweight='bold')
+
+# Plot training history
+ax2 = axes[1]
+ax2.plot(history.history['accuracy'], label='Train Accuracy', linewidth=2)
+ax2.plot(history.history['val_accuracy'], label='Val Accuracy', linewidth=2)
+ax2.set_xlabel('Epoch')
+ax2.set_ylabel('Accuracy')
+ax2.set_title('Training History', fontweight='bold')
+ax2.legend()
+ax2.grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.savefig('/mnt/okcomputer/output/classification_results.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+# Classification report
+print("\nClassification Report:")
+print(classification_report(y_test, y_pred_classes, target_names=class_names))
+
+# ============================================================
+# STEP 6: Handle Class Imbalance with Class Weights
+# ============================================================
+print("\n[STEP 6] Handling class imbalance...")
+
+# Calculate class weights
+from sklearn.utils.class_weight import compute_class_weight
+
+class_weights = compute_class_weight(
+    'balanced',
+    classes=np.unique(y_train_sub),
+    y=y_train_sub
+)
+class_weight_dict = {i: w for i, w in enumerate(class_weights)}
+
+print("Class weights:")
+for i, w in class_weight_dict.items():
+    print(f"  {class_names[i]}: {w:.4f}")
+
+# Train with class weights
+model_weighted = create_model()
+model_weighted.compile(
+    optimizer='adam',
+    loss='sparse_categorical_crossentropy',
+    metrics=['accuracy']
+)
+
+history_weighted = model_weighted.fit(
+    X_train_sub, y_train_sub,
+    validation_split=0.2,
+    epochs=15,
+    batch_size=64,
+    class_weight=class_weight_dict,
+    verbose=0
+)
+
+# Compare results
+test_loss_w, test_acc_w = model_weighted.evaluate(X_test, y_test, verbose=0)
+print(f"\nTest accuracy without class weights: {test_acc:.4f}")
+print(f"Test accuracy with class weights: {test_acc_w:.4f}")
+
+print("\n" + "=" * 60)
+print("LAB 2.6 COMPLETED SUCCESSFULLY!")
+print("=" * 60)
+print("\nKEY TAKEAWAYS:")
+print("1. CNNs work well for image classification")
+print("2. Batch normalization and dropout improve performance")
+print("3. Confusion matrices help identify problem classes")
+print("4. Class weights can help with imbalanced datasets")
+print("5. Always visualize results for better understanding")
+```

@@ -1,0 +1,562 @@
+---
+title: "U-Net Implementation - Architecture"
+module: 5
+labNumber: 4
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# U-Net Implementation - Architecture
+
+## Objectives
+- Understand the U-Net architecture
+- Implement U-Net from scratch with skip connections
+- Learn about the contracting and expanding paths
+
+## Complete Implementation
+
+```python
+"""
+Lab 5.3: U-Net Implementation - Architecture
+Complete U-Net with skip connections for semantic segmentation
+"""
+
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers, Model
+import numpy as np
+import matplotlib.pyplot as plt
+
+tf.random.set_seed(42)
+np.random.seed(42)
+
+print(f"TensorFlow version: {tf.__version__}")
+
+# =============================================================================
+# Section 1: U-Net Building Blocks
+# =============================================================================
+
+def conv_block(inputs, num_filters, kernel_size=3, activation='relu', name=None):
+    """
+    Convolutional block with two conv layers and batch normalization.
+    
+    This is the basic building block of U-Net.
+    
+    Args:
+        inputs: Input tensor
+        num_filters: Number of output filters
+        kernel_size: Convolution kernel size
+        activation: Activation function
+        name: Block name prefix
+    
+    Returns:
+        Output tensor
+    """
+    x = inputs
+    
+    # First conv
+    x = layers.Conv2D(
+        num_filters, 
+        kernel_size, 
+        padding='same',
+        use_bias=False,
+        name=f'{name}_conv1' if name else None
+    )(x)
+    x = layers.BatchNormalization(name=f'{name}_bn1' if name else None)(x)
+    x = layers.Activation(activation, name=f'{name}_act1' if name else None)(x)
+    
+    # Second conv
+    x = layers.Conv2D(
+        num_filters, 
+        kernel_size, 
+        padding='same',
+        use_bias=False,
+        name=f'{name}_conv2' if name else None
+    )(x)
+    x = layers.BatchNormalization(name=f'{name}_bn2' if name else None)(x)
+    x = layers.Activation(activation, name=f'{name}_act2' if name else None)(x)
+    
+    return x
+
+
+def encoder_block(inputs, num_filters, dropout_rate=0.0, name=None):
+    """
+    Encoder block: Conv block + Max pooling.
+    
+    Args:
+        inputs: Input tensor
+        num_filters: Number of filters for conv block
+        dropout_rate: Dropout rate (0 to disable)
+        name: Block name prefix
+    
+    Returns:
+        (pooled_output, skip_connection) tuple
+    """
+    # Conv block
+    x = conv_block(inputs, num_filters, name=name)
+    
+    # Save for skip connection
+    skip = x
+    
+    # Max pooling
+    x = layers.MaxPooling2D(pool_size=(2, 2), name=f'{name}_pool' if name else None)(x)
+    
+    # Optional dropout
+    if dropout_rate > 0:
+        x = layers.Dropout(dropout_rate, name=f'{name}_dropout' if name else None)(x)
+    
+    return x, skip
+
+
+def decoder_block(inputs, skip_features, num_filters, dropout_rate=0.0, name=None):
+    """
+    Decoder block: Upsampling + Concatenation + Conv block.
+    
+    Args:
+        inputs: Input tensor from deeper layer
+        skip_features: Skip connection features from encoder
+        num_filters: Number of filters for conv block
+        dropout_rate: Dropout rate
+        name: Block name prefix
+    
+    Returns:
+        Output tensor
+    """
+    # Upsample
+    x = layers.Conv2DTranspose(
+        num_filters,
+        kernel_size=(2, 2),
+        strides=(2, 2),
+        padding='same',
+        name=f'{name}_upconv' if name else None
+    )(inputs)
+    
+    # Concatenate with skip connection
+    x = layers.Concatenate(name=f'{name}_concat' if name else None)([x, skip_features])
+    
+    # Optional dropout
+    if dropout_rate > 0:
+        x = layers.Dropout(dropout_rate, name=f'{name}_dropout' if name else None)(x)
+    
+    # Conv block
+    x = conv_block(x, num_filters, name=name)
+    
+    return x
+
+
+# Test the building blocks
+print("\n" + "="*60)
+print("TESTING U-NET BUILDING BLOCKS")
+print("="*60)
+
+test_input = tf.random.normal((1, 128, 128, 3))
+
+# Test conv block
+conv_out = conv_block(test_input, 64, name='test_conv')
+print(f"Conv block output shape: {conv_out.shape}")
+
+# Test encoder block
+enc_out, skip = encoder_block(test_input, 64, dropout_rate=0.1, name='test_enc')
+print(f"Encoder output shape: {enc_out.shape}, skip shape: {skip.shape}")
+
+# Test decoder block
+dec_out = decoder_block(enc_out, skip, 64, name='test_dec')
+print(f"Decoder output shape: {dec_out.shape}")
+
+# =============================================================================
+# Section 2: Complete U-Net Architecture
+# =============================================================================
+
+def build_unet(
+    input_shape=(256, 256, 3),
+    num_classes=1,
+    filters=[64, 128, 256, 512, 1024],
+    dropout_rates=[0.0, 0.0, 0.0, 0.0, 0.5],
+    output_activation='sigmoid'
+):
+    """
+    Build complete U-Net architecture.
+    
+    Architecture:
+    - Contracting path (encoder): 4 downsampling blocks
+    - Bottleneck: 1 conv block
+    - Expanding path (decoder): 4 upsampling blocks with skip connections
+    - Output: 1x1 conv for classification
+    
+    Args:
+        input_shape: Input image shape (H, W, C)
+        num_classes: Number of output classes (1 for binary)
+        filters: List of filter counts for each level
+        dropout_rates: Dropout rates for each level
+        output_activation: 'sigmoid' for binary, 'softmax' for multi-class
+    
+    Returns:
+        U-Net model
+    """
+    print("\n" + "="*60)
+    print("BUILDING U-NET")
+    print("="*60)
+    
+    # Input
+    inputs = layers.Input(shape=input_shape, name='input')
+    
+    # ============ CONTRACTING PATH (ENCODER) ============
+    
+    skips = []
+    x = inputs
+    
+    for i, (num_filters, dropout) in enumerate(zip(filters[:-1], dropout_rates[:-1])):
+        x, skip = encoder_block(
+            x, 
+            num_filters, 
+            dropout_rate=dropout,
+            name=f'encoder_{i+1}'
+        )
+        skips.append(skip)
+        print(f"  Encoder {i+1}: output={x.shape}, skip={skip.shape}")
+    
+    # ============ BOTTLENECK ============
+    
+    x = conv_block(x, filters[-1], name='bottleneck')
+    if dropout_rates[-1] > 0:
+        x = layers.Dropout(dropout_rates[-1], name='bottleneck_dropout')(x)
+    print(f"  Bottleneck: {x.shape}")
+    
+    # ============ EXPANDING PATH (DECODER) ============
+    
+    for i, (num_filters, dropout) in enumerate(zip(reversed(filters[:-1]), reversed(dropout_rates[:-1]))):
+        skip = skips[-(i+1)]  # Get skip connection in reverse order
+        x = decoder_block(
+            x,
+            skip,
+            num_filters,
+            dropout_rate=dropout,
+            name=f'decoder_{len(filters)-i-1}'
+        )
+        print(f"  Decoder {len(filters)-i-1}: {x.shape}")
+    
+    # ============ OUTPUT ============
+    
+    if num_classes == 1:
+        # Binary segmentation
+        outputs = layers.Conv2D(
+            1,
+            kernel_size=1,
+            activation=output_activation,
+            name='output'
+        )(x)
+    else:
+        # Multi-class segmentation
+        outputs = layers.Conv2D(
+            num_classes,
+            kernel_size=1,
+            activation=output_activation,
+            name='output'
+        )(x)
+    
+    model = Model(inputs, outputs, name='U-Net')
+    
+    print(f"\nU-Net input shape: {model.input_shape}")
+    print(f"U-Net output shape: {model.output_shape}")
+    print(f"U-Net parameters: {model.count_params():,}")
+    
+    return model
+
+
+# Build U-Net for binary segmentation
+unet_binary = build_unet(
+    input_shape=(256, 256, 3),
+    num_classes=1,
+    filters=[64, 128, 256, 512, 1024],
+    dropout_rates=[0.0, 0.0, 0.0, 0.0, 0.5],
+    output_activation='sigmoid'
+)
+
+unet_binary.summary()
+
+# Build U-Net for multi-class segmentation
+unet_multiclass = build_unet(
+    input_shape=(256, 256, 3),
+    num_classes=4,  # e.g., background, class1, class2, class3
+    filters=[64, 128, 256, 512, 1024],
+    dropout_rates=[0.0, 0.0, 0.0, 0.0, 0.5],
+    output_activation='softmax'
+)
+
+print(f"\nMulti-class U-Net output shape: {unet_multiclass.output_shape}")
+
+# =============================================================================
+# Section 3: Visualize U-Net Architecture
+# =============================================================================
+
+def visualize_unet_architecture():
+    """Create a visual diagram of U-Net architecture."""
+    print("\n" + "="*60)
+    print("U-NET ARCHITECTURE VISUALIZATION")
+    print("="*60)
+    
+    fig, ax = plt.subplots(figsize=(14, 10))
+    ax.set_xlim(0, 14)
+    ax.set_ylim(0, 10)
+    ax.axis('off')
+    
+    # Title
+    ax.text(7, 9.5, 'U-Net Architecture', fontsize=18, ha='center', fontweight='bold')
+    
+    # Colors
+    encoder_color = '#3498db'
+    bottleneck_color = '#e74c3c'
+    decoder_color = '#2ecc71'
+    skip_color = '#f39c12'
+    
+    # Encoder blocks (contracting path)
+    encoder_sizes = [3, 2.5, 2, 1.5, 1]
+    encoder_x = [1, 2.5, 4, 5.5, 7]
+    encoder_y = [5, 5, 5, 5, 5]
+    
+    for i, (size, x, y) in enumerate(zip(encoder_sizes, encoder_x, encoder_y)):
+        rect = plt.Rectangle((x - size/2, y - size/2), size, size, 
+                             facecolor=encoder_color, edgecolor='black', linewidth=2)
+        ax.add_patch(rect)
+        ax.text(x, y, f'E{i+1}\n{64*(2**i)}', ha='center', va='center', fontsize=8, fontweight='bold')
+        
+        # Arrow to next
+        if i < len(encoder_sizes) - 1:
+            ax.arrow(x + size/2 + 0.1, y, encoder_x[i+1] - x - size/2 - encoder_sizes[i+1]/2 - 0.2, 0,
+                    head_width=0.15, head_length=0.1, fc='black', ec='black')
+    
+    # Bottleneck
+    rect = plt.Rectangle((7.5, 4.5), 1, 1, 
+                         facecolor=bottleneck_color, edgecolor='black', linewidth=2)
+    ax.add_patch(rect)
+    ax.text(8, 5, 'B\n1024', ha='center', va='center', fontsize=8, fontweight='bold')
+    
+    # Decoder blocks (expanding path)
+    decoder_sizes = [1.5, 2, 2.5, 3]
+    decoder_x = [9, 10.5, 12, 13.5]
+    decoder_y = [5, 5, 5, 5]
+    
+    for i, (size, x, y) in enumerate(zip(decoder_sizes, decoder_x, decoder_y)):
+        rect = plt.Rectangle((x - size/2, y - size/2), size, size, 
+                             facecolor=decoder_color, edgecolor='black', linewidth=2)
+        ax.add_patch(rect)
+        ax.text(x, y, f'D{4-i}\n{512//(2**i)}', ha='center', va='center', fontsize=8, fontweight='bold')
+        
+        # Arrow to next
+        if i < len(decoder_sizes) - 1:
+            ax.arrow(x + size/2 + 0.1, y, decoder_x[i+1] - x - size/2 - decoder_sizes[i+1]/2 - 0.2, 0,
+                    head_width=0.15, head_length=0.1, fc='black', ec='black')
+    
+    # Skip connections
+    skip_pairs = [(1, 13.5), (2.5, 12), (4, 10.5), (5.5, 9)]
+    for (ex, dx) in skip_pairs:
+        ax.annotate('', xy=(dx - decoder_sizes[skip_pairs.index((ex, dx))]/2 - 0.1, 5.5), 
+                   xytext=(ex + encoder_sizes[skip_pairs.index((ex, dx))]/2 + 0.1, 5.5),
+                   arrowprops=dict(arrowstyle='->', color=skip_color, lw=2, 
+                                  connectionstyle='arc3,rad=0.3'))
+    
+    # Output
+    rect = plt.Rectangle((13, 3), 1, 0.8, 
+                         facecolor='#9b59b6', edgecolor='black', linewidth=2)
+    ax.add_patch(rect)
+    ax.text(13.5, 3.4, 'Output', ha='center', va='center', fontsize=9, fontweight='bold')
+    ax.arrow(13.5, 5 - 3/2 - 0.1, 0, -0.5, head_width=0.15, head_length=0.1, fc='black', ec='black')
+    
+    # Legend
+    legend_y = 1.5
+    ax.add_patch(plt.Rectangle((1, legend_y), 0.5, 0.5, facecolor=encoder_color, edgecolor='black'))
+    ax.text(1.7, legend_y + 0.25, 'Encoder (Contracting Path)', fontsize=10, va='center')
+    
+    ax.add_patch(plt.Rectangle((5, legend_y), 0.5, 0.5, facecolor=bottleneck_color, edgecolor='black'))
+    ax.text(5.7, legend_y + 0.25, 'Bottleneck', fontsize=10, va='center')
+    
+    ax.add_patch(plt.Rectangle((8, legend_y), 0.5, 0.5, facecolor=decoder_color, edgecolor='black'))
+    ax.text(8.7, legend_y + 0.25, 'Decoder (Expanding Path)', fontsize=10, va='center')
+    
+    ax.plot([11, 11.5], [legend_y + 0.25, legend_y + 0.25], color=skip_color, lw=3)
+    ax.text(12, legend_y + 0.25, 'Skip Connection', fontsize=10, va='center')
+    
+    plt.tight_layout()
+    plt.savefig('/mnt/okcomputer/output/unet_architecture.png', dpi=150, bbox_inches='tight')
+    plt.show()
+    print("Architecture diagram saved to /mnt/okcomputer/output/unet_architecture.png")
+
+visualize_unet_architecture()
+
+# =============================================================================
+# Section 4: Test U-Net with Random Data
+# =============================================================================
+
+def test_unet():
+    """Test U-Net with random data."""
+    print("\n" + "="*60)
+    print("TESTING U-NET")
+    print("="*60)
+    
+    # Binary segmentation test
+    print("\nBinary Segmentation Test:")
+    test_input = np.random.randn(2, 256, 256, 3).astype(np.float32)
+    output = unet_binary.predict(test_input, verbose=0)
+    print(f"  Input shape: {test_input.shape}")
+    print(f"  Output shape: {output.shape}")
+    print(f"  Output range: [{output.min():.4f}, {output.max():.4f}]")
+    
+    # Multi-class test
+    print("\nMulti-class Segmentation Test:")
+    output_mc = unet_multiclass.predict(test_input, verbose=0)
+    print(f"  Output shape: {output_mc.shape}")
+    print(f"  Class probabilities sum: {output_mc[0, 128, 128].sum():.4f}")
+
+test_unet()
+
+# =============================================================================
+# Section 5: U-Net Variants
+# =============================================================================
+
+def build_unet_variants():
+    """Build different U-Net variants."""
+    print("\n" + "="*60)
+    print("U-NET VARIANTS")
+    print("="*60)
+    
+    variants = {
+        'U-Net Mini': {
+            'filters': [32, 64, 128, 256, 512],
+            'params': 0
+        },
+        'U-Net Standard': {
+            'filters': [64, 128, 256, 512, 1024],
+            'params': 0
+        },
+        'U-Net Large': {
+            'filters': [128, 256, 512, 1024, 2048],
+            'params': 0
+        }
+    }
+    
+    for name, config in variants.items():
+        model = build_unet(
+            input_shape=(256, 256, 3),
+            num_classes=1,
+            filters=config['filters'],
+            dropout_rates=[0.0, 0.0, 0.0, 0.0, 0.5]
+        )
+        variants[name]['params'] = model.count_params()
+    
+    print("\n" + "-"*50)
+    print(f"{'Variant':<20} {'Filters':<25} {'Parameters':<15}")
+    print("-"*50)
+    for name, config in variants.items():
+        filters_str = ' -> '.join(map(str, config['filters']))
+        print(f"{name:<20} {filters_str:<25} {config['params']:>14,}")
+    print("-"*50)
+
+build_unet_variants()
+
+# =============================================================================
+# Section 6: Exercise - Modify U-Net
+# =============================================================================
+
+def build_attention_unet(input_shape=(256, 256, 3), num_classes=1):
+    """
+    Build Attention U-Net with attention gates in skip connections.
+    
+    Attention gates help the model focus on relevant regions
+    when combining skip connections.
+    """
+    print("\n" + "="*60)
+    print("BUILDING ATTENTION U-NET")
+    print("="*60)
+    
+    def attention_gate(x, g, num_filters):
+        """
+        Attention gate for skip connections.
+        
+        Args:
+            x: Skip connection feature map
+            g: Gating signal from decoder
+            num_filters: Number of filters
+        
+        Returns:
+            Attended feature map
+        """
+        # Transform gating signal
+        g_conv = layers.Conv2D(num_filters, 1, padding='same')(g)
+        
+        # Transform skip connection
+        x_conv = layers.Conv2D(num_filters, 1, padding='same')(x)
+        
+        # Add and activate
+        psi = layers.Add()([g_conv, x_conv])
+        psi = layers.ReLU()(psi)
+        
+        # Attention coefficients
+        psi = layers.Conv2D(1, 1, padding='same', activation='sigmoid')(psi)
+        
+        # Apply attention
+        return layers.Multiply()([x, psi])
+    
+    inputs = layers.Input(shape=input_shape)
+    
+    # Encoder
+    filters = [64, 128, 256, 512, 1024]
+    x = inputs
+    skips = []
+    
+    for i, f in enumerate(filters[:-1]):
+        x, skip = encoder_block(x, f, name=f'enc{i+1}')
+        skips.append(skip)
+    
+    # Bottleneck
+    x = conv_block(x, filters[-1], name='bottleneck')
+    
+    # Decoder with attention gates
+    for i, f in enumerate(reversed(filters[:-1])):
+        skip = skips[-(i+1)]
+        
+        # Upsample
+        up = layers.Conv2DTranspose(f, 2, strides=2, padding='same')(x)
+        
+        # Apply attention gate to skip connection
+        attended_skip = attention_gate(skip, up, f)
+        
+        # Concatenate
+        x = layers.Concatenate()([up, attended_skip])
+        x = conv_block(x, f, name=f'dec{len(filters)-i-1}')
+    
+    outputs = layers.Conv2D(num_classes, 1, activation='sigmoid')(x)
+    
+    model = Model(inputs, outputs, name='Attention-U-Net')
+    print(f"Attention U-Net parameters: {model.count_params():,}")
+    
+    return model
+
+attention_unet = build_attention_unet()
+
+print("""
+EXERCISE QUESTIONS:
+1. How do attention gates improve segmentation quality?
+2. What is the computational overhead of attention gates?
+3. Implement a residual connection variant of U-Net.
+""")
+
+# =============================================================================
+# Summary
+# =============================================================================
+
+print("\n" + "="*60)
+print("LAB 5.3 SUMMARY")
+print("="*60)
+print("""
+Key Takeaways:
+1. U-Net has a symmetric encoder-decoder architecture
+2. Skip connections preserve spatial information from encoder
+3. Each encoder level has a corresponding decoder level
+4. The bottleneck captures high-level semantic information
+5. Attention gates can improve skip connection quality
+
+Next: Lab 5.4 will apply U-Net to road segmentation.
+""")
+```
+
+---

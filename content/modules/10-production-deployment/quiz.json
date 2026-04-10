@@ -1,0 +1,136 @@
+{
+  "version": 1,
+  "passingScore": 80,
+  "questions": [
+    {
+      "id": "m10-q1",
+      "type": "multiple-choice",
+      "difficulty": "easy",
+      "topic": "Quantization",
+      "question": "Post-training INT8 quantization primarily aims to:",
+      "options": [
+        {
+          "text": "Increase model accuracy on the training set",
+          "correct": false
+        },
+        {
+          "text": "Reduce model size and speed up inference with minimal accuracy loss",
+          "correct": true
+        },
+        {
+          "text": "Improve the training loss",
+          "correct": false
+        },
+        {
+          "text": "Replace the optimizer",
+          "correct": false
+        }
+      ],
+      "explanation": "INT8 quantization shrinks weights/activations from 32-bit floats to 8-bit ints, cutting memory ~4\u00d7 and often accelerating inference."
+    },
+    {
+      "id": "m10-q2",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "TFLite",
+      "question": "TensorFlow Lite is optimized primarily for which deployment target?",
+      "options": [
+        {
+          "text": "Large multi-GPU training clusters",
+          "correct": false
+        },
+        {
+          "text": "Mobile, embedded, and edge devices",
+          "correct": true
+        },
+        {
+          "text": "Web browsers only",
+          "correct": false
+        },
+        {
+          "text": "High-throughput serving in data centers",
+          "correct": false
+        }
+      ],
+      "explanation": "TFLite provides a compact runtime and ops tuned for on-device inference on phones, microcontrollers, and edge accelerators."
+    },
+    {
+      "id": "m10-q3",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "TF Serving",
+      "question": "TensorFlow Serving exposes models via:",
+      "options": [
+        {
+          "text": "Only gRPC",
+          "correct": false
+        },
+        {
+          "text": "Both gRPC and REST APIs, with model versioning",
+          "correct": true
+        },
+        {
+          "text": "File I/O only",
+          "correct": false
+        },
+        {
+          "text": "A mandatory GUI",
+          "correct": false
+        }
+      ],
+      "explanation": "TF Serving supports gRPC and REST endpoints and manages multiple model versions for zero-downtime rollouts."
+    },
+    {
+      "id": "m10-q4",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "TFX",
+      "question": "Which TFX component is responsible for detecting data anomalies and schema drift?",
+      "options": [
+        {
+          "text": "Trainer",
+          "correct": false
+        },
+        {
+          "text": "ExampleGen",
+          "correct": false
+        },
+        {
+          "text": "StatisticsGen + ExampleValidator",
+          "correct": true
+        },
+        {
+          "text": "Pusher",
+          "correct": false
+        }
+      ],
+      "explanation": "StatisticsGen computes dataset statistics; ExampleValidator compares them against a schema to flag anomalies and drift."
+    },
+    {
+      "id": "m10-q5",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Monitoring",
+      "question": "Which metric is MOST useful for detecting concept drift in a deployed model?",
+      "options": [
+        {
+          "text": "GPU utilization",
+          "correct": false
+        },
+        {
+          "text": "A decline in production accuracy or calibration on newly labeled data",
+          "correct": true
+        },
+        {
+          "text": "Docker image size",
+          "correct": false
+        },
+        {
+          "text": "Number of model versions",
+          "correct": false
+        }
+      ],
+      "explanation": "Concept drift manifests as degraded predictive performance on fresh labeled data; monitoring live accuracy/calibration detects it."
+    }
+  ]
+}

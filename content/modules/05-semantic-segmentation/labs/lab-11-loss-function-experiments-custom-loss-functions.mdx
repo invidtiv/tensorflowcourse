@@ -1,0 +1,495 @@
+---
+title: "Loss Function Experiments - Custom Loss Functions"
+module: 5
+labNumber: 11
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Loss Function Experiments - Custom Loss Functions
+
+## Objectives
+- Implement custom loss functions
+- Combine multiple loss terms
+- Create task-specific losses
+- Debug and validate custom losses
+
+## Complete Implementation
+
+```python
+"""
+Lab 5.10: Loss Function Experiments - Custom Loss Functions
+Implementing and combining custom loss functions for segmentation
+"""
+
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers, Model
+import numpy as np
+import matplotlib.pyplot as plt
+
+tf.random.set_seed(42)
+np.random.seed(42)
+
+print(f"TensorFlow version: {tf.__version__}")
+
+# =============================================================================
+# Section 1: Custom Loss Function Template
+# =============================================================================
+
+class CustomSegmentationLoss:
+    """
+    Template for creating custom segmentation losses.
+    
+    Key considerations:
+    1. Input shapes: (batch, height, width, channels)
+    2. Output: scalar loss value
+    3. Differentiable for backpropagation
+    """
+    
+    def __init__(self, name='custom_loss'):
+        self.name = name
+    
+    def __call__(self, y_true, y_pred):
+        """
+        Compute loss.
+        
+        Args:
+            y_true: Ground truth (batch, H, W, C)
+            y_pred: Predictions (batch, H, W, C)
+        
+        Returns:
+            Scalar loss value
+        """
+        raise NotImplementedError
+    
+    def get_config(self):
+        """Get loss configuration for serialization."""
+        return {'name': self.name}
+
+
+# =============================================================================
+# Section 2: Boundary-Aware Loss
+# =============================================================================
+
+class BoundaryAwareLoss(CustomSegmentationLoss):
+    """
+    Loss that focuses more on boundary regions.
+    
+    Combines:
+    1. Standard segmentation loss
+    2. Boundary-specific loss with higher weight
+    """
+    
+    def __init__(self, boundary_weight=2.0, base_loss='dice'):
+        super().__init__('boundary_aware_loss')
+        self.boundary_weight = boundary_weight
+        self.base_loss = base_loss
+    
+    def extract_boundary(self, mask):
+        """Extract boundary from binary mask using morphological gradient."""
+        # Use Sobel operators to detect edges
+        sobel_x = tf.constant([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=tf.float32)
+        sobel_y = tf.constant([[-1, -2, -1], [0, 0, 0], [1, 2, 1]], dtype=tf.float32)
+        
+        sobel_x = tf.reshape(sobel_x, [3, 3, 1, 1])
+        sobel_y = tf.reshape(sobel_y, [3, 3, 1, 1])
+        
+        # Apply to each channel
+        channels = []
+        for c in range(mask.shape[-1]):
+            mask_c = mask[..., c:c+1]
+            gx = tf.nn.conv2d(mask_c, sobel_x, strides=[1, 1, 1, 1], padding='SAME')
+            gy = tf.nn.conv2d(mask_c, sobel_y, strides=[1, 1, 1, 1], padding='SAME')
+            boundary_c = tf.sqrt(tf.square(gx) + tf.square(gy) + 1e-6)
+            channels.append(boundary_c)
+        
+        return tf.concat(channels, axis=-1)
+    
+    def dice_loss(self, y_true, y_pred, smooth=1e-6):
+        """Standard Dice loss."""
+        y_true_f = tf.reshape(y_true, [-1])
+        y_pred_f = tf.reshape(y_pred, [-1])
+        
+        intersection = tf.reduce_sum(y_true_f * y_pred_f)
+        union = tf.reduce_sum(y_true_f) + tf.reduce_sum(y_pred_f)
+        
+        dice = (2. * intersection + smooth) / (union + smooth)
+        return 1 - dice
+    
+    def __call__(self, y_true, y_pred):
+        # Base loss on full image
+        base_loss = self.dice_loss(y_true, y_pred)
+        
+        # Extract boundaries
+        true_boundary = self.extract_boundary(y_true)
+        pred_boundary = self.extract_boundary(y_pred)
+        
+        # Boundary loss
+        boundary_loss = self.dice_loss(true_boundary, pred_boundary)
+        
+        # Combined loss
+        total_loss = base_loss + self.boundary_weight * boundary_loss
+        
+        return total_loss
+
+
+# Test boundary-aware loss
+print("\n" + "="*60)
+print("TESTING BOUNDARY-AWARE LOSS")
+print("="*60)
+
+boundary_loss = BoundaryAwareLoss(boundary_weight=2.0)
+
+# Create test data with clear boundary
+test_mask = np.zeros((1, 64, 64, 1), dtype=np.float32)
+test_mask[0, 20:44, 20:44] = 1.0  # Square region
+
+test_pred_good = test_mask + np.random.randn(1, 64, 64, 1) * 0.05
+test_pred_good = np.clip(test_pred_good, 0, 1)
+
+test_pred_bad = np.zeros_like(test_mask)
+test_pred_bad[0, 22:42, 22:42] = 1.0  # Smaller region
+
+loss_good = boundary_loss(test_mask, test_pred_good)
+loss_bad = boundary_loss(test_mask, test_pred_bad)
+
+print(f"Loss (good prediction): {loss_good:.4f}")
+print(f"Loss (bad prediction): {loss_bad:.4f}")
+
+# =============================================================================
+# Section 3: Multi-Scale Loss
+# =============================================================================
+
+class MultiScaleLoss(CustomSegmentationLoss):
+    """
+    Loss computed at multiple scales.
+    
+    Helps the model learn both fine details and global structure.
+    """
+    
+    def __init__(self, scales=[1, 0.5, 0.25], weights=[1.0, 0.5, 0.25]):
+        super().__init__('multi_scale_loss')
+        self.scales = scales
+        self.weights = weights
+    
+    def dice_loss(self, y_true, y_pred, smooth=1e-6):
+        y_true_f = tf.reshape(y_true, [-1])
+        y_pred_f = tf.reshape(y_pred, [-1])
+        
+        intersection = tf.reduce_sum(y_true_f * y_pred_f)
+        union = tf.reduce_sum(y_true_f) + tf.reduce_sum(y_pred_f)
+        
+        dice = (2. * intersection + smooth) / (union + smooth)
+        return 1 - dice
+    
+    def __call__(self, y_true, y_pred):
+        total_loss = 0.0
+        
+        for scale, weight in zip(self.scales, self.weights):
+            if scale == 1.0:
+                # Original scale
+                scaled_true = y_true
+                scaled_pred = y_pred
+            else:
+                # Downsample
+                h = tf.cast(tf.cast(tf.shape(y_true)[1], tf.float32) * scale, tf.int32)
+                w = tf.cast(tf.cast(tf.shape(y_true)[2], tf.float32) * scale, tf.int32)
+                
+                scaled_true = tf.image.resize(y_true, [h, w], method='nearest')
+                scaled_pred = tf.image.resize(y_pred, [h, w], method='bilinear')
+            
+            loss = self.dice_loss(scaled_true, scaled_pred)
+            total_loss += weight * loss
+        
+        return total_loss
+
+
+# Test multi-scale loss
+print("\n" + "="*60)
+print("TESTING MULTI-SCALE LOSS")
+print("="*60)
+
+multi_scale_loss = MultiScaleLoss(scales=[1, 0.5, 0.25], weights=[1.0, 0.5, 0.25])
+
+test_mask = np.random.rand(2, 128, 128, 1).astype(np.float32)
+test_pred = np.random.rand(2, 128, 128, 1).astype(np.float32)
+
+loss_value = multi_scale_loss(test_mask, test_pred)
+print(f"Multi-scale loss: {loss_value:.4f}")
+
+# =============================================================================
+# Section 4: Combined Loss with Learnable Weights
+# =============================================================================
+
+class LearnableWeightedLoss(keras.layers.Layer):
+    """
+    Loss with learnable weights for different terms.
+    
+    Automatically learns the optimal balance between loss components.
+    """
+    
+    def __init__(self, num_terms=2, **kwargs):
+        super().__init__(**kwargs)
+        self.num_terms = num_terms
+    
+    def build(self, input_shape):
+        # Initialize log weights (will be exponentiated to ensure positivity)
+        self.log_weights = self.add_weight(
+            name='log_weights',
+            shape=(self.num_terms,),
+            initializer='zeros',
+            trainable=True
+        )
+        super().build(input_shape)
+    
+    def call(self, losses):
+        """
+        Compute weighted sum of losses.
+        
+        Args:
+            losses: List of loss tensors
+        
+        Returns:
+            Weighted loss and individual weights
+        """
+        # Exponentiate to ensure positive weights
+        weights = tf.exp(self.log_weights)
+        
+        # Normalize weights
+        weights = weights / tf.reduce_sum(weights)
+        
+        # Weighted sum
+        total_loss = sum(w * l for w, l in zip(weights, losses))
+        
+        return total_loss, weights
+
+
+# Test learnable weighted loss
+print("\n" + "="*60)
+print("TESTING LEARNABLE WEIGHTED LOSS")
+print("="*60)
+
+learnable_loss = LearnableWeightedLoss(num_terms=3)
+learnable_loss.build(None)
+
+# Simulate losses
+dummy_losses = [tf.constant(1.0), tf.constant(2.0), tf.constant(3.0)]
+total, weights = learnable_loss(dummy_losses)
+
+print(f"Learned weights: {weights.numpy()}")
+print(f"Total loss: {total.numpy():.4f}")
+
+# =============================================================================
+# Section 5: Task-Specific Loss - Medical Segmentation
+# =============================================================================
+
+class MedicalSegmentationLoss(CustomSegmentationLoss):
+    """
+    Loss optimized for medical image segmentation.
+    
+    Characteristics:
+    - High sensitivity (don't miss pathology)
+    - Reasonable specificity (avoid false alarms)
+    - Good boundary definition
+    """
+    
+    def __init__(self, sensitivity_weight=2.0, specificity_weight=1.0, 
+                 boundary_weight=1.0):
+        super().__init__('medical_segmentation_loss')
+        self.sensitivity_weight = sensitivity_weight
+        self.specificity_weight = specificity_weight
+        self.boundary_weight = boundary_weight
+    
+    def sensitivity_loss(self, y_true, y_pred):
+        """Loss based on false negatives (missing pathology)."""
+        # Penalize false negatives heavily
+        fn = tf.reduce_sum(y_true * (1 - y_pred))
+        tp = tf.reduce_sum(y_true * y_pred)
+        
+        # Sensitivity = TP / (TP + FN)
+        sensitivity = tp / (tp + fn + 1e-6)
+        return 1 - sensitivity
+    
+    def specificity_loss(self, y_true, y_pred):
+        """Loss based on false positives (false alarms)."""
+        fp = tf.reduce_sum((1 - y_true) * y_pred)
+        tn = tf.reduce_sum((1 - y_true) * (1 - y_pred))
+        
+        # Specificity = TN / (TN + FP)
+        specificity = tn / (tn + fp + 1e-6)
+        return 1 - specificity
+    
+    def boundary_loss(self, y_true, y_pred):
+        """Boundary quality loss."""
+        # Simple boundary loss using gradient
+        sobel_x = tf.constant([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=tf.float32)
+        sobel_x = tf.reshape(sobel_x, [3, 3, 1, 1])
+        
+        true_gx = tf.nn.conv2d(y_true, sobel_x, strides=[1, 1, 1, 1], padding='SAME')
+        pred_gx = tf.nn.conv2d(y_pred, sobel_x, strides=[1, 1, 1, 1], padding='SAME')
+        
+        return tf.reduce_mean(tf.square(true_gx - pred_gx))
+    
+    def __call__(self, y_true, y_pred):
+        sens_loss = self.sensitivity_loss(y_true, y_pred)
+        spec_loss = self.specificity_loss(y_true, y_pred)
+        bound_loss = self.boundary_loss(y_true, y_pred)
+        
+        total = (self.sensitivity_weight * sens_loss + 
+                 self.specificity_weight * spec_loss +
+                 self.boundary_weight * bound_loss)
+        
+        return total
+
+
+# Test medical loss
+print("\n" + "="*60)
+print("TESTING MEDICAL SEGMENTATION LOSS")
+print("="*60)
+
+medical_loss = MedicalSegmentationLoss(
+    sensitivity_weight=2.0,
+    specificity_weight=1.0,
+    boundary_weight=1.0
+)
+
+# Test with different predictions
+test_true = np.zeros((1, 64, 64, 1), dtype=np.float32)
+test_true[0, 25:40, 25:40] = 1.0
+
+# Good prediction
+pred_good = test_true + np.random.randn(1, 64, 64, 1) * 0.05
+pred_good = np.clip(pred_good, 0, 1)
+
+# Misses some pathology (false negatives)
+pred_fn = test_true.copy()
+pred_fn[0, 25:30, 25:40] = 0.0  # Miss top part
+
+# False alarms (false positives)
+pred_fp = test_true.copy()
+pred_fp[0, 15:20, 15:20] = 1.0  # Extra region
+
+print(f"Loss (good): {medical_loss(test_true, pred_good):.4f}")
+print(f"Loss (false negatives): {medical_loss(test_true, pred_fn):.4f}")
+print(f"Loss (false positives): {medical_loss(test_true, pred_fp):.4f}")
+
+# =============================================================================
+# Section 6: Debugging Custom Losses
+# =============================================================================
+
+def debug_loss(loss_fn, y_true, y_pred, name='Loss'):
+    """
+    Debug a loss function.
+    
+    Checks:
+    1. Output is scalar
+    2. Loss is non-negative
+    3. Loss is differentiable
+    """
+    print(f"\nDebugging {name}:")
+    
+    try:
+        # Compute loss
+        with tf.GradientTape() as tape:
+            tape.watch(y_pred)
+            loss_value = loss_fn(y_true, y_pred)
+        
+        # Check output shape
+        print(f"  Output shape: {loss_value.shape}")
+        assert loss_value.shape == (), f"Expected scalar, got {loss_value.shape}"
+        
+        # Check non-negative
+        loss_np = loss_value.numpy()
+        print(f"  Loss value: {loss_np:.4f}")
+        assert loss_np >= 0, f"Loss should be non-negative, got {loss_np}"
+        
+        # Check gradients
+        grads = tape.gradient(loss_value, y_pred)
+        print(f"  Gradient shape: {grads.shape}")
+        print(f"  Gradient range: [{grads.numpy().min():.4f}, {grads.numpy().max():.4f}]")
+        assert grads is not None, "Gradients are None!"
+        
+        print(f"  ✓ {name} passed all checks!")
+        return True
+        
+    except Exception as e:
+        print(f"  ✗ {name} failed: {e}")
+        return False
+
+
+# Debug all custom losses
+print("\n" + "="*60)
+print("DEBUGGING CUSTOM LOSSES")
+print("="*60)
+
+test_y_true = tf.constant(np.random.rand(2, 64, 64, 1).astype(np.float32))
+test_y_pred = tf.constant(np.random.rand(2, 64, 64, 1).astype(np.float32))
+
+debug_loss(boundary_loss, test_y_true, test_y_pred, 'BoundaryAwareLoss')
+debug_loss(multi_scale_loss, test_y_true, test_y_pred, 'MultiScaleLoss')
+debug_loss(medical_loss, test_y_true, test_y_pred, 'MedicalSegmentationLoss')
+
+# =============================================================================
+# Section 7: Best Practices for Custom Losses
+# =============================================================================
+
+print("\n" + "="*60)
+print("BEST PRACTICES FOR CUSTOM LOSSES")
+print("="*60)
+
+best_practices = """
+1. ALWAYS TEST YOUR LOSS:
+   - Verify it produces scalar output
+   - Check gradients are not None
+   - Ensure loss is non-negative
+   - Test with edge cases (all zeros, all ones)
+
+2. NUMERICAL STABILITY:
+   - Add small epsilon to divisions
+   - Clip predictions before log operations
+   - Use tf.reduce_mean for averaging
+
+3. DIFFERENTIABILITY:
+   - Avoid argmax, round, or other non-differentiable operations
+   - Use soft approximations (e.g., soft Dice)
+   - Test with GradientTape
+
+4. SHAPE HANDLING:
+   - Handle variable batch sizes
+   - Support multiple channels
+   - Use dynamic shape operations
+
+5. COMBINING LOSSES:
+   - Start with equal weights
+   - Normalize loss magnitudes
+   - Consider learnable weights
+   - Monitor individual loss components
+
+6. VALIDATION:
+   - Compare with standard losses
+   - Check convergence behavior
+   - Validate on held-out data
+"""
+print(best_practices)
+
+# =============================================================================
+# Summary
+# =============================================================================
+
+print("\n" + "="*60)
+print("LAB 5.10 SUMMARY")
+print("="*60)
+print("""
+Key Takeaways:
+1. Custom losses should be differentiable and produce scalar output
+2. Boundary-aware losses improve edge quality
+3. Multi-scale losses capture features at different resolutions
+4. Task-specific losses (e.g., medical) can incorporate domain knowledge
+5. Always debug custom losses with GradientTape
+
+Next: Lab 5.11 will cover post-processing techniques.
+""")
+```
+
+---

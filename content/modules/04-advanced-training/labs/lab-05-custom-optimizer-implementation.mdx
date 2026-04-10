@@ -1,0 +1,110 @@
+---
+title: "Custom Optimizer Implementation"
+module: 4
+labNumber: 5
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Custom Optimizer Implementation
+
+```python
+"""
+Lab 1.4: Custom Optimizer Implementation
+========================================
+Implement a custom optimizer by extending tf.keras.optimizers.Optimizer.
+"""
+
+import tensorflow as tf
+import numpy as np
+
+class CustomSGDWithMomentum(tf.keras.optimizers.Optimizer):
+    """
+    Custom SGD optimizer with momentum and gradient accumulation.
+    Demonstrates how to implement a custom optimizer.
+    """
+    
+    def __init__(self, learning_rate=0.01, momentum=0.9, accumulation_steps=4,
+                 name="CustomSGDWithMomentum", **kwargs):
+        super().__init__(name, **kwargs)
+        self._learning_rate = self._build_learning_rate(learning_rate)
+        self._momentum = momentum
+        self._accumulation_steps = accumulation_steps
+        
+    def build(self, var_list):
+        super().build(var_list)
+        if hasattr(self, '_built') and self._built:
+            return
+        
+        self._momentums = []
+        self._grad_accumulators = []
+        self._accum_step_counter = self.add_variable(
+            shape=(), dtype=tf.int32, name="accum_step_counter",
+            initializer=tf.keras.initializers.Zeros())
+        
+        for var in var_list:
+            self._momentums.append(self.add_variable_from_reference(
+                model_variable=var, variable_name="m", initial_value=tf.zeros_like(var)))
+            self._grad_accumulators.append(self.add_variable_from_reference(
+                model_variable=var, variable_name="grad_accum", initial_value=tf.zeros_like(var)))
+        
+        self._built = True
+    
+    def _resource_apply_dense(self, grad, variable):
+        var_key = self._var_key(variable)
+        momentum = self._momentums[self._index_dict[var_key]]
+        grad_accum = self._grad_accumulators[self._index_dict[var_key]]
+        lr = tf.cast(self._learning_rate, variable.dtype)
+        momentum_coeff = tf.cast(self._momentum, variable.dtype)
+        
+        grad_accum.assign_add(grad)
+        self._accum_step_counter.assign_add(1)
+        
+        def apply_update():
+            avg_grad = grad_accum / tf.cast(self._accumulation_steps, grad_accum.dtype)
+            momentum.assign(momentum_coeff * momentum - lr * avg_grad)
+            variable.assign_add(momentum)
+            grad_accum.assign(tf.zeros_like(grad_accum))
+            self._accum_step_counter.assign(0)
+            return tf.no_op()
+        
+        tf.cond(tf.greater_equal(self._accum_step_counter, self._accumulation_steps),
+                apply_update, lambda: tf.no_op())
+    
+    def get_config(self):
+        config = super().get_config()
+        config.update({"learning_rate": self._serialize_hyperparameter("learning_rate"),
+                       "momentum": self._momentum,
+                       "accumulation_steps": self._accumulation_steps})
+        return config
+
+def test_custom_optimizer():
+    print("Testing Custom SGD with Gradient Accumulation")
+    print("="*50)
+    
+    (x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
+    x_train = x_train[:1000].reshape(-1, 784).astype('float32') / 255.0
+    y_train = tf.keras.utils.to_categorical(y_train[:1000], 10)
+    
+    model = tf.keras.Sequential([
+        tf.keras.layers.Dense(128, activation='relu', input_shape=(784,)),
+        tf.keras.layers.Dense(10, activation='softmax')
+    ])
+    
+    model.compile(optimizer=CustomSGDWithMomentum(learning_rate=0.01, momentum=0.9, accumulation_steps=4),
+                  loss='categorical_crossentropy', metrics=['accuracy'])
+    
+    print("\nTraining with custom optimizer...")
+    history = model.fit(x_train, y_train, epochs=10, batch_size=32, verbose=1)
+    
+    print(f"\nFinal Loss: {history.history['loss'][-1]:.4f}")
+    print(f"Final Accuracy: {history.history['accuracy'][-1]:.4f}")
+    return history
+
+test_custom_optimizer()
+```
+
+---
+
+<a name="section-2-learning-rate-scheduling"></a>
+# Section 2: Learning Rate Scheduling (4 Labs)

@@ -1,0 +1,492 @@
+---
+title: "TensorBoard Visualization"
+module: 1
+labNumber: 6
+difficulty: "easy"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# TensorBoard Visualization
+
+### Complete Code
+
+```python
+"""
+Lab 7: TensorBoard Visualization
+=================================
+Comprehensive TensorBoard tutorial for deep learning visualization.
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+import os
+from datetime import datetime
+
+print("=" * 70)
+print("Lab 7: TensorBoard Visualization")
+print("=" * 70)
+
+# Create log directories
+log_dir = "logs/tensorboard_tutorial/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+train_log_dir = log_dir + '/train'
+test_log_dir = log_dir + '/test'
+
+os.makedirs(train_log_dir, exist_ok=True)
+os.makedirs(test_log_dir, exist_ok=True)
+
+print(f"TensorBoard logs: {log_dir}")
+
+# =============================================================================
+# PART 1: Basic TensorBoard Setup
+# =============================================================================
+
+print("\n" + "=" * 70)
+print("PART 1: Basic TensorBoard Setup")
+print("=" * 70)
+
+# Create summary writers
+train_summary_writer = tf.summary.create_file_writer(train_log_dir)
+test_summary_writer = tf.summary.create_file_writer(test_log_dir)
+
+# Generate some example data
+np.random.seed(42)
+steps = 100
+
+# Log scalar values
+print("\nLogging scalar values...")
+for step in range(steps):
+    # Training metrics
+    train_loss = 1.0 / (step + 1) + np.random.randn() * 0.05
+    train_acc = 1 - 1.0 / (step + 5) + np.random.randn() * 0.02
+    
+    # Test metrics
+    test_loss = 1.2 / (step + 1) + np.random.randn() * 0.05
+    test_acc = 0.95 - 0.8 / (step + 5) + np.random.randn() * 0.02
+    
+    with train_summary_writer.as_default():
+        tf.summary.scalar('loss', train_loss, step=step)
+        tf.summary.scalar('accuracy', train_acc, step=step)
+    
+    with test_summary_writer.as_default():
+        tf.summary.scalar('loss', test_loss, step=step)
+        tf.summary.scalar('accuracy', test_acc, step=step)
+
+print("Scalar logging complete!")
+
+# =============================================================================
+# PART 2: Histograms and Distributions
+# =============================================================================
+
+print("\n" + "=" * 70)
+print("PART 2: Histograms and Distributions")
+print("=" * 70)
+
+print("\nLogging histograms...")
+for step in range(0, steps, 5):
+    # Simulate weight distributions changing over time
+    weights = np.random.randn(100) * (1.0 - step / steps) + step / steps
+    gradients = np.random.randn(100) * 0.1 / (step + 1)
+    
+    with train_summary_writer.as_default():
+        tf.summary.histogram('weights', weights, step=step)
+        tf.summary.histogram('gradients', gradients, step=step)
+
+print("Histogram logging complete!")
+
+# =============================================================================
+# PART 3: Images
+# =============================================================================
+
+print("\n" + "=" * 70)
+print("PART 3: Images")
+print("=" * 70)
+
+print("\nLogging images...")
+
+# Create sample images
+for step in range(0, 10):
+    # Create a pattern image
+    image = np.zeros((28, 28, 3))
+    for i in range(28):
+        for j in range(28):
+            image[i, j, 0] = (i + step) / 37.0
+            image[i, j, 1] = (j + step) / 37.0
+            image[i, j, 2] = (i + j + step) / 56.0
+    
+    with train_summary_writer.as_default():
+        tf.summary.image('Training Images', image[None, ...], step=step)
+
+print("Image logging complete!")
+
+# =============================================================================
+# PART 4: Text
+# =============================================================================
+
+print("\n" + "=" * 70)
+print("PART 4: Text")
+print("=" * 70)
+
+print("\nLogging text...")
+
+with train_summary_writer.as_default():
+    tf.summary.text('Model Architecture', 
+                    'Input -> Dense(128) -> ReLU -> Dense(64) -> ReLU -> Dense(10) -> Softmax', 
+                    step=0)
+    tf.summary.text('Hyperparameters',
+                    'Learning Rate: 0.001\nBatch Size: 32\nEpochs: 100',
+                    step=0)
+
+print("Text logging complete!")
+
+# =============================================================================
+# PART 5: Complete Training Example with TensorBoard
+# =============================================================================
+
+print("\n" + "=" * 70)
+print("PART 5: Complete Training Example with TensorBoard")
+print("=" * 70)
+
+# Generate synthetic data
+np.random.seed(42)
+n_samples = 1000
+X = np.random.randn(n_samples, 10).astype(np.float32)
+y = (X[:, 0] + X[:, 1] * 2 - X[:, 2] * 0.5 > 0).astype(np.float32)
+
+# Split data
+split = int(0.8 * n_samples)
+X_train, X_test = X[:split], X[split:]
+y_train, y_test = y[:split], y[split:]
+
+# Create datasets
+train_dataset = tf.data.Dataset.from_tensor_slices((X_train, y_train)).batch(32)
+test_dataset = tf.data.Dataset.from_tensor_slices((X_test, y_test)).batch(32)
+
+# Define model
+model = tf.keras.Sequential([
+    tf.keras.layers.Dense(64, activation='relu', input_shape=(10,)),
+    tf.keras.layers.Dense(32, activation='relu'),
+    tf.keras.layers.Dense(1, activation='sigmoid')
+])
+
+# Compile model
+model.compile(optimizer='adam',
+              loss='binary_crossentropy',
+              metrics=['accuracy'])
+
+# Create TensorBoard callback
+complete_log_dir = log_dir + '/complete_training'
+os.makedirs(complete_log_dir, exist_ok=True)
+
+tensorboard_callback = tf.keras.callbacks.TensorBoard(
+    log_dir=complete_log_dir,
+    histogram_freq=1,
+    write_graph=True,
+    write_images=True,
+    update_freq='epoch',
+    profile_batch=2
+)
+
+print("\nTraining model with TensorBoard callback...")
+history = model.fit(
+    train_dataset,
+    epochs=20,
+    validation_data=test_dataset,
+    callbacks=[tensorboard_callback],
+    verbose=1
+)
+
+print("Training complete!")
+
+# =============================================================================
+# PART 6: Custom TensorBoard Logging
+# =============================================================================
+
+print("\n" + "=" * 70)
+print("PART 6: Custom TensorBoard Logging")
+print("=" * 70)
+
+# Custom training loop with detailed logging
+custom_log_dir = log_dir + '/custom_training'
+os.makedirs(custom_log_dir, exist_ok=True)
+custom_writer = tf.summary.create_file_writer(custom_log_dir)
+
+# Simple model for custom training
+class SimpleModel(tf.keras.Model):
+    def __init__(self):
+        super(SimpleModel, self).__init__()
+        self.dense1 = tf.keras.layers.Dense(32, activation='relu')
+        self.dense2 = tf.keras.layers.Dense(1, activation='sigmoid')
+    
+    def call(self, inputs):
+        x = self.dense1(inputs)
+        return self.dense2(x)
+
+custom_model = SimpleModel()
+optimizer = tf.keras.optimizers.Adam(0.001)
+loss_fn = tf.keras.losses.BinaryCrossentropy()
+
+print("\nCustom training loop with TensorBoard logging...")
+
+for epoch in range(10):
+    epoch_loss = []
+    epoch_acc = []
+    
+    for step, (X_batch, y_batch) in enumerate(train_dataset):
+        with tf.GradientTape() as tape:
+            predictions = custom_model(X_batch, training=True)
+            loss = loss_fn(y_batch[:, None], predictions)
+        
+        gradients = tape.gradient(loss, custom_model.trainable_variables)
+        optimizer.apply_gradients(zip(gradients, custom_model.trainable_variables))
+        
+        # Calculate accuracy
+        acc = tf.reduce_mean(
+            tf.cast(tf.equal(tf.round(predictions), y_batch[:, None]), tf.float32)
+        )
+        
+        epoch_loss.append(loss.numpy())
+        epoch_acc.append(acc.numpy())
+        
+        # Log every 5 steps
+        if step % 5 == 0:
+            with custom_writer.as_default():
+                tf.summary.scalar('step_loss', loss, step=epoch * len(train_dataset) + step)
+                tf.summary.scalar('step_accuracy', acc, step=epoch * len(train_dataset) + step)
+                
+                # Log gradients
+                for var, grad in zip(custom_model.trainable_variables, gradients):
+                    tf.summary.histogram(f'gradients/{var.name}', grad, 
+                                        step=epoch * len(train_dataset) + step)
+    
+    # Log epoch metrics
+    with custom_writer.as_default():
+        tf.summary.scalar('epoch_loss', np.mean(epoch_loss), step=epoch)
+        tf.summary.scalar('epoch_accuracy', np.mean(epoch_acc), step=epoch)
+    
+    if epoch % 2 == 0:
+        print(f"Epoch {epoch}: loss={np.mean(epoch_loss):.4f}, acc={np.mean(epoch_acc):.4f}")
+
+print("Custom training complete!")
+
+# =============================================================================
+# PART 7: Visualization
+# =============================================================================
+
+print("\n" + "=" * 70)
+print("PART 7: Visualization")
+print("=" * 70)
+
+fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+
+# Plot 1: Training history from Keras callback
+axes[0, 0].plot(history.history['loss'], 'b-', linewidth=2, label='Train Loss')
+axes[0, 0].plot(history.history['val_loss'], 'r-', linewidth=2, label='Val Loss')
+axes[0, 0].set_xlabel('Epoch')
+axes[0, 0].set_ylabel('Loss')
+axes[0, 0].set_title('Training and Validation Loss')
+axes[0, 0].legend()
+axes[0, 0].grid(True, alpha=0.3)
+
+# Plot 2: Accuracy
+axes[0, 1].plot(history.history['accuracy'], 'b-', linewidth=2, label='Train Acc')
+axes[0, 1].plot(history.history['val_accuracy'], 'r-', linewidth=2, label='Val Acc')
+axes[0, 1].set_xlabel('Epoch')
+axes[0, 1].set_ylabel('Accuracy')
+axes[0, 1].set_title('Training and Validation Accuracy')
+axes[0, 1].legend()
+axes[0, 1].grid(True, alpha=0.3)
+
+# Plot 3: Simulated histogram evolution
+steps_hist = [0, 25, 50, 75, 99]
+colors = plt.cm.viridis(np.linspace(0, 1, len(steps_hist)))
+for i, step in enumerate(steps_hist):
+    weights = np.random.randn(1000) * (1.0 - step / 100)
+    axes[1, 0].hist(weights, bins=30, alpha=0.5, color=colors[i], 
+                    label=f'Step {step}')
+axes[1, 0].set_xlabel('Weight Value')
+axes[1, 0].set_ylabel('Frequency')
+axes[1, 0].set_title('Weight Distribution Evolution (Simulated)')
+axes[1, 0].legend()
+
+# Plot 4: TensorBoard features summary
+features = ['Scalars', 'Histograms', 'Images', 'Graphs', 'Text', 'HParams']
+usage = [100, 80, 60, 90, 40, 70]
+colors = ['#3498db', '#2ecc71', '#e74c3c', '#9b59b6', '#f39c12', '#1abc9c']
+bars = axes[1, 1].barh(features, usage, color=colors)
+axes[1, 1].set_xlabel('Usage Frequency (%)')
+axes[1, 1].set_title('TensorBoard Features Usage')
+for bar, val in zip(bars, usage):
+    axes[1, 1].text(bar.get_width() + 2, bar.get_y() + bar.get_height()/2,
+                    f'{val}%', va='center')
+
+plt.tight_layout()
+plt.savefig('lab7_tensorboard_visualization.png', dpi=150, bbox_inches='tight')
+print("\nVisualization saved as 'lab7_tensorboard_visualization.png'")
+plt.show()
+
+# =============================================================================
+# PART 8: TensorBoard Instructions
+# =============================================================================
+
+print("\n" + "=" * 70)
+print("PART 8: TensorBoard Instructions")
+print("=" * 70)
+
+print(f"""
+TENSORBOARD USAGE:
+==================
+
+1. START TENSORBOARD:
+   In a terminal, run:
+   
+   tensorboard --logdir={log_dir}
+   
+   Or for all logs:
+   tensorboard --logdir=logs/
+
+2. ACCESS IN BROWSER:
+   Open: http://localhost:6006
+
+3. AVAILABLE DASHBOARDS:
+
+   SCALARS:
+   - Track metrics over time (loss, accuracy)
+   - Compare train vs test curves
+   - Smooth curves for noisy data
+   
+   HISTOGRAMS:
+   - Visualize weight distributions
+   - Track gradient magnitudes
+   - Detect vanishing/exploding gradients
+   
+   IMAGES:
+   - Visualize input data
+   - View feature maps
+   - Compare generated images
+   
+   GRAPHS:
+   - View model architecture
+   - Debug computation graph
+   - Profile operations
+   
+   TEXT:
+   - Log hyperparameters
+   - Record model summaries
+   - Document experiments
+   
+   HPARAMS:
+   - Compare different hyperparameter settings
+   - Find optimal configurations
+
+4. KEY FEATURES:
+   - Time series smoothing
+   - Log scale for y-axis
+   - Zoom and pan
+   - Download data as CSV
+   - Compare multiple runs
+
+5. BEST PRACTICES:
+   - Use descriptive run names with timestamps
+   - Log both train and validation metrics
+   - Use histogram_freq=1 for weight tracking
+   - Profile your model to find bottlenecks
+""")
+
+print("\n" + "=" * 70)
+print("Lab 7 Complete!")
+print("=" * 70)
+```
+
+---
+
+# Troubleshooting Guide
+
+## Common Errors and Solutions
+
+### Error 1: "Shape mismatch" in broadcasting
+```python
+# Problem
+a = tf.constant([[1, 2], [3, 4]])  # Shape [2, 2]
+b = tf.constant([1, 2, 3])          # Shape [3]
+result = a + b  # ERROR!
+
+# Solution: Reshape to compatible shapes
+b_reshaped = tf.reshape(b, [3, 1])  # Shape [3, 1]
+# Or use expand_dims
+b_expanded = tf.expand_dims(b, axis=1)  # Shape [3, 1]
+```
+
+### Error 2: "Cannot convert a symbolic Tensor to a numpy array"
+```python
+# Problem: Trying to use numpy operations on tensors inside @tf.function
+@tf.function
+def my_func(x):
+    return np.sum(x)  # ERROR!
+
+# Solution: Use TensorFlow operations
+@tf.function
+def my_func(x):
+    return tf.reduce_sum(x)  # Correct
+```
+
+### Error 3: Gradient computation issues
+```python
+# Problem: Variables not being tracked
+x = tf.constant(3.0)
+with tf.GradientTape() as tape:
+    y = x ** 2
+grad = tape.gradient(y, x)  # Returns None!
+
+# Solution: Use tf.Variable for trainable parameters
+x = tf.Variable(3.0)
+with tf.GradientTape() as tape:
+    y = x ** 2
+grad = tape.gradient(y, x)  # Returns 6.0
+```
+
+### Error 4: Memory issues with large tensors
+```python
+# Problem: Creating huge intermediate tensors
+result = tf.matmul(A, B)  # A: [10000, 10000], B: [10000, 10000]
+
+# Solution: Use float32 instead of float64, process in batches
+A = tf.cast(A, tf.float32)
+B = tf.cast(B, tf.float32)
+# Or use @tf.function for memory optimization
+```
+
+### Error 5: TensorBoard not showing data
+```python
+# Problem: Wrong log directory or no data written
+# Solution: Verify log directory and ensure data is being written
+print(f"Log directory: {log_dir}")
+print(f"Directory exists: {os.path.exists(log_dir)}")
+print(f"Files in directory: {os.listdir(log_dir) if os.path.exists(log_dir) else 'N/A'}")
+```
+
+---
+
+# Summary
+
+This comprehensive lab guide covers:
+
+1. **NumPy Mastery (5 labs)**: Array creation, indexing, reshaping, broadcasting, vectorization
+2. **TensorFlow Tensors (4 labs)**: Tensor creation, manipulation, indexing, linear algebra
+3. **Gradient Descent (3 labs)**: Vanilla GD, Momentum, AdaGrad, RMSprop, Adam
+4. **Complete Pipeline**: End-to-end ML workflow with TensorBoard
+5. **Advanced Topics**: Vectorization speed, broadcasting deep dive, TensorBoard visualization
+
+Each lab includes:
+- Complete, runnable code
+- Step-by-step explanations
+- Expected outputs
+- Challenge exercises with solutions
+- Visualizations
+
+To run TensorBoard:
+```bash
+tensorboard --logdir=logs/
+```
+
+Then open http://localhost:6006 in your browser.

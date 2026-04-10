@@ -1,0 +1,422 @@
+---
+title: "Inception Score (IS) Implementation"
+module: 7
+labNumber: 14
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Inception Score (IS) Implementation
+
+## Objectives
+- Understand the Inception Score metric
+- Implement IS calculation from scratch
+- Evaluate GAN quality using IS
+- Compare different GAN variants
+
+## Theory Overview
+
+Inception Score measures:
+1. **Quality**: Generated images should be classifiable (low entropy p(y|x))
+2. **Diversity**: Generated images should cover all classes (high entropy p(y))
+
+Formula:
+```
+IS = exp(E[KL(p(y|x) || p(y))])
+```
+
+Higher IS indicates better quality and diversity.
+
+## Complete Implementation
+
+```python
+"""
+Lab 7.13: Inception Score (IS) Implementation
+==============================================
+Calculate Inception Score to evaluate GAN quality.
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras.applications import InceptionV3
+from scipy.stats import entropy
+import os
+
+os.makedirs('is_evaluation', exist_ok=True)
+
+# =============================================================================
+# Part 1: Inception Score Implementation
+# =============================================================================
+
+class InceptionScore:
+    """
+    Inception Score calculator for evaluating GAN quality.
+    
+    Uses a pre-trained InceptionV3 network to calculate:
+    - Quality: How classifiable are generated images?
+    - Diversity: How diverse are the generated images?
+    """
+    
+    def __init__(self, input_shape=(299, 299, 3)):
+        """
+        Initialize Inception Score calculator.
+        
+        Args:
+            input_shape: Input shape for InceptionV3 (default 299x299x3)
+        """
+        self.input_shape = input_shape
+        
+        # Load pre-trained InceptionV3 (without top layer)
+        # We use the model up to the final pooling layer
+        base_model = InceptionV3(
+            weights='imagenet', 
+            include_top=True,  # Include classification layer
+            input_shape=input_shape
+        )
+        
+        # Use the model for prediction
+        self.model = base_model
+    
+    def preprocess_images(self, images):
+        """
+        Preprocess images for InceptionV3.
+        
+        Args:
+            images: Images in range [-1, 1] or [0, 1]
+        
+        Returns:
+            Preprocessed images
+        """
+        # Resize to 299x299
+        images = tf.image.resize(images, [299, 299])
+        
+        # Convert grayscale to RGB if needed
+        if images.shape[-1] == 1:
+            images = tf.image.grayscale_to_rgb(images)
+        
+        # Normalize to [0, 255] and apply Inception preprocessing
+        images = (images + 1.0) / 2.0 * 255.0  # [-1, 1] -> [0, 255]
+        images = tf.keras.applications.inception_v3.preprocess_input(images)
+        
+        return images
+    
+    def calculate_score(self, images, splits=10):
+        """
+        Calculate Inception Score.
+        
+        Args:
+            images: Generated images (N, H, W, C) in range [-1, 1]
+            splits: Number of splits for calculating mean and std
+        
+        Returns:
+            mean, std: Mean and standard deviation of IS
+        """
+        # Preprocess images
+        images = self.preprocess_images(images)
+        
+        # Get predictions from InceptionV3
+        preds = self.model.predict(images, verbose=0)
+        
+        # Calculate p(y|x) for each image
+        # preds is (N, 1000) - probabilities for 1000 ImageNet classes
+        
+        # Calculate p(y) - marginal distribution
+        py = np.mean(preds, axis=0)  # (1000,)
+        
+        # Calculate scores for each split
+        scores = []
+        split_size = len(images) // splits
+        
+        for i in range(splits):
+            start = i * split_size
+            end = (i + 1) * split_size if i < splits - 1 else len(images)
+            
+            part = preds[start:end]
+            
+            # Calculate KL divergence for this split
+            # KL(p(y|x) || p(y))
+            kl_divs = []
+            for j in range(len(part)):
+                pyx = part[j]  # p(y|x) for one image
+                kl = entropy(pyx, py)  # KL divergence
+                kl_divs.append(kl)
+            
+            # IS = exp(mean(KL))
+            score = np.exp(np.mean(kl_divs))
+            scores.append(score)
+        
+        return np.mean(scores), np.std(scores)
+
+# =============================================================================
+# Part 2: Simplified IS for MNIST (Custom Classifier)
+# =============================================================================
+
+def build_mnist_classifier():
+    """
+    Build a simple classifier for MNIST digits.
+    Used for calculating IS on MNIST-generated images.
+    """
+    model = keras.Sequential([
+        layers.Conv2D(32, 3, activation='relu', input_shape=(28, 28, 1)),
+        layers.MaxPooling2D(2),
+        layers.Conv2D(64, 3, activation='relu'),
+        layers.MaxPooling2D(2),
+        layers.Flatten(),
+        layers.Dense(128, activation='relu'),
+        layers.Dropout(0.5),
+        layers.Dense(10, activation='softmax')
+    ], name='MNIST_Classifier')
+    
+    model.compile(
+        optimizer='adam',
+        loss='sparse_categorical_crossentropy',
+        metrics=['accuracy']
+    )
+    
+    return model
+
+def calculate_mnist_is(images, classifier, splits=10):
+    """
+    Calculate Inception Score for MNIST images using a trained classifier.
+    
+    Args:
+        images: Generated MNIST images (N, 28, 28, 1)
+        classifier: Trained MNIST classifier
+        splits: Number of splits
+    
+    Returns:
+        mean, std: IS mean and standard deviation
+    """
+    # Get predictions
+    preds = classifier.predict(images, verbose=0)
+    
+    # Calculate p(y) - marginal distribution
+    py = np.mean(preds, axis=0)
+    
+    # Calculate scores for each split
+    scores = []
+    split_size = len(images) // splits
+    
+    for i in range(splits):
+        start = i * split_size
+        end = (i + 1) * split_size if i < splits - 1 else len(images)
+        
+        part = preds[start:end]
+        
+        # Calculate KL divergence
+        kl_divs = []
+        for j in range(len(part)):
+            pyx = part[j]
+            kl = entropy(pyx, py)
+            kl_divs.append(kl)
+        
+        score = np.exp(np.mean(kl_divs))
+        scores.append(score)
+    
+    return np.mean(scores), np.std(scores)
+
+# =============================================================================
+# Part 3: Train MNIST Classifier for IS
+# =============================================================================
+
+# Load MNIST
+(train_images, train_labels), (test_images, test_labels) = keras.datasets.mnist.load_data()
+
+# Preprocess
+train_images = train_images.reshape(-1, 28, 28, 1).astype('float32') / 255.0
+test_images = test_images.reshape(-1, 28, 28, 1).astype('float32') / 255.0
+
+# Build and train classifier
+print("Training MNIST classifier for IS calculation...")
+classifier = build_mnist_classifier()
+classifier.fit(
+    train_images, train_labels,
+    validation_data=(test_images, test_labels),
+    epochs=5,
+    batch_size=128,
+    verbose=1
+)
+
+# Evaluate classifier
+test_loss, test_acc = classifier.evaluate(test_images, test_labels, verbose=0)
+print(f"\nClassifier Test Accuracy: {test_acc * 100:.2f}%")
+
+# =============================================================================
+# Part 4: Build and Train GANs for Comparison
+# =============================================================================
+
+def build_simple_generator(latent_dim=100):
+    """Build simple generator."""
+    return keras.Sequential([
+        layers.Dense(7*7*128, input_shape=(latent_dim,)),
+        layers.Reshape((7, 7, 128)),
+        layers.BatchNormalization(),
+        layers.LeakyReLU(0.2),
+        layers.Conv2DTranspose(64, 5, strides=2, padding='same'),
+        layers.BatchNormalization(),
+        layers.LeakyReLU(0.2),
+        layers.Conv2DTranspose(1, 5, strides=2, padding='same', activation='tanh')
+    ])
+
+def build_simple_discriminator():
+    """Build simple discriminator."""
+    return keras.Sequential([
+        layers.Conv2D(64, 5, strides=2, padding='same', input_shape=(28, 28, 1)),
+        layers.LeakyReLU(0.2),
+        layers.Dropout(0.3),
+        layers.Conv2D(128, 5, strides=2, padding='same'),
+        layers.LeakyReLU(0.2),
+        layers.Dropout(0.3),
+        layers.Flatten(),
+        layers.Dense(1, activation='sigmoid')
+    ])
+
+class SimpleGAN(keras.Model):
+    """Simple GAN for testing IS."""
+    
+    def __init__(self, latent_dim):
+        super().__init__()
+        self.generator = build_simple_generator(latent_dim)
+        self.discriminator = build_simple_discriminator()
+        self.latent_dim = latent_dim
+        self.g_opt = keras.optimizers.Adam(0.0002, 0.5)
+        self.d_opt = keras.optimizers.Adam(0.0002, 0.5)
+        self.cross_entropy = keras.losses.BinaryCrossentropy()
+    
+    @tf.function
+    def train_step(self, real_images):
+        batch_size = tf.shape(real_images)[0]
+        noise = tf.random.normal([batch_size, self.latent_dim])
+        
+        with tf.GradientTape() as tape_d:
+            fake = self.generator(noise, training=True)
+            real_pred = self.discriminator(real_images, training=True)
+            fake_pred = self.discriminator(fake, training=True)
+            d_loss = (self.cross_entropy(tf.ones_like(real_pred), real_pred) +
+                     self.cross_entropy(tf.zeros_like(fake_pred), fake_pred))
+        
+        grads_d = tape_d.gradient(d_loss, self.discriminator.trainable_variables)
+        self.d_opt.apply_gradients(zip(grads_d, self.discriminator.trainable_variables))
+        
+        noise = tf.random.normal([batch_size, self.latent_dim])
+        with tf.GradientTape() as tape_g:
+            fake = self.generator(noise, training=True)
+            fake_pred = self.discriminator(fake, training=True)
+            g_loss = self.cross_entropy(tf.ones_like(fake_pred), fake_pred)
+        
+        grads_g = tape_g.gradient(g_loss, self.generator.trainable_variables)
+        self.g_opt.apply_gradients(zip(grads_g, self.generator.trainable_variables))
+        
+        return {'d_loss': d_loss, 'g_loss': g_loss}
+
+# Train GAN
+print("\nTraining GAN for IS evaluation...")
+gan = SimpleGAN(latent_dim=100)
+gan.compile()
+
+# Prepare data
+train_images_gan = train_images * 2 - 1  # [0, 1] -> [-1, 1]
+dataset = tf.data.Dataset.from_tensor_slices(train_images_gan)
+dataset = dataset.shuffle(60000).batch(256, drop_remainder=True)
+
+# Train
+gan.fit(dataset, epochs=20, verbose=0)
+
+# =============================================================================
+# Part 5: Calculate Inception Score
+# =============================================================================
+
+# Generate images
+print("\nGenerating images for IS calculation...")
+noise = tf.random.normal([5000, 100])
+generated_images = gan.generator(noise, training=False)
+
+# Convert to [0, 1] range for classifier
+generated_images_01 = (generated_images + 1) / 2
+
+# Calculate IS
+print("\nCalculating Inception Score...")
+is_mean, is_std = calculate_mnist_is(generated_images_01, classifier, splits=10)
+
+print(f"\n{'='*50}")
+print(f"Inception Score Results")
+print(f"{'='*50}")
+print(f"Mean IS: {is_mean:.4f}")
+print(f"Std IS:  {is_std:.4f}")
+print(f"{'='*50}")
+
+# Compare with real data
+print("\nCalculating IS for real MNIST data...")
+real_sample = train_images[:5000]
+is_real_mean, is_real_std = calculate_mnist_is(real_sample, classifier, splits=10)
+
+print(f"\nReal Data IS: {is_real_mean:.4f} ± {is_real_std:.4f}")
+print(f"Generated Data IS: {is_mean:.4f} ± {is_std:.4f}")
+
+# =============================================================================
+# Part 6: Visualize Generated Images
+# =============================================================================
+
+fig, axes = plt.subplots(5, 10, figsize=(15, 8))
+for i, ax in enumerate(axes.flat):
+    ax.imshow(generated_images[i, :, :, 0] * 0.5 + 0.5, cmap='gray')
+    ax.axis('off')
+plt.suptitle(f'Generated Images (IS: {is_mean:.2f} ± {is_std:.2f})')
+plt.tight_layout()
+plt.savefig('is_evaluation/generated_samples.png', dpi=150)
+plt.show()
+
+# =============================================================================
+# Part 7: IS During Training
+# =============================================================================
+
+def track_is_during_training(gan, classifier, epochs=50, interval=5):
+    """
+    Track IS throughout training to see improvement.
+    """
+    is_scores = []
+    epoch_numbers = []
+    
+    # Prepare data
+train_images_gan = train_images * 2 - 1
+    dataset = tf.data.Dataset.from_tensor_slices(train_images_gan)
+    dataset = dataset.shuffle(60000).batch(256, drop_remainder=True)
+    
+    for epoch in range(0, epochs + 1, interval):
+        if epoch > 0:
+            # Train for interval epochs
+            gan.fit(dataset, epochs=interval, verbose=0)
+        
+        # Generate images and calculate IS
+        noise = tf.random.normal([2000, 100])
+        generated = gan.generator(noise, training=False)
+        generated_01 = (generated + 1) / 2
+        
+        is_mean, _ = calculate_mnist_is(generated_01, classifier, splits=5)
+        is_scores.append(is_mean)
+        epoch_numbers.append(epoch)
+        
+        print(f"Epoch {epoch}: IS = {is_mean:.4f}")
+    
+    # Plot IS over time
+    plt.figure(figsize=(10, 6))
+    plt.plot(epoch_numbers, is_scores, marker='o', linewidth=2)
+    plt.xlabel('Epoch')
+    plt.ylabel('Inception Score')
+    plt.title('Inception Score During Training')
+    plt.grid(True, alpha=0.3)
+    plt.savefig('is_evaluation/is_over_training.png', dpi=150)
+    plt.show()
+    
+    return is_scores, epoch_numbers
+
+# Track IS (commented out for faster execution)
+# is_scores, epochs = track_is_during_training(gan, classifier, epochs=50, interval=5)
+
+print("\n=== Inception Score Evaluation Complete ===")
+```
+
+---

@@ -1,0 +1,136 @@
+{
+  "version": 1,
+  "passingScore": 80,
+  "questions": [
+    {
+      "id": "m7-q1",
+      "type": "multiple-choice",
+      "difficulty": "easy",
+      "topic": "GAN Basics",
+      "question": "What are the two networks in a GAN, and what do they do?",
+      "options": [
+        {
+          "text": "Encoder and decoder, which compress and reconstruct",
+          "correct": false
+        },
+        {
+          "text": "Generator produces samples; discriminator tries to distinguish real from fake",
+          "correct": true
+        },
+        {
+          "text": "Teacher and student, for knowledge distillation",
+          "correct": false
+        },
+        {
+          "text": "Actor and critic, for reinforcement learning",
+          "correct": false
+        }
+      ],
+      "explanation": "A GAN trains a generator and a discriminator in an adversarial minimax game."
+    },
+    {
+      "id": "m7-q2",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Mode Collapse",
+      "question": "What is mode collapse in GAN training?",
+      "options": [
+        {
+          "text": "The discriminator becoming too weak to train further",
+          "correct": false
+        },
+        {
+          "text": "The generator producing only a limited variety of outputs, ignoring large parts of the data distribution",
+          "correct": true
+        },
+        {
+          "text": "Gradients exploding in the generator",
+          "correct": false
+        },
+        {
+          "text": "The loss function going negative",
+          "correct": false
+        }
+      ],
+      "explanation": "Mode collapse occurs when the generator maps many latent vectors to few outputs, failing to cover the true data distribution."
+    },
+    {
+      "id": "m7-q3",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "WGAN",
+      "question": "Wasserstein GAN replaces Jensen-Shannon divergence with which metric?",
+      "options": [
+        {
+          "text": "KL divergence",
+          "correct": false
+        },
+        {
+          "text": "Earth Mover's (Wasserstein-1) distance",
+          "correct": true
+        },
+        {
+          "text": "L2 distance in pixel space",
+          "correct": false
+        },
+        {
+          "text": "Hellinger distance",
+          "correct": false
+        }
+      ],
+      "explanation": "WGAN minimizes the Earth Mover's distance, which provides smoother gradients even when distributions don't overlap."
+    },
+    {
+      "id": "m7-q4",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Spectral Normalization",
+      "question": "Spectral normalization constrains each layer's:",
+      "options": [
+        {
+          "text": "Mean activation to be zero",
+          "correct": false
+        },
+        {
+          "text": "Largest singular value (spectral norm), enforcing 1-Lipschitz continuity",
+          "correct": true
+        },
+        {
+          "text": "L1 norm of weights",
+          "correct": false
+        },
+        {
+          "text": "Number of parameters",
+          "correct": false
+        }
+      ],
+      "explanation": "Dividing weights by their largest singular value keeps the discriminator 1-Lipschitz, stabilizing training in WGAN and related formulations."
+    },
+    {
+      "id": "m7-q5",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "StyleGAN",
+      "question": "What innovation does StyleGAN introduce in its generator architecture?",
+      "options": [
+        {
+          "text": "A purely convolutional encoder",
+          "correct": false
+        },
+        {
+          "text": "A mapping network plus adaptive instance normalization (AdaIN) injecting styles at each resolution",
+          "correct": true
+        },
+        {
+          "text": "Reinforcement learning for generation",
+          "correct": false
+        },
+        {
+          "text": "A transformer-only architecture",
+          "correct": false
+        }
+      ],
+      "explanation": "StyleGAN maps latent z to intermediate w, then injects w via AdaIN at each scale \u2014 disentangling coarse and fine style attributes."
+    }
+  ]
+}

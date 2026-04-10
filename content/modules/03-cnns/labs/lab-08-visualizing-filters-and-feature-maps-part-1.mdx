@@ -1,0 +1,373 @@
+---
+title: "Visualizing Filters and Feature Maps - Part 1"
+module: 3
+labNumber: 8
+difficulty: "easy"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Visualizing Filters and Feature Maps - Part 1
+
+## Objectives
+- Visualize learned convolutional filters
+- Understand what features each layer detects
+- Extract and visualize feature maps
+
+## Prerequisites
+- Trained CNN model
+- Understanding of convolution operations
+
+```python
+"""
+Lab 3.7: Visualizing Filters and Feature Maps - Part 1
+Understanding what CNNs learn through visualization
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers, models
+from tensorflow.keras.datasets import cifar10
+from tensorflow.keras.utils import to_categorical
+
+# =============================================================================
+# Section 1: Theory of Feature Visualization
+# =============================================================================
+
+print("=" * 60)
+print("FEATURE VISUALIZATION")
+print("=" * 60)
+
+print("""
+What CNNs Learn:
+================
+
+Layer 1 (Early layers):
+- Detect simple features: edges, colors, textures
+- Filters look like Gabor filters
+- Small receptive fields
+
+Layer 2-3 (Middle layers):
+- Detect patterns: corners, shapes, simple objects
+- Combination of layer 1 features
+- Medium receptive fields
+
+Layer 4+ (Deep layers):
+- Detect complex objects: faces, cars, animals
+- Abstract representations
+- Large receptive fields
+
+Visualization Methods:
+1. Filter visualization - Show learned weights
+2. Feature map visualization - Show activations
+3. Gradient ascent - Generate images that maximize activation
+""")
+
+
+# =============================================================================
+# Section 2: Train a Simple CNN for Visualization
+# =============================================================================
+
+def build_simple_cnn():
+    """Build a simple CNN for CIFAR-10."""
+    model = models.Sequential([
+        layers.Conv2D(32, 3, activation='relu', padding='same', 
+                     input_shape=(32, 32, 3), name='conv1'),
+        layers.MaxPooling2D(2),
+        
+        layers.Conv2D(64, 3, activation='relu', padding='same', name='conv2'),
+        layers.MaxPooling2D(2),
+        
+        layers.Conv2D(128, 3, activation='relu', padding='same', name='conv3'),
+        layers.MaxPooling2D(2),
+        
+        layers.Flatten(),
+        layers.Dense(128, activation='relu'),
+        layers.Dense(10, activation='softmax')
+    ])
+    return model
+
+
+# Load and prepare data
+(X_train, y_train), (X_test, y_test) = cifar10.load_data()
+X_train = X_train.astype('float32') / 255.0
+X_test = X_test.astype('float32') / 255.0
+y_train = to_categorical(y_train, 10)
+y_test = to_categorical(y_test, 10)
+
+# Build and train model
+model = build_simple_cnn()
+model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+
+print("\nTraining model for visualization...")
+model.fit(X_train[:5000], y_train[:5000], 
+          batch_size=64, epochs=10, verbose=0,
+          validation_split=0.1)
+
+print("Model trained successfully!")
+
+
+# =============================================================================
+# Section 3: Visualize Convolutional Filters
+# =============================================================================
+
+def visualize_filters(model, layer_name, num_filters=16):
+    """
+    Visualize learned filters of a convolutional layer.
+    
+    Args:
+        model: Trained CNN model
+        layer_name: Name of the convolutional layer
+        num_filters: Number of filters to visualize
+    """
+    
+    print(f"\n" + "=" * 60)
+    print(f"VISUALIZING FILTERS: {layer_name}")
+    print("=" * 60)
+    
+    # Get layer weights
+    layer = model.get_layer(layer_name)
+    weights = layer.get_weights()[0]  # Shape: (H, W, C_in, C_out)
+    
+    print(f"Filter shape: {weights.shape}")
+    
+    # Normalize weights for visualization
+    w_min, w_max = weights.min(), weights.max()
+    weights = (weights - w_min) / (w_max - w_min)
+    
+    # Determine grid size
+    num_filters = min(num_filters, weights.shape[-1])
+    grid_size = int(np.ceil(np.sqrt(num_filters)))
+    
+    fig, axes = plt.subplots(grid_size, grid_size, figsize=(12, 12))
+    axes = axes.flatten()
+    
+    for i in range(num_filters):
+        # Get filter weights
+        filt = weights[:, :, :, i]
+        
+        # For RGB filters, show all channels
+        if filt.shape[2] == 3:
+            axes[i].imshow(filt)
+        else:
+            # For single channel, show first channel
+            axes[i].imshow(filt[:, :, 0], cmap='gray')
+        
+        axes[i].set_title(f'Filter {i+1}')
+        axes[i].axis('off')
+    
+    # Hide extra subplots
+    for i in range(num_filters, len(axes)):
+        axes[i].axis('off')
+    
+    plt.suptitle(f'Learned Filters: {layer_name}', fontsize=16, fontweight='bold')
+    plt.tight_layout()
+    plt.savefig(f'/mnt/okcomputer/output/lab37_filters_{layer_name}.png', dpi=150)
+    plt.show()
+    print(f"Filters saved to: /mnt/okcomputer/output/lab37_filters_{layer_name}.png")
+
+
+# Visualize filters from each layer
+visualize_filters(model, 'conv1', num_filters=16)
+visualize_filters(model, 'conv2', num_filters=16)
+
+
+# =============================================================================
+# Section 4: Visualize Feature Maps (Activations)
+# =============================================================================
+
+def visualize_feature_maps(model, image, layer_names):
+    """
+    Visualize feature maps (activations) for a given image.
+    
+    Args:
+        model: Trained CNN model
+        image: Input image (H, W, C)
+        layer_names: List of layer names to visualize
+    """
+    
+    print("\n" + "=" * 60)
+    print("VISUALIZING FEATURE MAPS")
+    print("=" * 60)
+    
+    # Create activation model
+    layer_outputs = [model.get_layer(name).output for name in layer_names]
+    activation_model = models.Model(inputs=model.input, outputs=layer_outputs)
+    
+    # Get activations
+    activations = activation_model.predict(np.expand_dims(image, axis=0))
+    
+    # Visualize each layer
+    for layer_name, activation in zip(layer_names, activations):
+        print(f"\nLayer: {layer_name}")
+        print(f"Activation shape: {activation.shape}")
+        
+        # Remove batch dimension
+        activation = activation[0]
+        
+        # Number of feature maps to display
+        num_features = min(16, activation.shape[-1])
+        grid_size = int(np.ceil(np.sqrt(num_features)))
+        
+        fig, axes = plt.subplots(grid_size, grid_size, figsize=(12, 12))
+        axes = axes.flatten()
+        
+        for i in range(num_features):
+            feature_map = activation[:, :, i]
+            axes[i].imshow(feature_map, cmap='viridis')
+            axes[i].set_title(f'Feature {i+1}')
+            axes[i].axis('off')
+        
+        for i in range(num_features, len(axes)):
+            axes[i].axis('off')
+        
+        plt.suptitle(f'Feature Maps: {layer_name}', fontsize=16, fontweight='bold')
+        plt.tight_layout()
+        plt.savefig(f'/mnt/okcomputer/output/lab37_featuremaps_{layer_name}.png', dpi=150)
+        plt.show()
+        print(f"Feature maps saved to: /mnt/okcomputer/output/lab37_featuremaps_{layer_name}.png")
+
+
+# Select a test image
+test_image = X_test[0]
+
+# Visualize feature maps
+layer_names = ['conv1', 'conv2', 'conv3']
+visualize_feature_maps(model, test_image, layer_names)
+
+
+# =============================================================================
+# Section 5: Side-by-Side Comparison
+# =============================================================================
+
+def compare_input_and_features(model, image, layer_name):
+    """Show input image alongside its feature maps."""
+    
+    # Get activation
+    layer = model.get_layer(layer_name)
+    activation_model = models.Model(inputs=model.input, outputs=layer.output)
+    activation = activation_model.predict(np.expand_dims(image, axis=0))[0]
+    
+    fig = plt.figure(figsize=(16, 6))
+    
+    # Input image
+    ax1 = plt.subplot(1, 2, 1)
+    ax1.imshow(image)
+    ax1.set_title('Input Image', fontsize=14, fontweight='bold')
+    ax1.axis('off')
+    
+    # Feature maps grid
+    ax2 = plt.subplot(1, 2, 2)
+    ax2.axis('off')
+    ax2.set_title(f'Feature Maps: {layer_name}', fontsize=14, fontweight='bold')
+    
+    # Create grid of feature maps
+    num_features = min(64, activation.shape[-1])
+    grid_size = int(np.ceil(np.sqrt(num_features)))
+    
+    # Normalize for display
+    activation_display = np.zeros((grid_size * activation.shape[0], 
+                                   grid_size * activation.shape[1]))
+    
+    for i in range(num_features):
+        row = i // grid_size
+        col = i % grid_size
+        feature_map = activation[:, :, i]
+        # Normalize each feature map
+        feature_map = (feature_map - feature_map.min()) / (feature_map.max() - feature_map.min() + 1e-8)
+        activation_display[row*activation.shape[0]:(row+1)*activation.shape[0],
+                          col*activation.shape[1]:(col+1)*activation.shape[1]] = feature_map
+    
+    ax2.imshow(activation_display, cmap='viridis')
+    
+    plt.tight_layout()
+    plt.savefig(f'/mnt/okcomputer/output/lab37_comparison_{layer_name}.png', dpi=150)
+    plt.show()
+    print(f"\nComparison saved to: /mnt/okcomputer/output/lab37_comparison_{layer_name}.png")
+
+
+compare_input_and_features(model, test_image, 'conv1')
+
+
+# =============================================================================
+# Section 6: Filter Pattern Analysis
+# =============================================================================
+
+def analyze_filter_patterns(model, layer_name):
+    """Analyze patterns in learned filters."""
+    
+    layer = model.get_layer(layer_name)
+    weights = layer.get_weights()[0]
+    
+    print("\n" + "=" * 60)
+    print(f"FILTER ANALYSIS: {layer_name}")
+    print("=" * 60)
+    
+    # Calculate statistics
+    print(f"\nFilter Statistics:")
+    print(f"  Mean: {weights.mean():.4f}")
+    print(f"  Std: {weights.std():.4f}")
+    print(f"  Min: {weights.min():.4f}")
+    print(f"  Max: {weights.max():.4f}")
+    
+    # Analyze each filter
+    num_filters = weights.shape[-1]
+    filter_stats = []
+    
+    for i in range(num_filters):
+        filt = weights[:, :, :, i]
+        filter_stats.append({
+            'mean': filt.mean(),
+            'std': filt.std(),
+            'energy': np.sum(filt ** 2)
+        })
+    
+    # Sort by energy
+    filter_stats_sorted = sorted(enumerate(filter_stats), 
+                                  key=lambda x: x[1]['energy'], 
+                                  reverse=True)
+    
+    print(f"\nTop 5 filters by energy:")
+    for idx, stats in filter_stats_sorted[:5]:
+        print(f"  Filter {idx}: energy={stats['energy']:.4f}, "
+              f"std={stats['std']:.4f}")
+
+
+analyze_filter_patterns(model, 'conv1')
+
+
+# =============================================================================
+# Section 7: Exercises
+# =============================================================================
+
+print("\n" + "=" * 60)
+print("EXERCISES")
+print("=" * 60)
+
+print("""
+Exercise 1: Visualize Different Architectures
+- Compare filter patterns across LeNet, VGG, ResNet
+- Analyze differences in learned features
+
+Exercise 2: Filter Similarity Analysis
+- Calculate cosine similarity between filters
+- Visualize filter clusters
+
+Exercise 3: Dead Filter Detection
+- Identify filters with low activation
+- Analyze why they might be "dead"
+
+Exercise 4: Feature Map Correlation
+- Calculate correlation between feature maps
+- Visualize correlation matrix
+""")
+
+print("\n" + "=" * 60)
+print("Lab 3.7 Complete!")
+print("=" * 60)
+```
+
+---
+
+<a name="lab-38"></a>

@@ -1,0 +1,299 @@
+---
+title: "Lab 12"
+module: 2
+labNumber: 12
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-05-part5.md"
+---
+```python
+"""
+Lab 2.5: Backpropagation Visualization
+Understanding gradient flow through neural networks.
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+
+print("=" * 60)
+print("LAB 2.5: Backpropagation Visualization")
+print("=" * 60)
+
+# ============================================================
+# STEP 1: Simple Backpropagation Example
+# ============================================================
+print("\n[STEP 1] Simple backpropagation example...")
+
+# Create a simple computation graph
+x = tf.Variable(2.0)
+y = tf.Variable(3.0)
+
+# Forward pass
+with tf.GradientTape(persistent=True) as tape:
+    z = x * y + x ** 2
+
+# Compute gradients
+dz_dx = tape.gradient(z, x)
+dz_dy = tape.gradient(z, y)
+
+print(f"Function: z = x*y + x^2")
+print(f"At x={x.numpy()}, y={y.numpy()}:")
+print(f"  z = {z.numpy()}")
+print(f"  dz/dx = {dz_dx.numpy()} (Expected: y + 2*x = {y.numpy() + 2*x.numpy()})")
+print(f"  dz/dy = {dz_dy.numpy()} (Expected: x = {x.numpy()})")
+
+# ============================================================
+# STEP 2: Gradient Flow Through a Neural Network
+# ============================================================
+print("\n[STEP 2] Gradient flow through a neural network...")
+
+# Create a simple network
+model = tf.keras.Sequential([
+    tf.keras.layers.Dense(10, activation='relu', input_shape=(5,)),
+    tf.keras.layers.Dense(8, activation='relu'),
+    tf.keras.layers.Dense(4, activation='relu'),
+    tf.keras.layers.Dense(1)
+])
+
+# Create sample data
+X = tf.random.normal((1, 5))
+y_true = tf.constant([[1.0]])
+
+# Forward and backward pass
+with tf.GradientTape() as tape:
+    y_pred = model(X)
+    loss = tf.reduce_mean((y_pred - y_true) ** 2)
+
+# Get gradients for each layer
+gradients = tape.gradient(loss, model.trainable_variables)
+
+print("\nLayer-wise gradient magnitudes:")
+for i, (var, grad) in enumerate(zip(model.trainable_variables, gradients)):
+    if grad is not None:
+        print(f"  Layer {i//2 + 1} {'kernel' if i%2==0 else 'bias'}: "
+              f"mean abs = {tf.reduce_mean(tf.abs(grad)).numpy():.6f}, "
+              f"shape = {grad.shape}")
+
+# ============================================================
+# STEP 3: Visualize Gradient Flow
+# ============================================================
+print("\n[STEP 3] Visualizing gradient flow through different architectures...")
+
+def analyze_gradient_flow(model, input_dim, depth=10):
+    """Analyze how gradients flow through a network."""
+    
+    # Create sample input
+    X = tf.random.normal((32, input_dim))
+    y_true = tf.random.normal((32, 1))
+    
+    # Forward and backward pass
+    with tf.GradientTape(persistent=True) as tape:
+        y_pred = model(X, training=True)
+        loss = tf.reduce_mean((y_pred - y_true) ** 2)
+    
+    # Collect gradients for each layer
+    layer_gradients = []
+    layer_names = []
+    
+    for i, layer in enumerate(model.layers):
+        if hasattr(layer, 'kernel'):
+            grad = tape.gradient(loss, layer.kernel)
+            if grad is not None:
+                layer_gradients.append(tf.reduce_mean(tf.abs(grad)).numpy())
+                layer_names.append(f'Layer {i+1}')
+    
+    del tape
+    return layer_names, layer_gradients
+
+# Test different architectures
+architectures = {}
+
+# Architecture 1: Deep network with sigmoid (vanishing gradients)
+model_sigmoid = tf.keras.Sequential()
+model_sigmoid.add(tf.keras.layers.Dense(50, activation='sigmoid', input_shape=(20,)))
+for _ in range(8):
+    model_sigmoid.add(tf.keras.layers.Dense(50, activation='sigmoid'))
+model_sigmoid.add(tf.keras.layers.Dense(1))
+
+# Architecture 2: Deep network with ReLU (better gradient flow)
+model_relu = tf.keras.Sequential()
+model_relu.add(tf.keras.layers.Dense(50, activation='relu', input_shape=(20,)))
+for _ in range(8):
+    model_relu.add(tf.keras.layers.Dense(50, activation='relu'))
+model_relu.add(tf.keras.layers.Dense(1))
+
+# Architecture 3: With batch normalization
+model_bn = tf.keras.Sequential()
+model_bn.add(tf.keras.layers.Dense(50, input_shape=(20,)))
+model_bn.add(tf.keras.layers.BatchNormalization())
+model_bn.add(tf.keras.layers.Activation('relu'))
+for _ in range(8):
+    model_bn.add(tf.keras.layers.Dense(50))
+    model_bn.add(tf.keras.layers.BatchNormalization())
+    model_bn.add(tf.keras.layers.Activation('relu'))
+model_bn.add(tf.keras.layers.Dense(1))
+
+# Analyze each architecture
+results = {}
+for name, model in [('Sigmoid', model_sigmoid), ('ReLU', model_relu), ('ReLU+BN', model_bn)]:
+    names, grads = analyze_gradient_flow(model, 20)
+    results[name] = (names, grads)
+
+# Plot gradient flow
+fig, ax = plt.subplots(figsize=(12, 6))
+
+for name, (names, grads) in results.items():
+    ax.plot(range(len(grads)), grads, 'o-', linewidth=2, label=name, markersize=8)
+
+ax.set_xlabel('Layer Depth')
+ax.set_ylabel('Mean Absolute Gradient')
+ax.set_title('Gradient Flow Comparison', fontweight='bold')
+ax.legend()
+ax.grid(True, alpha=0.3)
+ax.set_yscale('log')
+
+plt.tight_layout()
+plt.savefig('/mnt/okcomputer/output/gradient_flow.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+print("\nGradient flow visualization saved!")
+
+# ============================================================
+# STEP 4: Custom Training Loop with GradientTape
+# ============================================================
+print("\n[STEP 4] Custom training loop with GradientTape...")
+
+# Generate data
+np.random.seed(42)
+X_train = np.random.randn(1000, 10).astype(np.float32)
+y_train = (X_train[:, 0] * 2 + X_train[:, 1] * -1 + 
+           np.random.randn(1000) * 0.1).astype(np.float32).reshape(-1, 1)
+
+# Create model
+model = tf.keras.Sequential([
+    tf.keras.layers.Dense(32, activation='relu', input_shape=(10,)),
+    tf.keras.layers.Dense(16, activation='relu'),
+    tf.keras.layers.Dense(1)
+])
+
+# Custom training loop
+optimizer = tf.keras.optimizers.Adam(learning_rate=0.01)
+loss_fn = tf.keras.losses.MeanSquaredError()
+
+batch_size = 32
+dataset = tf.data.Dataset.from_tensor_slices((X_train, y_train))
+dataset = dataset.shuffle(1000).batch(batch_size)
+
+history = {'loss': []}
+epochs = 20
+
+print("\nTraining with custom loop...")
+for epoch in range(epochs):
+    epoch_loss = 0.0
+    num_batches = 0
+    
+    for X_batch, y_batch in dataset:
+        with tf.GradientTape() as tape:
+            y_pred = model(X_batch, training=True)
+            loss = loss_fn(y_batch, y_pred)
+        
+        # Compute gradients
+        gradients = tape.gradient(loss, model.trainable_variables)
+        
+        # Apply gradients
+        optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+        
+        epoch_loss += loss.numpy()
+        num_batches += 1
+    
+    avg_loss = epoch_loss / num_batches
+    history['loss'].append(avg_loss)
+    
+    if epoch % 5 == 0:
+        print(f"Epoch {epoch}: Loss = {avg_loss:.4f}")
+
+print(f"\nFinal loss: {history['loss'][-1]:.4f}")
+
+# ============================================================
+# STEP 5: Gradient Clipping
+# ============================================================
+print("\n[STEP 5] Gradient clipping demonstration...")
+
+# Create model that might have exploding gradients
+model_unstable = tf.keras.Sequential([
+    tf.keras.layers.Dense(100, activation='relu', input_shape=(10,)),
+    tf.keras.layers.Dense(100, activation='relu'),
+    tf.keras.layers.Dense(1)
+])
+
+# Initialize with large weights
+for layer in model_unstable.layers:
+    if hasattr(layer, 'kernel'):
+        layer.kernel.assign(layer.kernel * 10)
+
+X = tf.random.normal((32, 10))
+y_true = tf.random.normal((32, 1))
+
+# Without gradient clipping
+with tf.GradientTape() as tape:
+    y_pred = model_unstable(X)
+    loss = tf.reduce_mean((y_pred - y_true) ** 2)
+
+gradients_no_clip = tape.gradient(loss, model_unstable.trainable_variables)
+grad_norm_no_clip = tf.sqrt(sum([tf.reduce_sum(tf.square(g)) for g in gradients_no_clip if g is not None]))
+
+# With gradient clipping
+with tf.GradientTape() as tape:
+    y_pred = model_unstable(X)
+    loss = tf.reduce_mean((y_pred - y_true) ** 2)
+
+gradients = tape.gradient(loss, model_unstable.trainable_variables)
+gradients_clipped, global_norm = tf.clip_by_global_norm(gradients, clip_norm=1.0)
+
+print(f"\nGradient norms:")
+print(f"  Without clipping: {grad_norm_no_clip.numpy():.4f}")
+print(f"  Global norm before clipping: {global_norm.numpy():.4f}")
+print(f"  After clipping: {tf.sqrt(sum([tf.reduce_sum(tf.square(g)) for g in gradients_clipped if g is not None])).numpy():.4f}")
+
+# ============================================================
+# STEP 6: Visualize Training Progress
+# ============================================================
+print("\n[STEP 6] Visualizing training progress...")
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+# Loss curve
+ax1 = axes[0]
+ax1.plot(history['loss'], linewidth=2)
+ax1.set_xlabel('Epoch')
+ax1.set_ylabel('Loss (MSE)')
+ax1.set_title('Training Loss', fontweight='bold')
+ax1.grid(True, alpha=0.3)
+
+# Gradient norms during training
+ax2 = axes[1]
+# Simulate gradient norm tracking
+gradient_norms = [0.5 * np.exp(-0.1 * i) + 0.01 for i in range(epochs)]
+ax2.plot(gradient_norms, linewidth=2, color='orange')
+ax2.set_xlabel('Epoch')
+ax2.set_ylabel('Gradient Norm')
+ax2.set_title('Gradient Norm During Training', fontweight='bold')
+ax2.grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.savefig('/mnt/okcomputer/output/training_visualization.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+print("\n" + "=" * 60)
+print("LAB 2.5 COMPLETED SUCCESSFULLY!")
+print("=" * 60)
+print("\nKEY TAKEAWAYS:")
+print("1. GradientTape enables automatic differentiation")
+print("2. Gradients can vanish with sigmoid/tanh in deep networks")
+print("3. ReLU and batch normalization help gradient flow")
+print("4. Gradient clipping prevents exploding gradients")
+print("5. Custom training loops give full control over the process")
+```
+
+---

@@ -1,0 +1,472 @@
+---
+title: "Building FCN from Scratch - Part 2"
+module: 5
+labNumber: 3
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Building FCN from Scratch - Part 2
+
+## Objectives
+- Implement FCN-16s and FCN-8s with skip connections
+- Understand how skip connections improve segmentation
+- Compare different FCN variants
+
+## Complete Implementation
+
+```python
+"""
+Lab 5.2: Building FCN from Scratch - Part 2
+FCN-16s and FCN-8s with Skip Connections
+"""
+
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers, Model
+import numpy as np
+import matplotlib.pyplot as plt
+
+tf.random.set_seed(42)
+np.random.seed(42)
+
+# =============================================================================
+# Section 1: Building FCN-16s (with Skip Connection from pool4)
+# =============================================================================
+
+def build_fcn16s(input_shape=(224, 224, 3), num_classes=21):
+    """
+    Build FCN-16s architecture with skip connections.
+    
+    FCN-16s combines:
+    - Final feature map (pool5) upsampled by 2x
+    - pool4 feature map (before max pooling)
+    - Final upsampling by 16x
+    
+    This provides finer details than FCN-32s.
+    """
+    print("\n" + "="*60)
+    print("BUILDING FCN-16s")
+    print("="*60)
+    
+    inputs = layers.Input(shape=input_shape)
+    
+    # ============ ENCODER ============
+    
+    # Block 1
+    x = layers.Conv2D(64, 3, padding='same', activation='relu')(inputs)
+    x = layers.Conv2D(64, 3, padding='same', activation='relu')(x)
+    x = layers.MaxPooling2D(2, strides=2)(x)  # 112x112
+    
+    # Block 2
+    x = layers.Conv2D(128, 3, padding='same', activation='relu')(x)
+    x = layers.Conv2D(128, 3, padding='same', activation='relu')(x)
+    x = layers.MaxPooling2D(2, strides=2)(x)  # 56x56
+    
+    # Block 3
+    x = layers.Conv2D(256, 3, padding='same', activation='relu')(x)
+    x = layers.Conv2D(256, 3, padding='same', activation='relu')(x)
+    x = layers.Conv2D(256, 3, padding='same', activation='relu')(x)
+    x = layers.MaxPooling2D(2, strides=2)(x)  # 28x28
+    
+    # Block 4 - SAVE pool4 for skip connection
+    x = layers.Conv2D(512, 3, padding='same', activation='relu')(x)
+    x = layers.Conv2D(512, 3, padding='same', activation='relu')(x)
+    x = layers.Conv2D(512, 3, padding='same', activation='relu')(x)
+    pool4 = x  # Save before pooling (28x28, 512 channels)
+    x = layers.MaxPooling2D(2, strides=2)(x)  # 14x14
+    
+    # Block 5
+    x = layers.Conv2D(512, 3, padding='same', activation='relu')(x)
+    x = layers.Conv2D(512, 3, padding='same', activation='relu')(x)
+    x = layers.Conv2D(512, 3, padding='same', activation='relu')(x)
+    x = layers.MaxPooling2D(2, strides=2)(x)  # 7x7
+    
+    # ============ FULLY CONVOLUTIONAL LAYERS ============
+    
+    # FC6
+    x = layers.Conv2D(4096, 7, padding='same', activation='relu')(x)
+    x = layers.Dropout(0.5)(x)
+    
+    # FC7
+    x = layers.Conv2D(4096, 1, padding='same', activation='relu')(x)
+    x = layers.Dropout(0.5)(x)
+    
+    # Score layer
+    x = layers.Conv2D(num_classes, 1, padding='same', name='score_fc')(x)
+    
+    # ============ SKIP CONNECTIONS ============
+    
+    # Upsample score_fc by 2x
+    x = layers.Conv2DTranspose(num_classes, 4, strides=2, padding='same', name='upsample_2x')(x)
+    
+    # Process pool4 for skip connection
+    pool4_score = layers.Conv2D(num_classes, 1, padding='same', name='score_pool4')(pool4)
+    
+    # Crop/Resize to match dimensions if needed
+    # In this case, both should be 28x28
+    print(f"  pool4_score shape: {pool4_score.shape}")
+    print(f"  upsampled score shape: {x.shape}")
+    
+    # Add skip connection
+    x = layers.Add(name='skip_pool4')([x, pool4_score])
+    
+    # ============ FINAL UPSAMPLING (16x) ============
+    
+    outputs = layers.Conv2DTranspose(
+        num_classes,
+        kernel_size=32,
+        strides=16,
+        padding='same',
+        activation='softmax',
+        name='output'
+    )(x)
+    
+    model = Model(inputs, outputs, name='FCN-16s')
+    
+    print(f"FCN-16s input shape: {model.input_shape}")
+    print(f"FCN-16s output shape: {model.output_shape}")
+    
+    return model
+
+fcn16s = build_fcn16s()
+fcn16s.summary()
+
+# =============================================================================
+# Section 2: Building FCN-8s (with Skip Connections from pool3 and pool4)
+# =============================================================================
+
+def build_fcn8s(input_shape=(224, 224, 3), num_classes=21):
+    """
+    Build FCN-8s architecture with multiple skip connections.
+    
+    FCN-8s combines:
+    - Final feature map (pool5) upsampled by 2x
+    - pool4 feature map
+    - Combined result upsampled by 2x
+    - pool3 feature map
+    - Final upsampling by 8x
+    
+    This provides the finest segmentation details.
+    """
+    print("\n" + "="*60)
+    print("BUILDING FCN-8s")
+    print("="*60)
+    
+    inputs = layers.Input(shape=input_shape)
+    
+    # ============ ENCODER ============
+    
+    # Block 1
+    x = layers.Conv2D(64, 3, padding='same', activation='relu')(inputs)
+    x = layers.Conv2D(64, 3, padding='same', activation='relu')(x)
+    x = layers.MaxPooling2D(2, strides=2)(x)  # 112x112
+    
+    # Block 2
+    x = layers.Conv2D(128, 3, padding='same', activation='relu')(x)
+    x = layers.Conv2D(128, 3, padding='same', activation='relu')(x)
+    x = layers.MaxPooling2D(2, strides=2)(x)  # 56x56
+    
+    # Block 3 - SAVE pool3 for skip connection
+    x = layers.Conv2D(256, 3, padding='same', activation='relu')(x)
+    x = layers.Conv2D(256, 3, padding='same', activation='relu')(x)
+    x = layers.Conv2D(256, 3, padding='same', activation='relu')(x)
+    pool3 = x  # Save before pooling (56x56, 256 channels)
+    x = layers.MaxPooling2D(2, strides=2)(x)  # 28x28
+    
+    # Block 4 - SAVE pool4 for skip connection
+    x = layers.Conv2D(512, 3, padding='same', activation='relu')(x)
+    x = layers.Conv2D(512, 3, padding='same', activation='relu')(x)
+    x = layers.Conv2D(512, 3, padding='same', activation='relu')(x)
+    pool4 = x  # Save before pooling (28x28, 512 channels)
+    x = layers.MaxPooling2D(2, strides=2)(x)  # 14x14
+    
+    # Block 5
+    x = layers.Conv2D(512, 3, padding='same', activation='relu')(x)
+    x = layers.Conv2D(512, 3, padding='same', activation='relu')(x)
+    x = layers.Conv2D(512, 3, padding='same', activation='relu')(x)
+    x = layers.MaxPooling2D(2, strides=2)(x)  # 7x7
+    
+    # ============ FULLY CONVOLUTIONAL LAYERS ============
+    
+    x = layers.Conv2D(4096, 7, padding='same', activation='relu')(x)
+    x = layers.Dropout(0.5)(x)
+    x = layers.Conv2D(4096, 1, padding='same', activation='relu')(x)
+    x = layers.Dropout(0.5)(x)
+    x = layers.Conv2D(num_classes, 1, padding='same', name='score_fc')(x)
+    
+    # ============ SKIP CONNECTIONS ============
+    
+    # First skip: Upsample by 2x and add pool4
+    x = layers.Conv2DTranspose(num_classes, 4, strides=2, padding='same', name='upsample_2x_1')(x)
+    pool4_score = layers.Conv2D(num_classes, 1, padding='same', name='score_pool4')(pool4)
+    x = layers.Add(name='skip_pool4')([x, pool4_score])
+    
+    # Second skip: Upsample by 2x and add pool3
+    x = layers.Conv2DTranspose(num_classes, 4, strides=2, padding='same', name='upsample_2x_2')(x)
+    pool3_score = layers.Conv2D(num_classes, 1, padding='same', name='score_pool3')(pool3)
+    x = layers.Add(name='skip_pool3')([x, pool3_score])
+    
+    # ============ FINAL UPSAMPLING (8x) ============
+    
+    outputs = layers.Conv2DTranspose(
+        num_classes,
+        kernel_size=16,
+        strides=8,
+        padding='same',
+        activation='softmax',
+        name='output'
+    )(x)
+    
+    model = Model(inputs, outputs, name='FCN-8s')
+    
+    print(f"FCN-8s input shape: {model.input_shape}")
+    print(f"FCN-8s output shape: {model.output_shape}")
+    
+    return model
+
+fcn8s = build_fcn8s()
+fcn8s.summary()
+
+# =============================================================================
+# Section 3: Compare FCN Variants
+# =============================================================================
+
+def compare_fcn_variants():
+    """Compare FCN-32s, FCN-16s, and FCN-8s."""
+    print("\n" + "="*60)
+    print("COMPARING FCN VARIANTS")
+    print("="*60)
+    
+    # Build all variants
+    fcn32s = build_fcn32s()
+    fcn16s = build_fcn16s()
+    fcn8s = build_fcn8s()
+    
+    models = {
+        'FCN-32s': fcn32s,
+        'FCN-16s': fcn16s,
+        'FCN-8s': fcn8s
+    }
+    
+    print("\n" + "-"*60)
+    print(f"{'Model':<15} {'Parameters':<15} {'Skip Connections':<20}")
+    print("-"*60)
+    
+    skip_info = {
+        'FCN-32s': 'None (baseline)',
+        'FCN-16s': 'pool4',
+        'FCN-8s': 'pool3 + pool4'
+    }
+    
+    for name, model in models.items():
+        params = model.count_params()
+        print(f"{name:<15} {params:>14,}  {skip_info[name]:<20}")
+    
+    print("-"*60)
+    
+    print("""
+    Key Observations:
+    1. All variants have similar parameter counts (same encoder)
+    2. Skip connections add minimal parameters (1x1 convs only)
+    3. FCN-8s provides finest details but requires more computation
+    4. FCN-16s offers good balance between speed and accuracy
+    """)
+
+compare_fcn_variants()
+
+# =============================================================================
+# Section 4: Visualize Skip Connections
+# =============================================================================
+
+def visualize_skip_connections():
+    """Visualize how skip connections improve segmentation."""
+    print("\n" + "="*60)
+    print("VISUALIZING SKIP CONNECTIONS")
+    print("="*60)
+    
+    # Create a simple test case
+    # Simulate: input -> encoder features -> skip connections
+    
+    fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+    
+    # Simulate feature maps at different scales
+    input_size = 224
+    
+    # Original "image"
+    img = np.zeros((input_size, input_size))
+    img[50:100, 50:150] = 1.0  # Rectangle object
+    img[120:180, 80:120] = 0.7  # Another object
+    
+    axes[0, 0].imshow(img, cmap='gray')
+    axes[0, 0].set_title('Input Image (224x224)')
+    axes[0, 0].axis('off')
+    
+    # Pool3 features (56x56)
+    pool3 = img[::4, ::4]
+    axes[0, 1].imshow(pool3, cmap='gray')
+    axes[0, 1].set_title('Pool3 Features (56x56)')
+    axes[0, 1].axis('off')
+    
+    # Pool4 features (28x28)
+    pool4 = img[::8, ::8]
+    axes[0, 2].imshow(pool4, cmap='gray')
+    axes[0, 2].set_title('Pool4 Features (28x28)')
+    axes[0, 2].axis('off')
+    
+    # FCN-32s output (coarse, from pool5 only)
+    fcn32_output = img[::16, ::16]
+    fcn32_up = np.kron(fcn32_output, np.ones((16, 16)))
+    axes[1, 0].imshow(fcn32_up, cmap='gray')
+    axes[1, 0].set_title('FCN-32s Output (coarse)')
+    axes[1, 0].axis('off')
+    
+    # FCN-16s output (medium, pool4 + pool5)
+    fcn16_combined = pool4 * 0.5 + img[::8, ::8] * 0.5
+    fcn16_up = np.kron(fcn16_combined, np.ones((8, 8)))
+    axes[1, 1].imshow(fcn16_up, cmap='gray')
+    axes[1, 1].set_title('FCN-16s Output (medium)')
+    axes[1, 1].axis('off')
+    
+    # FCN-8s output (fine, pool3 + pool4 + pool5)
+    fcn8_combined = pool3 * 0.33 + pool4.repeat(2, axis=0).repeat(2, axis=1)[:56, :56] * 0.33 + img[::4, ::4] * 0.34
+    fcn8_up = np.kron(fcn8_combined, np.ones((4, 4)))
+    axes[1, 2].imshow(fcn8_up, cmap='gray')
+    axes[1, 2].set_title('FCN-8s Output (fine)')
+    axes[1, 2].axis('off')
+    
+    plt.tight_layout()
+    plt.savefig('/mnt/okcomputer/output/fcn_skip_connections.png', dpi=150)
+    plt.show()
+    print("Visualization saved to /mnt/okcomputer/output/fcn_skip_connections.png")
+
+visualize_skip_connections()
+
+# =============================================================================
+# Section 5: Training Setup
+# =============================================================================
+
+def setup_fcn_training(model, num_classes=21):
+    """Setup training configuration for FCN."""
+    print("\n" + "="*60)
+    print("FCN TRAINING SETUP")
+    print("="*60)
+    
+    # Loss function: Categorical cross-entropy for pixel-wise classification
+    loss = keras.losses.CategoricalCrossentropy(from_logits=False)
+    
+    # Metrics
+    metrics = [
+        'accuracy',
+        keras.metrics.MeanIoU(num_classes=num_classes, name='mean_iou')
+    ]
+    
+    # Optimizer
+    optimizer = keras.optimizers.Adam(learning_rate=1e-4)
+    
+    model.compile(
+        optimizer=optimizer,
+        loss=loss,
+        metrics=metrics
+    )
+    
+    print("Training configuration:")
+    print(f"  Loss: {loss.name}")
+    print(f"  Optimizer: Adam (lr=1e-4)")
+    print(f"  Metrics: accuracy, mean_iou")
+    
+    return model
+
+# Setup FCN-8s for training
+fcn8s = build_fcn8s(num_classes=21)
+fcn8s = setup_fcn_training(fcn8s, num_classes=21)
+
+# =============================================================================
+# Section 6: Exercise - Implement FCN with Different Backbones
+# =============================================================================
+
+print("\n" + "="*60)
+print("EXERCISE: FCN WITH RESNET BACKBONE")
+print("="*60)
+
+def build_fcn_with_resnet(input_shape=(224, 224, 3), num_classes=21, variant='fcn8s'):
+    """
+    Build FCN with ResNet-50 backbone instead of VGG.
+    
+    ResNet provides better gradient flow and can be deeper.
+    """
+    # Use pretrained ResNet as encoder
+    base_model = keras.applications.ResNet50(
+        weights='imagenet',
+        include_top=False,
+        input_shape=input_shape
+    )
+    
+    # Get intermediate feature maps for skip connections
+    # Layer names may vary based on TensorFlow version
+    layer_names = ['conv2_block3_out', 'conv3_block4_out', 'conv4_block6_out', 'conv5_block3_out']
+    
+    layers = [base_model.get_layer(name).output for name in layer_names]
+    
+    # Create encoder model
+    encoder = Model(inputs=base_model.input, outputs=layers)
+    
+    # Build FCN decoder on top
+    inputs = encoder.input
+    c2, c3, c4, c5 = encoder.outputs
+    
+    # FCN head
+    x = layers.Conv2D(512, 3, padding='same', activation='relu')(c5)
+    x = layers.Dropout(0.5)(x)
+    x = layers.Conv2D(num_classes, 1, padding='same')(x)
+    
+    if variant == 'fcn8s':
+        # Skip connections from c4 and c3
+        x = layers.Conv2DTranspose(num_classes, 4, strides=2, padding='same')(x)
+        c4_score = layers.Conv2D(num_classes, 1, padding='same')(c4)
+        x = layers.Add()([x, c4_score])
+        
+        x = layers.Conv2DTranspose(num_classes, 4, strides=2, padding='same')(x)
+        c3_score = layers.Conv2D(num_classes, 1, padding='same')(c3)
+        x = layers.Add()([x, c3_score])
+        
+        outputs = layers.Conv2DTranspose(num_classes, 16, strides=4, padding='same', activation='softmax')(x)
+    else:
+        # FCN-32s
+        outputs = layers.Conv2DTranspose(num_classes, 64, strides=32, padding='same', activation='softmax')(x)
+    
+    model = Model(inputs, outputs, name=f'FCN-{variant}-ResNet50')
+    
+    return model
+
+# Build and summarize
+fcn_resnet = build_fcn_with_resnet(variant='fcn8s')
+print(f"\nFCN-8s with ResNet50 parameters: {fcn_resnet.count_params():,}")
+
+print("""
+EXERCISE QUESTIONS:
+1. Why does ResNet work better than VGG for FCN?
+2. How would you modify this to use EfficientNet backbone?
+3. Compare the number of parameters between VGG and ResNet backbones.
+""")
+
+# =============================================================================
+# Summary
+# =============================================================================
+
+print("\n" + "="*60)
+print("LAB 5.2 SUMMARY")
+print("="*60)
+print("""
+Key Takeaways:
+1. FCN-16s adds a skip connection from pool4 to improve detail
+2. FCN-8s adds skip connections from both pool3 and pool4
+3. Skip connections combine coarse semantic info with fine spatial details
+4. All FCN variants share the same encoder, only decoders differ
+5. FCN-8s provides best segmentation quality but requires more computation
+
+Next: Lab 5.3 will implement U-Net architecture.
+""")
+```
+
+---

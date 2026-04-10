@@ -1,0 +1,412 @@
+---
+title: "TFLite Optimization Techniques"
+module: 10
+labNumber: 7
+difficulty: "hard"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# TFLite Optimization Techniques
+
+## Objectives
+- Apply advanced TFLite optimizations
+- Use delegates for hardware acceleration
+- Implement model pruning
+- Optimize for specific hardware targets
+
+## Complete Implementation
+
+```python
+"""
+Lab 10.6: TFLite Optimization Techniques
+========================================
+Advanced optimization techniques for TensorFlow Lite models
+including delegates, pruning, and hardware-specific optimizations.
+"""
+
+import tensorflow as tf
+import tensorflow_model_optimization as tfmot
+import numpy as np
+import time
+import os
+
+print("=" * 60)
+print("Lab 10.6: TFLite Optimization Techniques")
+print("=" * 60)
+
+# ============================================================
+# PART 1: Setup and Base Model
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 1: Setup and Base Model")
+print("=" * 60)
+
+# Load data
+(x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
+x_train = x_train.reshape(-1, 28, 28, 1).astype('float32') / 255.0
+x_test = x_test.reshape(-1, 28, 28, 1).astype('float32') / 255.0
+y_train = tf.keras.utils.to_categorical(y_train, 10)
+y_test = tf.keras.utils.to_categorical(y_test, 10)
+
+# Subset
+x_train, y_train = x_train[:5000], y_train[:5000]
+x_test, y_test = x_test[:1000], y_test[:1000]
+
+# Create model
+def create_model():
+    model = tf.keras.Sequential([
+        tf.keras.layers.Conv2D(32, 3, activation='relu', input_shape=(28, 28, 1)),
+        tf.keras.layers.MaxPooling2D(),
+        tf.keras.layers.Conv2D(64, 3, activation='relu'),
+        tf.keras.layers.MaxPooling2D(),
+        tf.keras.layers.Flatten(),
+        tf.keras.layers.Dense(128, activation='relu'),
+        tf.keras.layers.Dense(10, activation='softmax')
+    ])
+    return model
+
+model = create_model()
+model.compile(optimizer='adam',
+              loss='categorical_crossentropy',
+              metrics=['accuracy'])
+
+print("Training base model...")
+model.fit(x_train, y_train, epochs=5, verbose=0, validation_split=0.1)
+
+base_loss, base_acc = model.evaluate(x_test, y_test, verbose=0)
+print(f"Base model accuracy: {base_acc:.4f}")
+
+# ============================================================
+# PART 2: Model Pruning
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 2: Model Pruning")
+print("=" * 60)
+
+"""
+Pruning removes weights with small magnitudes, creating sparse models
+that can be compressed more effectively.
+"""
+
+# Define pruning parameters
+pruning_params = {
+    'pruning_schedule': tfmot.sparsity.keras.PolynomialDecay(
+        initial_sparsity=0.0,
+        final_sparsity=0.5,  # 50% of weights will be pruned
+        begin_step=0,
+        end_step=np.ceil(len(x_train) / 32).astype(np.int32) * 3
+    )
+}
+
+# Apply pruning
+pruned_model = tfmot.sparsity.keras.prune_low_magnitude(
+    model, **pruning_params
+)
+
+pruned_model.compile(optimizer='adam',
+                     loss='categorical_crossentropy',
+                     metrics=['accuracy'])
+
+# Train with pruning
+print("Training with pruning...")
+callbacks = [tfmot.sparsity.keras.UpdatePruningStep()]
+
+pruned_model.fit(x_train, y_train, epochs=3, verbose=0,
+                 callbacks=callbacks, validation_split=0.1)
+
+# Strip pruning wrappers for deployment
+stripped_model = tfmot.sparsity.keras.strip_pruning(pruned_model)
+
+# Convert to TFLite
+converter = tf.lite.TFLiteConverter.from_keras_model(stripped_model)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+tflite_pruned = converter.convert()
+
+with open('pruned_model.tflite', 'wb') as f:
+    f.write(tflite_pruned)
+
+print(f"Pruned model size: {len(tflite_pruned)/1024:.2f} KB")
+
+# Check sparsity
+def print_sparsity(model):
+    """Print sparsity of each layer."""
+    for layer in model.layers:
+        if hasattr(layer, 'kernel'):
+            weights = layer.kernel.numpy()
+            sparsity = np.sum(weights == 0) / weights.size
+            print(f"{layer.name}: {sparsity*100:.1f}% sparse")
+
+print("\nLayer sparsity:")
+print_sparsity(stripped_model)
+
+# ============================================================
+# PART 3: Clustering (Weight Sharing)
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 3: Weight Clustering")
+print("=" * 60)
+
+"""
+Clustering reduces the number of unique weight values by grouping
+similar weights together, reducing model size.
+"""
+
+# Apply clustering
+cluster_weights = tfmot.clustering.keras.cluster_weights
+clustering_params = {
+    'number_of_clusters': 16,  # Only 16 unique values per layer
+    'cluster_centroids_init': tfmot.clustering.keras.CentroidInitialization.LINEAR
+}
+
+clustered_model = cluster_weights(model, **clustering_params)
+
+clustered_model.compile(optimizer='adam',
+                        loss='categorical_crossentropy',
+                        metrics=['accuracy'])
+
+print("Fine-tuning clustered model...")
+clustered_model.fit(x_train, y_train, epochs=3, verbose=0)
+
+# Strip clustering wrappers
+stripped_clustered = tfmot.clustering.keras.strip_clustering(clustered_model)
+
+# Convert to TFLite
+converter = tf.lite.TFLiteConverter.from_keras_model(stripped_clustered)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+tflite_clustered = converter.convert()
+
+with open('clustered_model.tflite', 'wb') as f:
+    f.write(tflite_clustered)
+
+print(f"Clustered model size: {len(tflite_clustered)/1024:.2f} KB")
+
+# ============================================================
+# PART 4: Combined Optimization (Pruning + Quantization)
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 4: Combined Optimization")
+print("=" * 60)
+
+# Create fresh model for combined optimization
+combined_model = create_model()
+
+# Apply pruning
+pruned_for_combine = tfmot.sparsity.keras.prune_low_magnitude(
+    combined_model,
+    pruning_schedule=tfmot.sparsity.keras.ConstantSparsity(0.5, 0)
+)
+
+pruned_for_combine.compile(optimizer='adam',
+                           loss='categorical_crossentropy',
+                           metrics=['accuracy'])
+
+pruned_for_combine.fit(x_train, y_train, epochs=3, verbose=0,
+                       callbacks=[tfmot.sparsity.keras.UpdatePruningStep()])
+
+# Strip and convert with quantization
+stripped_combined = tfmot.sparsity.keras.strip_pruning(pruned_for_combine)
+
+converter = tf.lite.TFLiteConverter.from_keras_model(stripped_combined)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.representative_dataset = lambda: ([x_train[i:i+1]] for i in range(100))
+tflite_combined = converter.convert()
+
+with open('combined_optimized.tflite', 'wb') as f:
+    f.write(tflite_combined)
+
+print(f"Combined optimized size: {len(tflite_combined)/1024:.2f} KB")
+
+# ============================================================
+# PART 5: Using Delegates for Acceleration
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 5: Hardware Acceleration with Delegates")
+print("=" * 60)
+
+"""
+Delegates allow TFLite to use hardware accelerators:
+- GPU Delegate: For GPU acceleration
+- NNAPI Delegate: For Android neural network API
+- CoreML Delegate: For Apple devices
+- Edge TPU Delegate: For Coral devices
+"""
+
+def benchmark_with_delegates(model_path, test_input):
+    """Benchmark model with different delegates."""
+    results = {}
+    
+    # CPU (baseline)
+    print("\n1. CPU (Baseline)")
+    interpreter = tf.lite.Interpreter(model_path=model_path)
+    interpreter.allocate_tensors()
+    
+    input_details = interpreter.get_input_details()
+    output_details = interpreter.get_output_details()
+    
+    # Warm-up
+    for _ in range(10):
+        interpreter.set_tensor(input_details[0]['index'], test_input)
+        interpreter.invoke()
+    
+    # Benchmark
+    times = []
+    for _ in range(100):
+        start = time.time()
+        interpreter.set_tensor(input_details[0]['index'], test_input)
+        interpreter.invoke()
+        times.append(time.time() - start)
+    
+    results['cpu'] = np.mean(times) * 1000
+    print(f"   Average: {results['cpu']:.2f} ms")
+    
+    # GPU Delegate (if available)
+    print("\n2. GPU Delegate")
+    try:
+        gpu_options = tf.lite.experimental.load_delegate('libtensorflowlite_gpu_jni.so')
+        interpreter_gpu = tf.lite.Interpreter(
+            model_path=model_path,
+            experimental_delegates=[gpu_options]
+        )
+        interpreter_gpu.allocate_tensors()
+        
+        input_details = interpreter_gpu.get_input_details()
+        output_details = interpreter_gpu.get_output_details()
+        
+        # Benchmark
+        times = []
+        for _ in range(100):
+            start = time.time()
+            interpreter_gpu.set_tensor(input_details[0]['index'], test_input)
+            interpreter_gpu.invoke()
+            times.append(time.time() - start)
+        
+        results['gpu'] = np.mean(times) * 1000
+        print(f"   Average: {results['gpu']:.2f} ms")
+        print(f"   Speedup: {results['cpu']/results['gpu']:.2f}x")
+    except Exception as e:
+        print(f"   GPU delegate not available: {e}")
+    
+    return results
+
+# Test with sample input
+test_input = np.expand_dims(x_test[0], 0).astype(np.float32)
+delegate_results = benchmark_with_delegates('combined_optimized.tflite', test_input)
+
+# ============================================================
+# PART 6: Optimization Comparison
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 6: Optimization Comparison")
+print("=" * 60)
+
+def evaluate_tflite(model_path, x_test, y_test):
+    """Evaluate TFLite model."""
+    interpreter = tf.lite.Interpreter(model_path=model_path)
+    interpreter.allocate_tensors()
+    
+    input_details = interpreter.get_input_details()
+    output_details = interpreter.get_output_details()
+    
+    correct = 0
+    for i in range(len(x_test)):
+        interpreter.set_tensor(
+            input_details[0]['index'],
+            np.expand_dims(x_test[i], 0).astype(np.float32)
+        )
+        interpreter.invoke()
+        output = interpreter.get_tensor(output_details[0]['index'])
+        if np.argmax(output[0]) == np.argmax(y_test[i]):
+            correct += 1
+    
+    return correct / len(x_test)
+
+# Evaluate all models
+models = {
+    'Baseline': 'baseline.tflite',
+    'Pruned': 'pruned_model.tflite',
+    'Clustered': 'clustered_model.tflite',
+    'Combined': 'combined_optimized.tflite'
+}
+
+# Save baseline for comparison
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+tflite_baseline = converter.convert()
+with open('baseline.tflite', 'wb') as f:
+    f.write(tflite_baseline)
+
+print("\n" + "-" * 70)
+print(f"{'Method':<20} {'Size (KB)':<15} {'Accuracy':<15} {'Size Reduction'}")
+print("-" * 70)
+
+for name, path in models.items():
+    size = len(open(path, 'rb').read()) / 1024
+    acc = evaluate_tflite(path, x_test[:500], y_test[:500])
+    reduction = (1 - size / (len(tflite_baseline)/1024)) * 100
+    print(f"{name:<20} {size:<15.2f} {acc:<15.4f} {reduction:.1f}%")
+
+print("-" * 70)
+
+# ============================================================
+# PART 7: Summary
+# ============================================================
+
+print("\n" + "=" * 60)
+print("SUMMARY: Optimization Techniques")
+print("=" * 60)
+
+print("""
+Optimization Techniques Summary:
+================================
+
+1. Pruning:
+   - Removes small-magnitude weights
+   - Creates sparse models
+   - Best combined with quantization
+   - Typical: 50% sparsity with minimal accuracy loss
+
+2. Clustering:
+   - Groups similar weights
+   - Reduces unique values
+   - Good for compression
+   - Typical: 16-32 clusters
+
+3. Quantization:
+   - Reduces precision (FP32 → INT8)
+   - 4x size reduction
+   - Faster inference
+   - Multiple strategies available
+
+4. Combined Approach:
+   - Prune → Cluster → Quantize
+   - Maximum compression
+   - Requires careful tuning
+
+5. Hardware Acceleration:
+   - Use delegates for GPU/NNAPI
+   - Significant speedup on compatible hardware
+   - Check device compatibility
+
+Best Practices:
+===============
+- Start with quantization (biggest impact)
+- Add pruning for further compression
+- Use clustering for specific hardware
+- Always validate accuracy
+- Benchmark on target device
+""")
+
+# Cleanup
+for f in ['baseline.tflite', 'pruned_model.tflite', 
+          'clustered_model.tflite', 'combined_optimized.tflite']:
+    if os.path.exists(f):
+        os.remove(f)
+print("\nCleanup completed!")
+```
+
+---

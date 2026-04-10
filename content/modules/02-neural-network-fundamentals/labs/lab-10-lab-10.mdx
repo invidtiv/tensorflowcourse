@@ -1,0 +1,459 @@
+---
+title: "Lab 10"
+module: 2
+labNumber: 10
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-04-part4.md"
+---
+```python
+"""
+Lab 2.3: Custom Loss Functions and Metrics
+Complete guide to creating and using custom losses and metrics in TensorFlow.
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+
+print("=" * 60)
+print("LAB 2.3: Custom Loss Functions and Metrics")
+print("=" * 60)
+
+# ============================================================
+# STEP 1: Understanding Built-in Losses
+# ============================================================
+print("\n[STEP 1] Understanding built-in losses...")
+
+# Common built-in losses
+losses = {
+    'mse': tf.keras.losses.MeanSquaredError(),
+    'mae': tf.keras.losses.MeanAbsoluteError(),
+    'binary_crossentropy': tf.keras.losses.BinaryCrossentropy(),
+    'categorical_crossentropy': tf.keras.losses.CategoricalCrossentropy(),
+    'sparse_categorical_crossentropy': tf.keras.losses.SparseCategoricalCrossentropy(),
+    'huber': tf.keras.losses.Huber(delta=1.0),
+}
+
+# Test with sample data
+y_true = tf.constant([[1.0, 0.0], [0.0, 1.0]])
+y_pred = tf.constant([[0.9, 0.1], [0.2, 0.8]])
+
+print("\nBuilt-in loss values:")
+for name, loss_fn in losses.items():
+    try:
+        loss_value = loss_fn(y_true, y_pred)
+        print(f"  {name}: {loss_value.numpy():.4f}")
+    except:
+        print(f"  {name}: Not applicable for this data")
+
+# ============================================================
+# STEP 2: Custom Loss Function - Basic
+# ============================================================
+print("\n[STEP 2] Creating basic custom loss function...")
+
+# Method 1: Function-based custom loss
+def custom_mse(y_true, y_pred):
+    """Custom MSE with additional penalty for large errors."""
+    squared_error = tf.square(y_true - y_pred)
+    # Add extra penalty for errors > 1
+    large_error_penalty = tf.where(
+        tf.abs(y_true - y_pred) > 1.0,
+        squared_error * 0.5,  # Extra penalty
+        tf.zeros_like(squared_error)
+    )
+    return tf.reduce_mean(squared_error + large_error_penalty)
+
+# Test
+y_true = tf.constant([[1.0, 2.0], [3.0, 4.0]])
+y_pred = tf.constant([[1.5, 2.5], [5.0, 6.0]])  # Large error in second sample
+
+standard_mse = tf.keras.losses.MeanSquaredError()(y_true, y_pred)
+custom_loss = custom_mse(y_true, y_pred)
+
+print(f"\nStandard MSE: {standard_mse.numpy():.4f}")
+print(f"Custom MSE (with penalty): {custom_loss.numpy():.4f}")
+
+# ============================================================
+# STEP 3: Custom Loss Function - Class-based
+# ============================================================
+print("\n[STEP 3] Creating class-based custom loss...")
+
+class WeightedMSE(tf.keras.losses.Loss):
+    """
+    MSE with per-sample weights and feature weights.
+    
+    Args:
+        sample_weights: Weight for each sample
+        feature_weights: Weight for each feature dimension
+    """
+    
+    def __init__(self, sample_weights=None, feature_weights=None, name='weighted_mse'):
+        super().__init__(name=name)
+        self.sample_weights = sample_weights
+        self.feature_weights = feature_weights
+    
+    def call(self, y_true, y_pred):
+        # Calculate squared error
+        squared_error = tf.square(y_true - y_pred)
+        
+        # Apply feature weights if provided
+        if self.feature_weights is not None:
+            squared_error = squared_error * self.feature_weights
+        
+        # Mean across features
+        sample_loss = tf.reduce_mean(squared_error, axis=-1)
+        
+        # Apply sample weights if provided
+        if self.sample_weights is not None:
+            sample_loss = sample_loss * self.sample_weights
+        
+        # Return mean across samples
+        return tf.reduce_mean(sample_loss)
+
+# Test with weights
+sample_weights = tf.constant([1.0, 2.0])  # Second sample is more important
+feature_weights = tf.constant([1.0, 0.5])  # First feature is more important
+
+weighted_mse = WeightedMSE(sample_weights=sample_weights, feature_weights=feature_weights)
+loss_value = weighted_mse(y_true, y_pred)
+print(f"Weighted MSE: {loss_value.numpy():.4f}")
+
+# ============================================================
+# STEP 4: Focal Loss for Imbalanced Classification
+# ============================================================
+print("\n[STEP 4] Implementing Focal Loss...")
+
+class FocalLoss(tf.keras.losses.Loss):
+    """
+    Focal Loss for addressing class imbalance.
+    
+    Down-weights easy examples and focuses on hard examples.
+    
+    Reference: Lin et al., "Focal Loss for Dense Object Detection", ICCV 2017
+    
+    Args:
+        alpha: Weighting factor for rare class
+        gamma: Focusing parameter (higher = more focus on hard examples)
+    """
+    
+    def __init__(self, alpha=0.25, gamma=2.0, name='focal_loss'):
+        super().__init__(name=name)
+        self.alpha = alpha
+        self.gamma = gamma
+    
+    def call(self, y_true, y_pred):
+        # Clip predictions to prevent log(0)
+        epsilon = tf.keras.backend.epsilon()
+        y_pred = tf.clip_by_value(y_pred, epsilon, 1.0 - epsilon)
+        
+        # Cross entropy
+        cross_entropy = -y_true * tf.math.log(y_pred)
+        
+        # Focal weight: (1 - p_t)^gamma
+        p_t = (y_true * y_pred) + ((1 - y_true) * (1 - y_pred))
+        focal_weight = tf.pow(1.0 - p_t, self.gamma)
+        
+        # Apply alpha weighting
+        alpha_t = y_true * self.alpha + (1 - y_true) * (1 - self.alpha)
+        
+        # Focal loss
+        loss = alpha_t * focal_weight * cross_entropy
+        
+        return tf.reduce_mean(loss)
+
+# Test focal loss
+y_true_binary = tf.constant([[1.0], [0.0], [1.0], [0.0]])
+y_pred_easy = tf.constant([[0.9], [0.1], [0.95], [0.05]])  # Easy predictions
+y_pred_hard = tf.constant([[0.6], [0.4], [0.55], [0.45]])  # Hard predictions
+
+focal_loss = FocalLoss(alpha=0.25, gamma=2.0)
+bce_loss = tf.keras.losses.BinaryCrossentropy()
+
+print("\nFocal Loss comparison:")
+print(f"Easy predictions - BCE: {bce_loss(y_true_binary, y_pred_easy).numpy():.4f}, "
+      f"Focal: {focal_loss(y_true_binary, y_pred_easy).numpy():.4f}")
+print(f"Hard predictions - BCE: {bce_loss(y_true_binary, y_pred_hard).numpy():.4f}, "
+      f"Focal: {focal_loss(y_true_binary, y_pred_hard).numpy():.4f}")
+print("Note: Focal loss penalizes easy examples less!")
+
+# ============================================================
+# STEP 5: Tversky Loss for Segmentation
+# ============================================================
+print("\n[STEP 5] Implementing Tversky Loss...")
+
+class TverskyLoss(tf.keras.losses.Loss):
+    """
+    Tversky Loss for image segmentation.
+    
+    Generalization of Dice loss that allows weighting of false positives
+    and false negatives differently.
+    
+    Args:
+        alpha: Weight for false negatives
+        beta: Weight for false positives
+        smooth: Smoothing factor to avoid division by zero
+    """
+    
+    def __init__(self, alpha=0.5, beta=0.5, smooth=1.0, name='tversky_loss'):
+        super().__init__(name=name)
+        self.alpha = alpha
+        self.beta = beta
+        self.smooth = smooth
+    
+    def call(self, y_true, y_pred):
+        # Flatten
+        y_true_f = tf.reshape(y_true, [-1])
+        y_pred_f = tf.reshape(y_pred, [-1])
+        
+        # True positives, false positives, false negatives
+        tp = tf.reduce_sum(y_true_f * y_pred_f)
+        fp = tf.reduce_sum((1 - y_true_f) * y_pred_f)
+        fn = tf.reduce_sum(y_true_f * (1 - y_pred_f))
+        
+        # Tversky index
+        tversky = (tp + self.smooth) / (tp + self.alpha * fn + self.beta * fp + self.smooth)
+        
+        # Tversky loss
+        return 1 - tversky
+
+# Test Tversky loss
+tversky = TverskyLoss(alpha=0.3, beta=0.7)  # Penalize false positives more
+dice = TverskyLoss(alpha=0.5, beta=0.5)  # Equivalent to Dice loss
+
+y_true_seg = tf.constant([[[1.0, 0.0], [0.0, 1.0]]])
+y_pred_seg = tf.constant([[[0.8, 0.2], [0.3, 0.7]]])
+
+print(f"\nTversky Loss (alpha=0.3, beta=0.7): {tversky(y_true_seg, y_pred_seg).numpy():.4f}")
+print(f"Dice Loss (alpha=0.5, beta=0.5): {dice(y_true_seg, y_pred_seg).numpy():.4f}")
+
+# ============================================================
+# STEP 6: Custom Metrics
+# ============================================================
+print("\n[STEP 6] Creating custom metrics...")
+
+# Method 1: Function-based metric
+def r_squared(y_true, y_pred):
+    """R-squared (coefficient of determination) metric."""
+    ss_res = tf.reduce_sum(tf.square(y_true - y_pred))
+    ss_tot = tf.reduce_sum(tf.square(y_true - tf.reduce_mean(y_true)))
+    return 1 - ss_res / (ss_tot + tf.keras.backend.epsilon())
+
+# Method 2: Class-based metric
+class PrecisionAtRecall(tf.keras.metrics.Metric):
+    """
+    Precision at a specific recall threshold.
+    
+    Useful when you need to guarantee a minimum recall.
+    """
+    
+    def __init__(self, recall_threshold=0.8, name='precision_at_recall', **kwargs):
+        super().__init__(name=name, **kwargs)
+        self.recall_threshold = recall_threshold
+        
+        # Variables to track true positives and false positives at threshold
+        self.true_positives = self.add_weight(name='tp', initializer='zeros')
+        self.false_positives = self.add_weight(name='fp', initializer='zeros')
+        self.false_negatives = self.add_weight(name='fn', initializer='zeros')
+    
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        # Convert predictions to binary at recall threshold
+        # This is a simplified version - in practice you'd use precision_recall_curve
+        y_pred_binary = tf.cast(y_pred > 0.5, tf.float32)
+        y_true = tf.cast(y_true, tf.float32)
+        
+        # Calculate TP, FP, FN
+        tp = tf.reduce_sum(y_true * y_pred_binary)
+        fp = tf.reduce_sum((1 - y_true) * y_pred_binary)
+        fn = tf.reduce_sum(y_true * (1 - y_pred_binary))
+        
+        self.true_positives.assign_add(tp)
+        self.false_positives.assign_add(fp)
+        self.false_negatives.assign_add(fn)
+    
+    def result(self):
+        precision = self.true_positives / (self.true_positives + self.false_positives + 
+                                           tf.keras.backend.epsilon())
+        return precision
+    
+    def reset_state(self):
+        self.true_positives.assign(0.0)
+        self.false_positives.assign(0.0)
+        self.false_negatives.assign(0.0)
+
+# Test custom metrics
+y_true_reg = tf.constant([[1.0], [2.0], [3.0], [4.0]])
+y_pred_reg = tf.constant([[1.1], [1.9], [3.2], [3.8]])
+
+r2 = r_squared(y_true_reg, y_pred_reg)
+print(f"\nR-squared: {r2.numpy():.4f}")
+
+# ============================================================
+# STEP 7: Training with Custom Loss and Metrics
+# ============================================================
+print("\n[STEP 7] Training model with custom loss and metrics...")
+
+# Generate synthetic data
+np.random.seed(42)
+X_train = np.random.randn(1000, 20)
+y_train = np.random.randint(0, 2, 1000)
+
+X_test = np.random.randn(200, 20)
+y_test = np.random.randint(0, 2, 200)
+
+# Build model
+model = tf.keras.Sequential([
+    tf.keras.layers.Dense(64, activation='relu', input_shape=(20,)),
+    tf.keras.layers.Dropout(0.3),
+    tf.keras.layers.Dense(32, activation='relu'),
+    tf.keras.layers.Dense(1, activation='sigmoid')
+])
+
+# Compile with custom loss and metrics
+model.compile(
+    optimizer='adam',
+    loss=FocalLoss(alpha=0.25, gamma=2.0),  # Custom focal loss
+    metrics=[
+        'accuracy',
+        tf.keras.metrics.Precision(name='precision'),
+        tf.keras.metrics.Recall(name='recall'),
+        tf.keras.metrics.AUC(name='auc')
+    ]
+)
+
+print("\nModel compiled with custom Focal Loss!")
+model.summary()
+
+# Train
+print("\nTraining...")
+history = model.fit(
+    X_train, y_train,
+    validation_split=0.2,
+    epochs=10,
+    batch_size=32,
+    verbose=1
+)
+
+# ============================================================
+# STEP 8: Composite Loss Functions
+# ============================================================
+print("\n[STEP 8] Creating composite loss functions...")
+
+class CompositeLoss(tf.keras.losses.Loss):
+    """
+    Combines multiple losses with different weights.
+    
+    Useful for multi-task learning.
+    """
+    
+    def __init__(self, losses, weights, name='composite_loss'):
+        super().__init__(name=name)
+        self.losses = losses
+        self.weights = weights
+    
+    def call(self, y_true, y_pred):
+        total_loss = 0.0
+        for loss_fn, weight in zip(self.losses, self.weights):
+            total_loss += weight * loss_fn(y_true, y_pred)
+        return total_loss
+
+# Create composite loss
+composite = CompositeLoss(
+    losses=[
+        tf.keras.losses.MeanSquaredError(),
+        tf.keras.losses.MeanAbsoluteError(),
+        tf.keras.losses.Huber(delta=1.0)
+    ],
+    weights=[0.5, 0.3, 0.2]
+)
+
+# Test
+y_true_test = tf.constant([[1.0, 2.0], [3.0, 4.0]])
+y_pred_test = tf.constant([[1.2, 1.8], [3.1, 3.9]])
+
+composite_value = composite(y_true_test, y_pred_test)
+print(f"\nComposite loss: {composite_value.numpy():.4f}")
+
+# ============================================================
+# STEP 9: Visualization
+# ============================================================
+print("\n[STEP 9] Visualizing loss functions...")
+
+# Plot different loss functions
+x = np.linspace(-3, 3, 100)
+
+fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+
+# MSE vs MAE
+ax1 = axes[0, 0]
+mse_values = x ** 2
+mae_values = np.abs(x)
+huber_values = np.where(np.abs(x) < 1, 0.5 * x ** 2, np.abs(x) - 0.5)
+
+ax1.plot(x, mse_values, label='MSE', linewidth=2)
+ax1.plot(x, mae_values, label='MAE', linewidth=2)
+ax1.plot(x, huber_values, label='Huber', linewidth=2)
+ax1.set_xlabel('Error')
+ax1.set_ylabel('Loss')
+ax1.set_title('Regression Loss Functions', fontweight='bold')
+ax1.legend()
+ax1.grid(True, alpha=0.3)
+
+# Binary cross-entropy
+ax2 = axes[0, 1]
+p = np.linspace(0.01, 0.99, 100)
+y_true_1 = 1
+bce_y1 = -y_true_1 * np.log(p) - (1 - y_true_1) * np.log(1 - p)
+y_true_0 = 0
+bce_y0 = -y_true_0 * np.log(p) - (1 - y_true_0) * np.log(1 - p)
+
+ax2.plot(p, bce_y1, label='y_true=1', linewidth=2)
+ax2.plot(p, bce_y0, label='y_true=0', linewidth=2)
+ax2.set_xlabel('Predicted Probability')
+ax2.set_ylabel('Loss')
+ax2.set_title('Binary Cross-Entropy', fontweight='bold')
+ax2.legend()
+ax2.grid(True, alpha=0.3)
+
+# Focal loss comparison
+ax3 = axes[1, 0]
+gamma_values = [0, 1, 2, 5]
+p = np.linspace(0.01, 0.99, 100)
+
+for gamma in gamma_values:
+    focal = -np.power(1 - p, gamma) * np.log(p)
+    ax3.plot(p, focal, label=f'gamma={gamma}', linewidth=2)
+
+ax3.set_xlabel('Predicted Probability (for positive class)')
+ax3.set_ylabel('Loss')
+ax3.set_title('Focal Loss with Different gamma', fontweight='bold')
+ax3.legend()
+ax3.grid(True, alpha=0.3)
+
+# Training history
+ax4 = axes[1, 1]
+ax4.plot(history.history['loss'], label='Train Loss', linewidth=2)
+ax4.plot(history.history['val_loss'], label='Val Loss', linewidth=2)
+ax4.set_xlabel('Epoch')
+ax4.set_ylabel('Loss')
+ax4.set_title('Training with Focal Loss', fontweight='bold')
+ax4.legend()
+ax4.grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.savefig('/mnt/okcomputer/output/loss_functions.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+print("\n" + "=" * 60)
+print("LAB 2.3 COMPLETED SUCCESSFULLY!")
+print("=" * 60)
+print("\nKEY TAKEAWAYS:")
+print("1. Custom losses can be functions or classes")
+print("2. Class-based losses can maintain state and hyperparameters")
+print("3. Focal loss helps with class imbalance")
+print("4. Tversky loss is useful for segmentation")
+print("5. Composite losses enable multi-task learning")
+print("6. Custom metrics should inherit from tf.keras.metrics.Metric")
+```
+
+---

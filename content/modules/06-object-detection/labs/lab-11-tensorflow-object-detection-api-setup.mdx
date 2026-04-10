@@ -1,0 +1,389 @@
+---
+title: "TensorFlow Object Detection API Setup"
+module: 6
+labNumber: 11
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# TensorFlow Object Detection API Setup
+
+## Objectives
+- Set up TensorFlow Object Detection API
+- Understand the model zoo
+- Download and configure pre-trained models
+- Run inference with pre-trained models
+
+## Prerequisites
+- TensorFlow 2.x installed
+- TensorFlow Object Detection API installed
+
+## Installation Guide
+
+```bash
+# Install TensorFlow Object Detection API
+pip install tensorflow-object-detection-api
+
+# Or install from source
+git clone https://github.com/tensorflow/models.git
+cd models/research
+protoc object_detection/protos/*.proto --python_out=.
+cp object_detection/packages/tf2/setup.py .
+python -m pip install .
+```
+
+## Complete Implementation
+
+```python
+"""
+Lab 6.10: TensorFlow Object Detection API Setup
+Object Detection Systems - Module 6
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+from pathlib import Path
+import urllib.request
+import tarfile
+import os
+
+# =============================================================================
+# Section 1: Model Zoo and Pre-trained Models
+# =============================================================================
+
+MODEL_ZOO = {
+    'ssd_mobilenet_v2': {
+        'name': 'SSD MobileNet v2 320x320',
+        'url': 'http://download.tensorflow.org/models/object_detection/tf2/20200711/ssd_mobilenet_v2_320x320_coco17_tpu-8.tar.gz',
+        'config': 'ssd_mobilenet_v2_320x320_coco17_tpu-8/pipeline.config'
+    },
+    'efficientdet_d0': {
+        'name': 'EfficientDet D0 512x512',
+        'url': 'http://download.tensorflow.org/models/object_detection/tf2/20200711/efficientdet_d0_coco17_tpu-32.tar.gz',
+        'config': 'efficientdet_d0_coco17_tpu-32/pipeline.config'
+    },
+    'faster_rcnn_resnet50': {
+        'name': 'Faster R-CNN ResNet50 V1 640x640',
+        'url': 'http://download.tensorflow.org/models/object_detection/tf2/20200711/faster_rcnn_resnet50_v1_640x640_coco17_tpu-8.tar.gz',
+        'config': 'faster_rcnn_resnet50_v1_640x640_coco17_tpu-8/pipeline.config'
+    },
+    'centernet_resnet50': {
+        'name': 'CenterNet ResNet50 V1 FPN 512x512',
+        'url': 'http://download.tensorflow.org/models/object_detection/tf2/20200711/centernet_resnet50_v1_fpn_512x512_coco17_tpu-8.tar.gz',
+        'config': 'centernet_resnet50_v1_fpn_512x512_coco17_tpu-8/pipeline.config'
+    }
+}
+
+
+def download_model(model_name: str, download_dir: str = './models') -> str:
+    """
+    Download a pre-trained model from the TensorFlow Model Zoo.
+    
+    Args:
+        model_name: Key from MODEL_ZOO
+        download_dir: Directory to save the model
+    
+    Returns:
+        Path to downloaded model
+    """
+    if model_name not in MODEL_ZOO:
+        raise ValueError(f"Model {model_name} not found. Available: {list(MODEL_ZOO.keys())}")
+    
+    model_info = MODEL_ZOO[model_name]
+    model_url = model_info['url']
+    
+    # Create download directory
+    download_path = Path(download_dir)
+    download_path.mkdir(parents=True, exist_ok=True)
+    
+    # Download
+    filename = model_url.split('/')[-1]
+    filepath = download_path / filename
+    
+    if not filepath.exists():
+        print(f"Downloading {model_info['name']}...")
+        print(f"URL: {model_url}")
+        urllib.request.urlretrieve(model_url, filepath)
+        print(f"Downloaded to {filepath}")
+    else:
+        print(f"Model already exists at {filepath}")
+    
+    # Extract
+    extract_dir = download_path / filename.replace('.tar.gz', '')
+    if not extract_dir.exists():
+        print(f"Extracting to {extract_dir}...")
+        with tarfile.open(filepath, 'r:gz') as tar:
+            tar.extractall(download_path)
+        print("Extraction complete")
+    
+    return str(extract_dir)
+
+
+# =============================================================================
+# Section 2: Model Loading and Inference
+# =============================================================================
+
+def load_tf_od_model(model_path: str):
+    """
+    Load a TensorFlow Object Detection model.
+    
+    Args:
+        model_path: Path to saved model directory
+    
+    Returns:
+        Loaded model
+    """
+    print(f"Loading model from {model_path}...")
+    
+    # Load saved model
+    model = tf.saved_model.load(model_path)
+    
+    print("Model loaded successfully!")
+    return model
+
+
+def run_inference(model, image: np.ndarray) -> dict:
+    """
+    Run inference on a single image.
+    
+    Args:
+        model: Loaded detection model
+        image: Input image as numpy array [H, W, 3]
+    
+    Returns:
+        Detection results dictionary
+    """
+    # Convert to tensor
+    input_tensor = tf.convert_to_tensor(image)
+    input_tensor = input_tensor[tf.newaxis, ...]
+    
+    # Run inference
+    detections = model(input_tensor)
+    
+    # Convert to numpy
+    results = {
+        'detection_boxes': detections['detection_boxes'][0].numpy(),
+        'detection_classes': detections['detection_classes'][0].numpy().astype(np.int64),
+        'detection_scores': detections['detection_scores'][0].numpy(),
+        'num_detections': int(detections['num_detections'][0])
+    }
+    
+    return results
+
+
+# =============================================================================
+# Section 3: COCO Label Map
+# =============================================================================
+
+COCO_LABELS = {
+    1: 'person', 2: 'bicycle', 3: 'car', 4: 'motorcycle', 5: 'airplane',
+    6: 'bus', 7: 'train', 8: 'truck', 9: 'boat', 10: 'traffic light',
+    11: 'fire hydrant', 13: 'stop sign', 14: 'parking meter', 15: 'bench',
+    16: 'bird', 17: 'cat', 18: 'dog', 19: 'horse', 20: 'sheep',
+    21: 'cow', 22: 'elephant', 23: 'bear', 24: 'zebra', 25: 'giraffe',
+    27: 'backpack', 28: 'umbrella', 31: 'handbag', 32: 'tie', 33: 'suitcase',
+    34: 'frisbee', 35: 'skis', 36: 'snowboard', 37: 'sports ball',
+    38: 'kite', 39: 'baseball bat', 40: 'baseball glove', 41: 'skateboard',
+    42: 'surfboard', 43: 'tennis racket', 44: 'bottle', 46: 'wine glass',
+    47: 'cup', 48: 'fork', 49: 'knife', 50: 'spoon', 51: 'bowl',
+    52: 'banana', 53: 'apple', 54: 'sandwich', 55: 'orange', 56: 'broccoli',
+    57: 'carrot', 58: 'hot dog', 59: 'pizza', 60: 'donut', 61: 'cake',
+    62: 'chair', 63: 'couch', 64: 'potted plant', 65: 'bed', 67: 'dining table',
+    70: 'toilet', 72: 'tv', 73: 'laptop', 74: 'mouse', 75: 'remote',
+    76: 'keyboard', 77: 'cell phone', 78: 'microwave', 79: 'oven',
+    80: 'toaster', 81: 'sink', 82: 'refrigerator', 84: 'book', 85: 'clock',
+    86: 'vase', 87: 'scissors', 88: 'teddy bear', 89: 'hair drier', 90: 'toothbrush'
+}
+
+
+def get_label(class_id: int) -> str:
+    """Get label name from class ID."""
+    return COCO_LABELS.get(class_id, f'class_{class_id}')
+
+
+# =============================================================================
+# Section 4: Visualization
+# =============================================================================
+
+def visualize_detections(image: np.ndarray,
+                         detections: dict,
+                         score_threshold: float = 0.5,
+                         max_boxes: int = 50):
+    """
+    Visualize detection results.
+    
+    Args:
+        image: Input image
+        detections: Detection results from model
+        score_threshold: Minimum score to display
+        max_boxes: Maximum boxes to draw
+    """
+    fig, ax = plt.subplots(1, 1, figsize=(14, 10))
+    ax.imshow(image)
+    
+    height, width = image.shape[:2]
+    
+    boxes = detections['detection_boxes']
+    classes = detections['detection_classes']
+    scores = detections['detection_scores']
+    
+    colors = plt.cm.rainbow(np.linspace(0, 1, 91))
+    
+    box_count = 0
+    for i in range(len(boxes)):
+        if scores[i] < score_threshold or box_count >= max_boxes:
+            continue
+        
+        box_count += 1
+        
+        # Convert normalized coords to pixel coords
+        # boxes are in [y_min, x_min, y_max, x_max] format
+        y_min, x_min, y_max, x_max = boxes[i]
+        
+        x_min = int(x_min * width)
+        x_max = int(x_max * width)
+        y_min = int(y_min * height)
+        y_max = int(y_max * height)
+        
+        class_id = classes[i]
+        score = scores[i]
+        label = get_label(class_id)
+        
+        color = colors[class_id % len(colors)]
+        
+        # Draw box
+        rect = patches.Rectangle(
+            (x_min, y_min), x_max - x_min, y_max - y_min,
+            linewidth=2, edgecolor=color, facecolor='none'
+        )
+        ax.add_patch(rect)
+        
+        # Draw label
+        label_text = f'{label}: {score:.2f}'
+        ax.text(x_min, y_min - 5, label_text,
+               color='white', fontsize=10, fontweight='bold',
+               bbox=dict(facecolor=color, alpha=0.7, edgecolor='none', pad=2))
+    
+    ax.set_title(f'Detections (threshold={score_threshold}): {box_count} objects')
+    ax.axis('off')
+    plt.tight_layout()
+    plt.show()
+    
+    return box_count
+
+
+# =============================================================================
+# Section 5: Model Comparison
+# =============================================================================
+
+def compare_models():
+    """
+    Display information about available models in the zoo.
+    """
+    print("\n" + "=" * 70)
+    print("TensorFlow Object Detection Model Zoo")
+    print("=" * 70)
+    
+    print("\nAvailable Models:")
+    print("-" * 70)
+    
+    for key, info in MODEL_ZOO.items():
+        print(f"\n{key}:")
+        print(f"  Name: {info['name']}")
+        print(f"  URL: {info['url']}")
+
+
+def benchmark_model(model, image_size: tuple = (640, 640, 3), num_runs: int = 10):
+    """
+    Benchmark model inference speed.
+    
+    Args:
+        model: Loaded model
+        image_size: Input image size
+        num_runs: Number of inference runs
+    
+    Returns:
+        Average inference time in ms
+    """
+    import time
+    
+    # Warm-up
+    dummy_input = np.random.rand(1, *image_size).astype(np.float32)
+    for _ in range(3):
+        _ = model(dummy_input)
+    
+    # Benchmark
+    times = []
+    for _ in range(num_runs):
+        start = time.time()
+        _ = model(dummy_input)
+        times.append((time.time() - start) * 1000)  # Convert to ms
+    
+    avg_time = np.mean(times)
+    std_time = np.std(times)
+    
+    print(f"\nBenchmark Results ({num_runs} runs):")
+    print(f"  Average: {avg_time:.2f} ms")
+    print(f"  Std Dev: {std_time:.2f} ms")
+    print(f"  FPS: {1000/avg_time:.1f}")
+    
+    return avg_time
+
+
+# =============================================================================
+# Main Execution
+# =============================================================================
+
+if __name__ == "__main__":
+    print("\n" + "=" * 70)
+    print("Lab 6.10: TensorFlow Object Detection API Setup")
+    print("=" * 70)
+    
+    # Display available models
+    compare_models()
+    
+    # Note: Actual model download and inference requires the full TF OD API
+    # This is a demonstration of the setup process
+    
+    print("\n" + "-" * 70)
+    print("To use this lab:")
+    print("1. Install TensorFlow Object Detection API:")
+    print("   pip install tensorflow-object-detection-api")
+    print("\n2. Download a model:")
+    print("   model_path = download_model('ssd_mobilenet_v2')")
+    print("\n3. Load and run inference:")
+    print("   model = load_tf_od_model(model_path + '/saved_model')")
+    print("   results = run_inference(model, image)")
+    print("-" * 70)
+    
+    # Create a dummy demonstration
+    print("\n" + "-" * 70)
+    print("Creating dummy detection demonstration...")
+    print("-" * 70)
+    
+    # Generate dummy image
+    dummy_image = np.random.rand(480, 640, 3)
+    
+    # Generate dummy detections
+    dummy_detections = {
+        'detection_boxes': np.array([
+            [0.2, 0.3, 0.5, 0.7],  # person
+            [0.6, 0.1, 0.9, 0.4],  # car
+            [0.1, 0.6, 0.3, 0.9],  # dog
+        ]),
+        'detection_classes': np.array([1, 3, 18]),
+        'detection_scores': np.array([0.95, 0.87, 0.76]),
+        'num_detections': 3
+    }
+    
+    # Visualize
+    visualize_detections(dummy_image, dummy_detections, score_threshold=0.5)
+    
+    print("\n" + "=" * 70)
+    print("Lab 6.10 Complete!")
+    print("=" * 70)
+```
+
+---

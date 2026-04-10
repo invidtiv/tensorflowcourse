@@ -1,0 +1,136 @@
+{
+  "version": 1,
+  "passingScore": 80,
+  "questions": [
+    {
+      "id": "m5-q1",
+      "type": "multiple-choice",
+      "difficulty": "easy",
+      "topic": "Segmentation Basics",
+      "question": "What distinguishes semantic segmentation from object detection?",
+      "options": [
+        {
+          "text": "Segmentation predicts bounding boxes; detection predicts pixels",
+          "correct": false
+        },
+        {
+          "text": "Segmentation assigns a class label to every pixel; detection localizes object instances with boxes",
+          "correct": true
+        },
+        {
+          "text": "They are the same task",
+          "correct": false
+        },
+        {
+          "text": "Segmentation only works on grayscale images",
+          "correct": false
+        }
+      ],
+      "explanation": "Semantic segmentation produces per-pixel class labels; object detection outputs bounding boxes per instance."
+    },
+    {
+      "id": "m5-q2",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "U-Net",
+      "question": "What is the purpose of U-Net's skip connections?",
+      "options": [
+        {
+          "text": "To combine high-resolution encoder features with upsampled decoder features",
+          "correct": true
+        },
+        {
+          "text": "To reduce the number of parameters",
+          "correct": false
+        },
+        {
+          "text": "To skip training unnecessary layers",
+          "correct": false
+        },
+        {
+          "text": "To implement residual learning like ResNet",
+          "correct": false
+        }
+      ],
+      "explanation": "Skip connections preserve spatial detail from the encoder and fuse it with the decoder's upsampled features, improving localization."
+    },
+    {
+      "id": "m5-q3",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Atrous Convolution",
+      "question": "In DeepLab, why are atrous (dilated) convolutions used?",
+      "options": [
+        {
+          "text": "To reduce inference time via sparser kernels",
+          "correct": false
+        },
+        {
+          "text": "To preserve feature map resolution while enlarging the receptive field",
+          "correct": true
+        },
+        {
+          "text": "To replace pooling entirely with learnable layers",
+          "correct": false
+        },
+        {
+          "text": "To enable color-space augmentation",
+          "correct": false
+        }
+      ],
+      "explanation": "DeepLab uses atrous convolutions to capture multi-scale context without downsampling the feature maps."
+    },
+    {
+      "id": "m5-q4",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "Loss Functions",
+      "question": "Which loss is commonly used to handle severe class imbalance in segmentation?",
+      "options": [
+        {
+          "text": "Mean Squared Error",
+          "correct": false
+        },
+        {
+          "text": "Dice loss or focal loss",
+          "correct": true
+        },
+        {
+          "text": "Hinge loss",
+          "correct": false
+        },
+        {
+          "text": "KL divergence",
+          "correct": false
+        }
+      ],
+      "explanation": "Dice and focal losses directly address class imbalance by emphasizing under-represented regions or hard examples."
+    },
+    {
+      "id": "m5-q5",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Evaluation",
+      "question": "What does mean Intersection over Union (mIoU) measure?",
+      "options": [
+        {
+          "text": "The average pixel accuracy across images",
+          "correct": false
+        },
+        {
+          "text": "The average per-class overlap between predicted and ground-truth masks",
+          "correct": true
+        },
+        {
+          "text": "The mean training loss",
+          "correct": false
+        },
+        {
+          "text": "The variance of predictions",
+          "correct": false
+        }
+      ],
+      "explanation": "mIoU averages IoU over classes; it is the standard segmentation metric because it is robust to class imbalance."
+    }
+  ]
+}

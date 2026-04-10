@@ -1,0 +1,150 @@
+---
+title: "Mixed Precision Training"
+module: 4
+labNumber: 16
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Mixed Precision Training
+
+```python
+"""
+Lab 4.4: Mixed Precision Training
+==================================
+Implement and benchmark mixed precision training.
+"""
+
+import tensorflow as tf
+import numpy as np
+import time
+import matplotlib.pyplot as plt
+
+print(f"TensorFlow version: {tf.__version__}")
+print(f"Mixed precision available: {tf.keras.mixed_precision.global_policy().name}")
+
+def setup_mixed_precision():
+    policy = tf.keras.mixed_precision.Policy('mixed_float16')
+    tf.keras.mixed_precision.set_global_policy(policy)
+    print(f"Compute dtype: {policy.compute_dtype}")
+    print(f"Variable dtype: {policy.variable_dtype}")
+
+def reset_to_float32():
+    policy = tf.keras.mixed_precision.Policy('float32')
+    tf.keras.mixed_precision.set_global_policy(policy)
+
+def create_model_with_dtype():
+    inputs = tf.keras.layers.Input(shape=(32, 32, 3))
+    
+    x = tf.keras.layers.Conv2D(32, 3, activation='relu')(inputs)
+    x = tf.keras.layers.MaxPooling2D()(x)
+    x = tf.keras.layers.Conv2D(64, 3, activation='relu')(x)
+    x = tf.keras.layers.MaxPooling2D()(x)
+    x = tf.keras.layers.Conv2D(128, 3, activation='relu')(x)
+    x = tf.keras.layers.MaxPooling2D()(x)
+    x = tf.keras.layers.Flatten()(x)
+    x = tf.keras.layers.Dense(256, activation='relu')(x)
+    x = tf.keras.layers.Dropout(0.5)(x)
+    
+    outputs = tf.keras.layers.Dense(10, activation='softmax', dtype='float32')(x)
+    return tf.keras.Model(inputs, outputs)
+
+def benchmark_precision_mode(precision_mode, epochs=10):
+    print(f"\n{'='*50}")
+    print(f"Benchmarking: {precision_mode}")
+    print(f"{'='*50}")
+    
+    if precision_mode == 'mixed_float16':
+        setup_mixed_precision()
+    else:
+        reset_to_float32()
+    
+    (x_train, y_train), (x_test, y_test) = tf.keras.datasets.cifar10.load_data()
+    x_train, x_test = x_train / 255.0, x_test / 255.0
+    y_train = tf.keras.utils.to_categorical(y_train, 10)
+    y_test = tf.keras.utils.to_categorical(y_test, 10)
+    
+    model = create_model_with_dtype()
+    
+    if precision_mode == 'mixed_float16':
+        optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
+        optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
+    else:
+        optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
+    
+    model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
+    
+    model.fit(x_train[:1000], y_train[:1000], epochs=1, verbose=0)  # Warmup
+    
+    start_time = time.time()
+    history = model.fit(x_train, y_train, batch_size=128, epochs=epochs,
+                       validation_data=(x_test, y_test), verbose=1)
+    training_time = time.time() - start_time
+    
+    test_loss, test_acc = model.evaluate(x_test, y_test, verbose=0)
+    model_size = sum([tf.size(w).numpy() * w.dtype.size for w in model.weights])
+    
+    print(f"\nResults for {precision_mode}:")
+    print(f"  Training Time: {training_time:.2f}s")
+    print(f"  Test Accuracy: {test_acc:.4f}")
+    print(f"  Model Size: {model_size / (1024**2):.2f} MB")
+    
+    return {
+        'training_time': training_time,
+        'test_accuracy': test_acc,
+        'model_size_mb': model_size / (1024**2),
+        'history': history.history
+    }
+
+def compare_mixed_precision():
+    results = {}
+    
+    for mode in ['float32', 'mixed_float16']:
+        try:
+            results[mode] = benchmark_precision_mode(mode, epochs=10)
+        except Exception as e:
+            print(f"Error with {mode}: {e}")
+            results[mode] = None
+    
+    if all(v is not None for v in results.values()):
+        fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+        
+        modes = list(results.keys())
+        
+        times = [results[m]['training_time'] for m in modes]
+        axes[0].bar(modes, times, color=['skyblue', 'lightgreen'], edgecolor='black')
+        axes[0].set_ylabel('Time (seconds)')
+        axes[0].set_title('Training Time Comparison', fontweight='bold')
+        for i, t in enumerate(times):
+            axes[0].text(i, t + 5, f'{t:.1f}s', ha='center', fontweight='bold')
+        
+        accs = [results[m]['test_accuracy'] for m in modes]
+        axes[1].bar(modes, accs, color=['skyblue', 'lightgreen'], edgecolor='black')
+        axes[1].set_ylabel('Accuracy')
+        axes[1].set_title('Test Accuracy Comparison', fontweight='bold')
+        for i, a in enumerate(accs):
+            axes[1].text(i, a + 0.01, f'{a:.3f}', ha='center', fontweight='bold')
+        
+        sizes = [results[m]['model_size_mb'] for m in modes]
+        axes[2].bar(modes, sizes, color=['skyblue', 'lightgreen'], edgecolor='black')
+        axes[2].set_ylabel('Size (MB)')
+        axes[2].set_title('Model Size Comparison', fontweight='bold')
+        for i, s in enumerate(sizes):
+            axes[2].text(i, s + 0.5, f'{s:.1f}MB', ha='center', fontweight='bold')
+        
+        plt.tight_layout()
+        plt.savefig('mixed_precision_comparison.png', dpi=150)
+        plt.show()
+        
+        speedup = results['float32']['training_time'] / results['mixed_float16']['training_time']
+        print(f"\nMixed Precision Speedup: {speedup:.2f}x")
+    
+    return results
+
+results = compare_mixed_precision()
+```
+
+---
+
+<a name="section-5-normalization-layers"></a>
+# Section 5: Normalization Layers (3 Labs)

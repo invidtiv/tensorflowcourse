@@ -1,0 +1,607 @@
+---
+title: "REST API with TensorFlow Serving"
+module: 10
+labNumber: 9
+difficulty: "hard"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# REST API with TensorFlow Serving
+
+## Objectives
+- Build REST API clients for TensorFlow Serving
+- Implement prediction requests
+- Handle batch predictions
+- Create a complete serving application
+
+## Complete Implementation
+
+```python
+"""
+Lab 10.8: REST API with TensorFlow Serving
+==========================================
+Build complete REST API clients and applications using TensorFlow Serving.
+"""
+
+import tensorflow as tf
+import numpy as np
+import requests
+import json
+import os
+from flask import Flask, request, jsonify
+
+print("=" * 60)
+print("Lab 10.8: REST API with TensorFlow Serving")
+print("=" * 60)
+
+# ============================================================
+# PART 1: Create and Export Model
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 1: Creating and Exporting Model")
+print("=" * 60)
+
+# Create image classification model
+(x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
+x_train = x_train[:5000].reshape(-1, 28, 28, 1).astype('float32') / 255.0
+y_train = tf.keras.utils.to_categorical(y_train[:5000], 10)
+
+model = tf.keras.Sequential([
+    tf.keras.layers.Conv2D(32, 3, activation='relu', input_shape=(28, 28, 1)),
+    tf.keras.layers.MaxPooling2D(),
+    tf.keras.layers.Conv2D(64, 3, activation='relu'),
+    tf.keras.layers.MaxPooling2D(),
+    tf.keras.layers.Flatten(),
+    tf.keras.layers.Dense(64, activation='relu'),
+    tf.keras.layers.Dense(10, activation='softmax')
+])
+
+model.compile(optimizer='adam',
+              loss='categorical_crossentropy',
+              metrics=['accuracy'])
+
+print("Training model...")
+model.fit(x_train, y_train, epochs=5, verbose=0)
+
+# Export model
+model_path = "serving_models/mnist/1"
+os.makedirs(model_path, exist_ok=True)
+tf.saved_model.save(model, model_path)
+print(f"Model exported to: {model_path}")
+
+# ============================================================
+# PART 2: REST API Client
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 2: REST API Client Implementation")
+print("=" * 60)
+
+class TFServingClient:
+    """
+    TensorFlow Serving REST API Client.
+    
+    Handles all communication with TensorFlow Serving server.
+    """
+    
+    def __init__(self, host='localhost', port=8501):
+        self.base_url = f"http://{host}:{port}/v1/models"
+    
+    def get_model_status(self, model_name):
+        """Get model status and available versions."""
+        url = f"{self.base_url}/{model_name}"
+        try:
+            response = requests.get(url)
+            return response.json()
+        except requests.exceptions.ConnectionError:
+            return {"error": "Could not connect to TensorFlow Serving"}
+    
+    def get_model_metadata(self, model_name, version=None):
+        """Get model metadata including signatures."""
+        if version:
+            url = f"{self.base_url}/{model_name}/versions/{version}/metadata"
+        else:
+            url = f"{self.base_url}/{model_name}/metadata"
+        
+        try:
+            response = requests.get(url)
+            return response.json()
+        except requests.exceptions.ConnectionError:
+            return {"error": "Could not connect to TensorFlow Serving"}
+    
+    def predict(self, model_name, data, version=None, signature='serving_default'):
+        """
+        Make prediction request.
+        
+        Args:
+            model_name: Name of the model
+            data: Input data (numpy array or list)
+            version: Model version (optional)
+            signature: Signature name
+        """
+        if version:
+            url = f"{self.base_url}/{model_name}/versions/{version}:predict"
+        else:
+            url = f"{self.base_url}/{model_name}:predict"
+        
+        # Prepare request
+        if isinstance(data, np.ndarray):
+            data = data.tolist()
+        
+        payload = {
+            "signature_name": signature,
+            "instances": data if isinstance(data[0], list) else [data]
+        }
+        
+        try:
+            response = requests.post(url, json=payload)
+            return response.json()
+        except requests.exceptions.ConnectionError:
+            return {"error": "Could not connect to TensorFlow Serving"}
+    
+    def batch_predict(self, model_name, data_batch, version=None):
+        """Make batch prediction request."""
+        return self.predict(model_name, data_batch, version)
+    
+    def classify(self, model_name, data, version=None):
+        """Make classification request (if model supports it)."""
+        if version:
+            url = f"{self.base_url}/{model_name}/versions/{version}:classify"
+        else:
+            url = f"{self.base_url}/{model_name}:classify"
+        
+        payload = {"instances": data if isinstance(data, list) else [data]}
+        
+        try:
+            response = requests.post(url, json=payload)
+            return response.json()
+        except requests.exceptions.ConnectionError:
+            return {"error": "Could not connect to TensorFlow Serving"}
+    
+    def regress(self, model_name, data, version=None):
+        """Make regression request (if model supports it)."""
+        if version:
+            url = f"{self.base_url}/{model_name}/versions/{version}:regress"
+        else:
+            url = f"{self.base_url}/{model_name}:regress"
+        
+        payload = {"instances": data if isinstance(data, list) else [data]}
+        
+        try:
+            response = requests.post(url, json=payload)
+            return response.json()
+        except requests.exceptions.ConnectionError:
+            return {"error": "Could not connect to TensorFlow Serving"}
+
+# Initialize client
+client = TFServingClient()
+
+# ============================================================
+# PART 3: Test Client (Simulated)
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 3: Testing Client (Simulated)")
+print("=" * 60)
+
+# Since we don't have actual server running, simulate responses
+def simulate_server_responses():
+    """Simulate what server responses would look like."""
+    
+    # Simulate model status
+    print("\n1. Model Status Request:")
+    print("   GET /v1/models/mnist")
+    status_response = {
+        "model_version_status": [
+            {
+                "version": "1",
+                "state": "AVAILABLE",
+                "status": {
+                    "error_code": "OK",
+                    "error_message": ""
+                }
+            }
+        ]
+    }
+    print(f"   Response: {json.dumps(status_response, indent=4)}")
+    
+    # Simulate prediction
+    print("\n2. Prediction Request:")
+    print("   POST /v1/models/mnist:predict")
+    
+    # Create sample request
+    sample_image = x_test[0].reshape(28, 28).tolist()
+    request_payload = {
+        "signature_name": "serving_default",
+        "instances": [sample_image]
+    }
+    print(f"   Request: {json.dumps(request_payload, indent=4)[:200]}...")
+    
+    # Simulate prediction (using local model)
+    prediction = model.predict(np.expand_dims(x_test[0], 0), verbose=0)
+    
+    response_payload = {
+        "predictions": prediction.tolist()
+    }
+    print(f"   Response: {json.dumps(response_payload, indent=4)[:200]}...")
+    
+    # Simulate batch prediction
+    print("\n3. Batch Prediction Request:")
+    print("   POST /v1/models/mnist:predict")
+    
+    batch_images = [x_test[i].reshape(28, 28).tolist() for i in range(3)]
+    batch_request = {
+        "signature_name": "serving_default",
+        "instances": batch_images
+    }
+    print(f"   Batch size: 3")
+    
+    batch_prediction = model.predict(x_test[:3], verbose=0)
+    batch_response = {
+        "predictions": batch_prediction.tolist()
+    }
+    print(f"   Response shape: (3, 10)")
+
+simulate_server_responses()
+
+# ============================================================
+# PART 4: Flask API Wrapper
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 4: Flask API Wrapper")
+print("=" * 60)
+
+# Create Flask application code
+flask_app_code = '''
+"""
+Flask API Wrapper for TensorFlow Serving
+Run with: python app.py
+"""
+
+from flask import Flask, request, jsonify
+import requests
+import numpy as np
+import base64
+import io
+from PIL import Image
+
+app = Flask(__name__)
+
+# Configuration
+TF_SERVING_HOST = 'localhost'
+TF_SERVING_PORT = 8501
+MODEL_NAME = 'mnist'
+
+def preprocess_image(image_data):
+    """Preprocess image for MNIST model."""
+    # Decode base64 image
+    image = Image.open(io.BytesIO(base64.b64decode(image_data)))
+    
+    # Convert to grayscale and resize
+    image = image.convert('L').resize((28, 28))
+    
+    # Normalize
+    image_array = np.array(image).astype('float32') / 255.0
+    
+    return image_array.reshape(28, 28).tolist()
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint."""
+    return jsonify({"status": "healthy", "service": "MNIST API"})
+
+@app.route('/predict', methods=['POST'])
+def predict():
+    """Single prediction endpoint."""
+    try:
+        data = request.json
+        
+        # Get image data
+        if 'image' in data:
+            image = preprocess_image(data['image'])
+        elif 'data' in data:
+            image = data['data']
+        else:
+            return jsonify({"error": "No image or data provided"}), 400
+        
+        # Forward to TensorFlow Serving
+        tf_serving_url = f"http://{TF_SERVING_HOST}:{TF_SERVING_PORT}/v1/models/{MODEL_NAME}:predict"
+        
+        payload = {
+            "signature_name": "serving_default",
+            "instances": [image]
+        }
+        
+        response = requests.post(tf_serving_url, json=payload)
+        
+        if response.status_code == 200:
+            predictions = response.json()['predictions'][0]
+            predicted_class = int(np.argmax(predictions))
+            confidence = float(predictions[predicted_class])
+            
+            return jsonify({
+                "predicted_class": predicted_class,
+                "confidence": confidence,
+                "probabilities": predictions
+            })
+        else:
+            return jsonify({"error": "Prediction failed"}), 500
+            
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/batch_predict', methods=['POST'])
+def batch_predict():
+    """Batch prediction endpoint."""
+    try:
+        data = request.json
+        
+        if 'images' not in data:
+            return jsonify({"error": "No images provided"}), 400
+        
+        images = [preprocess_image(img) for img in data['images']]
+        
+        # Forward to TensorFlow Serving
+        tf_serving_url = f"http://{TF_SERVING_HOST}:{TF_SERVING_PORT}/v1/models/{MODEL_NAME}:predict"
+        
+        payload = {
+            "signature_name": "serving_default",
+            "instances": images
+        }
+        
+        response = requests.post(tf_serving_url, json=payload)
+        
+        if response.status_code == 200:
+            predictions = response.json()['predictions']
+            results = [
+                {
+                    "predicted_class": int(np.argmax(pred)),
+                    "confidence": float(max(pred))
+                }
+                for pred in predictions
+            ]
+            
+            return jsonify({"predictions": results})
+        else:
+            return jsonify({"error": "Batch prediction failed"}), 500
+            
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=True)
+'''
+
+with open('flask_app.py', 'w') as f:
+    f.write(flask_app_code)
+
+print("Flask API wrapper created: flask_app.py")
+
+# ============================================================
+# PART 5: API Usage Examples
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 5: API Usage Examples")
+print("=" * 60)
+
+api_examples = '''
+# API Usage Examples
+# ==================
+
+# 1. Health Check
+# ---------------
+curl http://localhost:5000/health
+
+# Response:
+# {"status": "healthy", "service": "MNIST API"}
+
+# 2. Single Prediction (with raw data)
+# -------------------------------------
+curl -X POST http://localhost:5000/predict \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "data": [[0.0, 0.0, ..., 0.0], ..., [0.0, 0.0, ..., 0.0]]
+  }'
+
+# Response:
+# {
+#   "predicted_class": 5,
+#   "confidence": 0.98,
+#   "probabilities": [0.01, 0.00, ..., 0.98, ...]
+# }
+
+# 3. Single Prediction (with base64 image)
+# -----------------------------------------
+curl -X POST http://localhost:5000/predict \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "image": "iVBORw0KGgoAAAANSUhEUgAA..."
+  }'
+
+# 4. Batch Prediction
+# -------------------
+curl -X POST http://localhost:5000/batch_predict \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "images": ["base64_image_1", "base64_image_2", "base64_image_3"]
+  }'
+
+# Response:
+# {
+#   "predictions": [
+#     {"predicted_class": 5, "confidence": 0.98},
+#     {"predicted_class": 3, "confidence": 0.95},
+#     {"predicted_class": 8, "confidence": 0.92}
+#   ]
+# }
+
+# Python Client Example
+# ---------------------
+import requests
+import base64
+
+def predict_digit(image_path):
+    """Predict digit from image file."""
+    # Read and encode image
+    with open(image_path, 'rb') as f:
+        image_data = base64.b64encode(f.read()).decode('utf-8')
+    
+    # Make request
+    response = requests.post(
+        'http://localhost:5000/predict',
+        json={'image': image_data}
+    )
+    
+    return response.json()
+
+# Usage
+result = predict_digit('digit.png')
+print(f"Predicted: {result['predicted_class']}")
+print(f"Confidence: {result['confidence']}")
+'''
+
+print(api_examples)
+
+# ============================================================
+# PART 6: Load Testing Script
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 6: Load Testing Script")
+print("=" * 60)
+
+load_test_code = '''
+"""
+Load Testing Script for TensorFlow Serving API
+Run with: python load_test.py
+"""
+
+import requests
+import numpy as np
+import time
+import concurrent.futures
+import statistics
+
+# Configuration
+API_URL = 'http://localhost:5000/predict'
+NUM_REQUESTS = 100
+CONCURRENT_WORKERS = 10
+
+def make_request():
+    """Make a single prediction request."""
+    # Generate random MNIST-like input
+    data = np.random.rand(28, 28).tolist()
+    
+    start = time.time()
+    response = requests.post(API_URL, json={'data': data})
+    elapsed = time.time() - start
+    
+    return {
+        'status_code': response.status_code,
+        'latency': elapsed * 1000  # Convert to ms
+    }
+
+def run_load_test():
+    """Run concurrent load test."""
+    print(f"Starting load test: {NUM_REQUESTS} requests, {CONCURRENT_WORKERS} workers")
+    
+    results = []
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=CONCURRENT_WORKERS) as executor:
+        futures = [executor.submit(make_request) for _ in range(NUM_REQUESTS)]
+        
+        for future in concurrent.futures.as_completed(futures):
+            results.append(future.result())
+    
+    # Analyze results
+    latencies = [r['latency'] for r in results]
+    success_count = sum(1 for r in results if r['status_code'] == 200)
+    
+    print(f"\\nResults:")
+    print(f"  Successful requests: {success_count}/{NUM_REQUESTS}")
+    print(f"  Success rate: {success_count/NUM_REQUESTS*100:.1f}%")
+    print(f"  Average latency: {statistics.mean(latencies):.2f} ms")
+    print(f"  Median latency: {statistics.median(latencies):.2f} ms")
+    print(f"  95th percentile: {np.percentile(latencies, 95):.2f} ms")
+    print(f"  99th percentile: {np.percentile(latencies, 99):.2f} ms")
+    print(f"  Min/Max latency: {min(latencies):.2f}/{max(latencies):.2f} ms")
+    print(f"  Throughput: {NUM_REQUESTS/sum(latencies)*1000:.1f} req/s")
+
+if __name__ == '__main__':
+    run_load_test()
+'''
+
+with open('load_test.py', 'w') as f:
+    f.write(load_test_code)
+
+print("Load testing script created: load_test.py")
+
+# ============================================================
+# PART 7: Summary
+# ============================================================
+
+print("\n" + "=" * 60)
+print("SUMMARY: REST API with TensorFlow Serving")
+print("=" * 60)
+
+print("""
+Architecture Overview:
+======================
+
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│   Client App    │────▶│   Flask API      │────▶│ TensorFlow      │
+│   (Web/Mobile)  │◀────│   Wrapper        │◀────│ Serving         │
+└─────────────────┘     └──────────────────┘     └─────────────────┘
+                              │
+                              ▼
+                        ┌──────────────────┐
+                        │  Preprocessing   │
+                        │  - Image decode  │
+                        │  - Resize        │
+                        │  - Normalize     │
+                        └──────────────────┘
+
+Key Components:
+===============
+
+1. TensorFlow Serving:
+   - Serves model predictions
+   - Handles versioning
+   - Provides REST/gRPC APIs
+
+2. Flask API Wrapper:
+   - Custom preprocessing
+   - Authentication/authorization
+   - Request validation
+   - Response formatting
+
+3. Client Applications:
+   - Web apps
+   - Mobile apps
+   - IoT devices
+
+Best Practices:
+===============
+- Use batch predictions when possible
+- Implement proper error handling
+- Add request validation
+- Monitor API metrics
+- Use connection pooling
+- Implement caching for repeated requests
+""")
+
+# Cleanup
+import shutil
+for d in ['serving_models', '__pycache__']:
+    if os.path.exists(d):
+        shutil.rmtree(d)
+for f in ['flask_app.py', 'load_test.py']:
+    if os.path.exists(f):
+        os.remove(f)
+print("\nCleanup completed!")
+```
+
+---

@@ -1,0 +1,532 @@
+---
+title: "Using Pretrained Word2Vec"
+module: 8
+labNumber: 16
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Using Pretrained Word2Vec
+
+### Objectives
+- Load pretrained Word2Vec embeddings
+- Compare with GloVe
+- Fine-tune on downstream tasks
+
+### Complete Implementation
+
+```python
+"""
+Lab 8.15: Using Pretrained Word2Vec
+===================================
+Load and use pretrained Word2Vec embeddings.
+"""
+
+import tensorflow as tf
+import numpy as np
+import os
+import gzip
+import gensim.downloader as api
+
+# ============================================================
+# PART 1: Load Pretrained Word2Vec
+# ============================================================
+
+print("=" * 60)
+print("PRETRAINED WORD2VEC EMBEDDINGS")
+print("=" * 60)
+
+def load_word2vec_pretrained(model_name='word2vec-google-news-300'):
+    """
+    Load pretrained Word2Vec using gensim.
+    
+    Args:
+        model_name: Name of pretrained model
+        
+    Returns:
+        Word2Vec model
+    """
+    print(f"Loading {model_name}...")
+    print("(This may take a while for large models)")
+    
+    try:
+        model = api.load(model_name)
+        print(f"Loaded model with {len(model.key_to_index)} words")
+        return model
+    except Exception as e:
+        print(f"Error loading model: {e}")
+        print("Using smaller model for demonstration...")
+        # Fall back to smaller model
+        model = api.load('glove-wiki-gigaword-100')
+        return model
+
+
+def create_word2vec_matrix(word_index, word2vec_model, embedding_dim):
+    """
+    Create embedding matrix from Word2Vec model.
+    
+    Args:
+        word_index: {word: index} mapping
+        word2vec_model: Loaded Word2Vec model
+        embedding_dim: Embedding dimension
+        
+    Returns:
+        Embedding matrix
+    """
+    vocab_size = len(word_index) + 1
+    embedding_matrix = np.zeros((vocab_size, embedding_dim))
+    
+    found = 0
+    for word, idx in word_index.items():
+        if word in word2vec_model:
+            embedding_matrix[idx] = word2vec_model[word]
+            found += 1
+        else:
+            # Random initialization for OOV words
+            embedding_matrix[idx] = np.random.normal(0, 0.01, embedding_dim)
+    
+    print(f"Found embeddings for {found}/{len(word_index)} words "
+          f"({100*found/len(word_index):.1f}%)")
+    
+    return embedding_matrix
+
+
+# ============================================================
+# PART 2: Word2Vec vs GloVe Comparison
+# ============================================================
+
+print("\n" + "=" * 60)
+print("WORD2VEC VS GLOVE COMPARISON")
+print("=" * 60)
+
+comparison = """
+Word2Vec:
+- Training: Predictive model (Skip-gram or CBOW)
+- Context: Local context window
+- Statistics: Uses local context patterns
+- Strengths: Good for word analogies, captures semantic relationships
+
+GloVe:
+- Training: Count-based model
+- Context: Global co-occurrence statistics
+- Statistics: Uses word-word co-occurrence probabilities
+- Strengths: Better for named entity recognition, leverages global statistics
+
+When to use:
+- Word2Vec: Word analogies, semantic similarity
+- GloVe: General NLP tasks, global context important
+- Both: Try both and evaluate on your task
+"""
+
+print(comparison)
+
+
+# ============================================================
+# PART 3: Synthetic Word2Vec for Demo
+# ============================================================
+
+class SyntheticWord2Vec:
+    """
+    Synthetic Word2Vec-like embeddings for demonstration.
+    """
+    
+    def __init__(self, vocab_size=10000, embedding_dim=100):
+        self.embedding_dim = embedding_dim
+        self.embeddings = {}
+        
+        # Create embeddings with some structure
+        np.random.seed(42)
+        
+        # Semantic groups
+        groups = {
+            'positive': ['good', 'great', 'excellent', 'amazing', 'wonderful', 'fantastic'],
+            'negative': ['bad', 'terrible', 'awful', 'horrible', 'poor', 'worst'],
+            'royalty': ['king', 'queen', 'prince', 'princess', 'monarch', 'royal'],
+            'gender': ['man', 'woman', 'boy', 'girl', 'male', 'female'],
+            'country': ['france', 'germany', 'italy', 'spain', 'england', 'america'],
+            'capital': ['paris', 'berlin', 'rome', 'madrid', 'london', 'washington']
+        }
+        
+        # Create group centroids
+        group_centroids = {}
+        for group_name in groups:
+            group_centroids[group_name] = np.random.randn(embedding_dim)
+        
+        # Assign words to groups with noise
+        for group_name, words in groups.items():
+            centroid = group_centroids[group_name]
+            for word in words:
+                noise = np.random.randn(embedding_dim) * 0.3
+                self.embeddings[word] = centroid + noise
+        
+        # Add random words
+        for i in range(vocab_size - sum(len(w) for w in groups.values())):
+            word = f'word_{i}'
+            self.embeddings[word] = np.random.randn(embedding_dim) * 0.5
+    
+    def __contains__(self, word):
+        return word in self.embeddings
+    
+    def __getitem__(self, word):
+        return self.embeddings.get(word, np.random.randn(self.embedding_dim) * 0.1)
+    
+    def similarity(self, word1, word2):
+        """Compute cosine similarity between two words."""
+        if word1 not in self or word2 not in self:
+            return 0.0
+        
+        vec1 = self[word1]
+        vec2 = self[word2]
+        
+        return np.dot(vec1, vec2) / (np.linalg.norm(vec1) * np.linalg.norm(vec2))
+    
+    def most_similar(self, word, topn=5):
+        """Find most similar words."""
+        if word not in self:
+            return []
+        
+        similarities = []
+        for other_word in self.embeddings:
+            if other_word != word:
+                sim = self.similarity(word, other_word)
+                similarities.append((other_word, sim))
+        
+        similarities.sort(key=lambda x: x[1], reverse=True)
+        return similarities[:topn]
+
+
+# Create synthetic model
+print("\nCreating synthetic Word2Vec model...")
+word2vec_model = SyntheticWord2Vec(vocab_size=5000, embedding_dim=100)
+print(f"Model has {len(word2vec_model.embeddings)} words")
+
+
+# ============================================================
+# PART 4: Word Similarity Tests
+# ============================================================
+
+print("\n" + "=" * 60)
+print("WORD SIMILARITY TESTS")
+print("=" * 60)
+
+# Test similarities
+test_words = ['good', 'king', 'france']
+
+for word in test_words:
+    if word in word2vec_model:
+        print(f"\nWords most similar to '{word}':")
+        similar = word2vec_model.most_similar(word, topn=5)
+        for sim_word, sim_score in similar:
+            print(f"  {sim_word}: {sim_score:.4f}")
+
+
+# ============================================================
+# PART 5: Word Analogies
+# ============================================================
+
+def word_analogy(model, word_a, word_b, word_c, topn=3):
+    """
+    Solve word analogy: word_a is to word_b as word_c is to ?
+    
+    Formula: result = word_c + (word_b - word_a)
+    """
+    if not all(w in model for w in [word_a, word_b, word_c]):
+        return []
+    
+    vec_a = model[word_a]
+    vec_b = model[word_b]
+    vec_c = model[word_c]
+    
+    # Compute target vector
+    target = vec_c + (vec_b - vec_a)
+    
+    # Find closest words
+    similarities = []
+    for word in model.embeddings:
+        if word not in [word_a, word_b, word_c]:
+            vec = model[word]
+            sim = np.dot(target, vec) / (np.linalg.norm(target) * np.linalg.norm(vec))
+            similarities.append((word, sim))
+    
+    similarities.sort(key=lambda x: x[1], reverse=True)
+    return similarities[:topn]
+
+
+print("\n" + "=" * 60)
+print("WORD ANALOGIES")
+print("=" * 60)
+
+analogies = [
+    ('king', 'queen', 'man'),
+    ('france', 'paris', 'germany'),
+    ('good', 'excellent', 'bad')
+]
+
+for a, b, c in analogies:
+    result = word_analogy(word2vec_model, a, b, c)
+    print(f"\n{a} : {b} :: {c} : ?")
+    for word, score in result:
+        print(f"  {word}: {score:.4f}")
+
+
+# ============================================================
+# PART 6: Integration with TensorFlow Model
+# ============================================================
+
+print("\n" + "=" * 60)
+print("INTEGRATION WITH TENSORFLOW")
+print("=" * 60)
+
+def create_embedding_matrix_from_word2vec(word_index, word2vec_model, embedding_dim):
+    """
+    Create embedding matrix for TensorFlow from Word2Vec.
+    """
+    vocab_size = len(word_index) + 1
+    embedding_matrix = np.zeros((vocab_size, embedding_dim))
+    
+    found = 0
+    for word, idx in word_index.items():
+        if word in word2vec_model:
+            embedding_matrix[idx] = word2vec_model[word]
+            found += 1
+        else:
+            embedding_matrix[idx] = np.random.normal(0, 0.01, embedding_dim)
+    
+    print(f"Found embeddings for {found}/{len(word_index)} words")
+    
+    return embedding_matrix
+
+
+# Load IMDB word index
+word_index = tf.keras.datasets.imdb.get_word_index()
+word_index = {k: v + 3 for k, v in word_index.items()}
+word_index['<PAD>'] = 0
+word_index['<START>'] = 1
+word_index['<UNK>'] = 2
+
+# Create embedding matrix
+embedding_dim = 100
+embedding_matrix = create_embedding_matrix_from_word2vec(
+    word_index, word2vec_model, embedding_dim
+)
+
+print(f"\nEmbedding matrix shape: {embedding_matrix.shape}")
+
+
+# ============================================================
+# PART 7: Fine-tuning Strategies
+# ============================================================
+
+print("\n" + "=" * 60)
+print("FINE-TUNING STRATEGIES")
+print("=" * 60)
+
+fine_tuning_strategies = """
+Strategy 1: Frozen Embeddings
+- Keep pretrained embeddings fixed
+- Only train task-specific layers
+- Fast training, preserves general knowledge
+
+Strategy 2: Fine-tune All
+- Allow all embeddings to update
+- Can adapt to task-specific vocabulary
+- Risk of overfitting with small data
+
+Strategy 3: Gradual Unfreezing
+- Start with frozen embeddings
+- Gradually unfreeze layers
+- Balance between general and task-specific
+
+Strategy 4: Discriminative Learning Rates
+- Lower learning rate for embeddings
+- Higher learning rate for task layers
+- Preserve general knowledge while adapting
+
+Implementation:
+"""
+
+print(fine_tuning_strategies)
+
+# Example: Discriminative learning rates
+def create_model_with_discriminative_lr(embedding_matrix, max_length):
+    """
+    Create model with different learning rates for embeddings vs other layers.
+    """
+    vocab_size, embedding_dim = embedding_matrix.shape
+    
+    # Build model
+    inputs = tf.keras.Input(shape=(max_length,))
+    
+    # Embedding layer (will have lower learning rate)
+    x = tf.keras.layers.Embedding(
+        vocab_size, embedding_dim,
+        weights=[embedding_matrix],
+        trainable=True,
+        mask_zero=True
+    )(inputs)
+    
+    # Other layers (normal learning rate)
+    x = tf.keras.layers.LSTM(64, dropout=0.2)(x)
+    x = tf.keras.layers.Dense(64, activation='relu')(x)
+    x = tf.keras.layers.Dropout(0.5)(x)
+    outputs = tf.keras.layers.Dense(1, activation='sigmoid')(x)
+    
+    model = tf.keras.Model(inputs, outputs)
+    
+    # Use different learning rates (manual implementation needed)
+    # For simplicity, using single optimizer here
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+        loss='binary_crossentropy',
+        metrics=['accuracy']
+    )
+    
+    return model
+
+
+# ============================================================
+# EXERCISES
+# ============================================================
+
+print("\n" + "=" * 60)
+print("EXERCISES")
+print("=" * 60)
+
+exercises = """
+Exercise 1: Embedding Ensemble
+------------------------------
+Combine multiple pretrained embeddings:
+- Average GloVe and Word2Vec
+- Learn weighted combination
+- Compare with individual embeddings
+
+Exercise 2: Contextualized Embeddings
+-------------------------------------
+Use contextualized embeddings:
+- ELMo (deep contextualized)
+- BERT embeddings
+- Compare with static embeddings
+
+Exercise 3: Domain-Specific Embeddings
+--------------------------------------
+Train domain-specific embeddings:
+- Medical text embeddings
+- Legal document embeddings
+- Compare with general embeddings
+
+Exercise 4: Embedding Compression
+---------------------------------
+Compress pretrained embeddings:
+- Principal Component Analysis
+- Quantization
+- Analyze speed/accuracy trade-off
+"""
+
+print(exercises)
+```
+
+---
+
+# Module 8 Summary
+
+## Complete Lab Checklist
+
+### Tokenization Labs (3)
+- [x] **Lab 8.1**: Word-Level Tokenization
+- [x] **Lab 8.2**: Subword Tokenization with BPE
+- [x] **Lab 8.3**: Character-Level Tokenization
+
+### Word Embeddings Labs (2)
+- [x] **Lab 8.4**: Word2Vec Skip-gram from Scratch
+- [x] **Lab 8.5**: Word2Vec CBOW Implementation
+
+### RNN/LSTM/GRU Labs (4)
+- [x] **Lab 8.6**: Basic RNN for Sequence Classification
+- [x] **Lab 8.7**: LSTM for IMDB Sentiment Analysis
+- [x] **Lab 8.8**: GRU for Text Classification
+- [x] **Lab 8.9**: Text Generation with RNN
+
+### Attention Mechanism Labs (3)
+- [x] **Lab 8.10**: Named Entity Recognition with BiLSTM
+- [x] **Lab 8.11**: Attention from Scratch
+- [x] **Lab 8.12**: Multi-Head Attention
+- [x] **Lab 8.13**: Attention Visualization
+
+### Pretrained Embeddings Labs (2)
+- [x] **Lab 8.14**: Using Pretrained GloVe Embeddings
+- [x] **Lab 8.15**: Using Pretrained Word2Vec
+
+## Key Concepts Covered
+
+### Tokenization
+- Word-level, subword (BPE), and character-level tokenization
+- TensorFlow TextVectorization layer
+- Padding and truncation strategies
+
+### Word Embeddings
+- Skip-gram and CBOW architectures
+- Negative sampling
+- Word analogies and similarity
+
+### Recurrent Networks
+- RNN, LSTM, and GRU cells
+- Bidirectional processing
+- Text generation techniques
+
+### Attention Mechanisms
+- Query, Key, Value concepts
+- Multi-head attention
+- Transformer blocks
+- Attention visualization
+
+### Pretrained Embeddings
+- GloVe and Word2Vec loading
+- Fine-tuning strategies
+- Integration with TensorFlow models
+
+## Common Issues and Solutions
+
+### Issue 1: Out of Memory
+```python
+# Solution: Use gradient checkpointing or reduce batch size
+model.fit(X, y, batch_size=16)  # Reduce batch size
+```
+
+### Issue 2: Vanishing Gradients
+```python
+# Solution: Use LSTM/GRU instead of vanilla RNN
+# Or use gradient clipping
+optimizer = tf.keras.optimizers.Adam(clipnorm=1.0)
+```
+
+### Issue 3: Overfitting
+```python
+# Solution: Add regularization
+model.add(tf.keras.layers.Dropout(0.5))
+model.add(tf.keras.layers.LSTM(64, recurrent_dropout=0.2))
+```
+
+### Issue 4: Slow Training
+```python
+# Solution: Use GPU, mixed precision, or smaller model
+policy = tf.keras.mixed_precision.Policy('mixed_float16')
+tf.keras.mixed_precision.set_global_policy(policy)
+```
+
+## Next Steps
+
+1. **Practice**: Complete all exercises in each lab
+2. **Experiment**: Try different hyperparameters
+3. **Projects**: Apply to real-world datasets
+4. **Advanced**: Explore Transformers and BERT
+
+## Additional Resources
+
+- TensorFlow Text: https://www.tensorflow.org/text
+- GloVe: https://nlp.stanford.edu/projects/glove/
+- Word2Vec: https://code.google.com/archive/p/word2vec/
+- Attention Paper: "Attention Is All You Need" (Vaswani et al., 2017)
+
+---
+
+*End of Module 8: Natural Language Processing Labs*

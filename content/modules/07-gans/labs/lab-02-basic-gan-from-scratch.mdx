@@ -1,0 +1,504 @@
+---
+title: "Basic GAN from Scratch"
+module: 7
+labNumber: 2
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Basic GAN from Scratch
+
+## Objectives
+- Understand the fundamental GAN architecture
+- Implement Generator and Discriminator networks from scratch
+- Build the adversarial training loop
+- Generate synthetic data from a simple distribution
+
+## Prerequisites
+- TensorFlow 2.x
+- Basic understanding of neural networks
+- Knowledge of binary cross-entropy loss
+
+## Theory Overview
+
+A Generative Adversarial Network consists of two neural networks:
+1. **Generator (G)**: Creates fake data from random noise
+2. **Discriminator (D)**: Classifies real vs. fake data
+
+The training is a minimax game:
+```
+min_G max_D V(D, G) = E[log D(x)] + E[log(1 - D(G(z)))]
+```
+
+## Complete Implementation
+
+```python
+"""
+Lab 7.1: Basic GAN from Scratch
+================================
+A complete implementation of a vanilla GAN for generating 2D data.
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+from tensorflow import keras
+from tensorflow.keras import layers
+import time
+
+# Set random seeds for reproducibility
+tf.random.set_seed(42)
+np.random.seed(42)
+
+# =============================================================================
+# Part 1: Create Synthetic Training Data
+# =============================================================================
+
+def create_real_data(n_samples=10000):
+    """
+    Create a synthetic 2D dataset (mixture of Gaussians).
+    This gives us a known distribution to learn.
+    """
+    # Create 8 clusters in a circle
+    n_clusters = 8
+    radius = 2.0
+    angles = np.linspace(0, 2*np.pi, n_clusters, endpoint=False)
+    
+    data = []
+    samples_per_cluster = n_samples // n_clusters
+    
+    for angle in angles:
+        center_x = radius * np.cos(angle)
+        center_y = radius * np.sin(angle)
+        
+        # Generate points around each center
+        cluster_data = np.random.randn(samples_per_cluster, 2) * 0.2
+        cluster_data[:, 0] += center_x
+        cluster_data[:, 1] += center_y
+        data.append(cluster_data)
+    
+    return np.vstack(data).astype(np.float32)
+
+# Visualize the real data
+real_data = create_real_data(10000)
+plt.figure(figsize=(8, 8))
+plt.scatter(real_data[:, 0], real_data[:, 1], s=1, alpha=0.5, c='blue')
+plt.title('Real Data Distribution (8 Gaussian Clusters)')
+plt.xlabel('x')
+plt.ylabel('y')
+plt.axis('equal')
+plt.grid(True)
+plt.savefig('real_data_distribution.png', dpi=150)
+plt.show()
+
+print(f"Real data shape: {real_data.shape}")
+
+# =============================================================================
+# Part 2: Build the Generator Network
+# =============================================================================
+
+def build_generator(latent_dim=2, output_dim=2):
+    """
+    Build the Generator network.
+    
+    Architecture:
+    - Input: Random noise vector (latent_dim)
+    - Hidden layers: Dense with LeakyReLU activation
+    - Output: Generated data (output_dim) with tanh activation
+    
+    Args:
+        latent_dim: Dimension of the input noise vector
+        output_dim: Dimension of the generated data
+    
+    Returns:
+        Generator model
+    """
+    model = keras.Sequential([
+        # Layer 1: latent_dim -> 128
+        layers.Dense(128, input_shape=(latent_dim,)),
+        layers.LeakyReLU(alpha=0.2),
+        layers.BatchNormalization(),
+        
+        # Layer 2: 128 -> 256
+        layers.Dense(256),
+        layers.LeakyReLU(alpha=0.2),
+        layers.BatchNormalization(),
+        
+        # Layer 3: 256 -> 512
+        layers.Dense(512),
+        layers.LeakyReLU(alpha=0.2),
+        layers.BatchNormalization(),
+        
+        # Output layer: 512 -> output_dim
+        layers.Dense(output_dim, activation='tanh')
+    ], name='Generator')
+    
+    return model
+
+# Create generator
+latent_dim = 2
+generator = build_generator(latent_dim=latent_dim, output_dim=2)
+print("\n=== Generator Architecture ===")
+generator.summary()
+
+# Test the generator
+noise = tf.random.normal([5, latent_dim])
+generated_samples = generator(noise, training=False)
+print(f"\nGenerated samples shape: {generated_samples.shape}")
+print(f"Sample output:\n{generated_samples.numpy()}")
+
+# =============================================================================
+# Part 3: Build the Discriminator Network
+# =============================================================================
+
+def build_discriminator(input_dim=2):
+    """
+    Build the Discriminator network.
+    
+    Architecture:
+    - Input: Data sample (input_dim)
+    - Hidden layers: Dense with LeakyReLU and Dropout
+    - Output: Probability of being real (sigmoid)
+    
+    Args:
+        input_dim: Dimension of input data
+    
+    Returns:
+        Discriminator model
+    """
+    model = keras.Sequential([
+        # Layer 1: input_dim -> 512
+        layers.Dense(512, input_shape=(input_dim,)),
+        layers.LeakyReLU(alpha=0.2),
+        layers.Dropout(0.3),
+        
+        # Layer 2: 512 -> 256
+        layers.Dense(256),
+        layers.LeakyReLU(alpha=0.2),
+        layers.Dropout(0.3),
+        
+        # Layer 3: 256 -> 128
+        layers.Dense(128),
+        layers.LeakyReLU(alpha=0.2),
+        layers.Dropout(0.3),
+        
+        # Output layer: 128 -> 1 (probability)
+        layers.Dense(1, activation='sigmoid')
+    ], name='Discriminator')
+    
+    return model
+
+# Create discriminator
+discriminator = build_discriminator(input_dim=2)
+print("\n=== Discriminator Architecture ===")
+discriminator.summary()
+
+# Test the discriminator
+disc_output = discriminator(generated_samples, training=False)
+print(f"\nDiscriminator output for fake samples: {disc_output.numpy().flatten()}")
+
+# =============================================================================
+# Part 4: Define Loss Functions and Optimizers
+# =============================================================================
+
+# Binary cross-entropy loss
+cross_entropy = keras.losses.BinaryCrossentropy()
+
+def discriminator_loss(real_output, fake_output):
+    """
+    Discriminator loss: wants to classify real as 1 and fake as 0.
+    
+    Loss = -E[log(D(x))] - E[log(1 - D(G(z)))]
+    """
+    real_loss = cross_entropy(tf.ones_like(real_output), real_output)
+    fake_loss = cross_entropy(tf.zeros_like(fake_output), fake_output)
+    total_loss = real_loss + fake_loss
+    return total_loss
+
+def generator_loss(fake_output):
+    """
+    Generator loss: wants discriminator to classify fake as real.
+    
+    Loss = -E[log(D(G(z)))]
+    """
+    return cross_entropy(tf.ones_like(fake_output), fake_output)
+
+# Optimizers
+generator_optimizer = keras.optimizers.Adam(learning_rate=0.0002, beta_1=0.5)
+discriminator_optimizer = keras.optimizers.Adam(learning_rate=0.0002, beta_1=0.5)
+
+# =============================================================================
+# Part 5: Training Loop
+# =============================================================================
+
+@tf.function
+def train_step(real_data_batch):
+    """
+    Single training step for both generator and discriminator.
+    
+    Args:
+        real_data_batch: Batch of real data samples
+    
+    Returns:
+        gen_loss: Generator loss
+        disc_loss: Discriminator loss
+    """
+    batch_size = tf.shape(real_data_batch)[0]
+    
+    # Generate random noise
+    noise = tf.random.normal([batch_size, latent_dim])
+    
+    # ======================================================================
+    # Train Discriminator
+    # ======================================================================
+    with tf.GradientTape() as disc_tape:
+        # Generate fake samples
+        generated_data = generator(noise, training=True)
+        
+        # Get discriminator predictions
+        real_output = discriminator(real_data_batch, training=True)
+        fake_output = discriminator(generated_data, training=True)
+        
+        # Calculate discriminator loss
+        disc_loss = discriminator_loss(real_output, fake_output)
+    
+    # Compute gradients and update discriminator
+    gradients_of_discriminator = disc_tape.gradient(
+        disc_loss, discriminator.trainable_variables
+    )
+    discriminator_optimizer.apply_gradients(
+        zip(gradients_of_discriminator, discriminator.trainable_variables)
+    )
+    
+    # ======================================================================
+    # Train Generator
+    # ======================================================================
+    with tf.GradientTape() as gen_tape:
+        # Generate fake samples
+        generated_data = generator(noise, training=True)
+        
+        # Get discriminator prediction for fake samples
+        fake_output = discriminator(generated_data, training=True)
+        
+        # Calculate generator loss
+        gen_loss = generator_loss(fake_output)
+    
+    # Compute gradients and update generator
+    gradients_of_generator = gen_tape.gradient(
+        gen_loss, generator.trainable_variables
+    )
+    generator_optimizer.apply_gradients(
+        zip(gradients_of_generator, generator.trainable_variables)
+    )
+    
+    return gen_loss, disc_loss
+
+def train_gan(dataset, epochs=100, batch_size=256, save_interval=10):
+    """
+    Complete GAN training loop.
+    
+    Args:
+        dataset: Training data
+        epochs: Number of training epochs
+        batch_size: Batch size for training
+        save_interval: Interval for saving generated samples
+    """
+    # Create dataset
+    dataset_size = len(dataset)
+    dataset = tf.data.Dataset.from_tensor_slices(dataset)
+    dataset = dataset.shuffle(buffer_size=1000)
+    dataset = dataset.batch(batch_size, drop_remainder=True)
+    
+    # Storage for losses
+    gen_losses = []
+    disc_losses = []
+    
+    print(f"\nStarting training for {epochs} epochs...")
+    print(f"Dataset size: {dataset_size}, Batch size: {batch_size}")
+    print("=" * 60)
+    
+    for epoch in range(epochs):
+        start_time = time.time()
+        
+        epoch_gen_loss = 0
+        epoch_disc_loss = 0
+        num_batches = 0
+        
+        for batch in dataset:
+            gen_loss, disc_loss = train_step(batch)
+            epoch_gen_loss += gen_loss
+            epoch_disc_loss += disc_loss
+            num_batches += 1
+        
+        # Average losses
+        avg_gen_loss = epoch_gen_loss / num_batches
+        avg_disc_loss = epoch_disc_loss / num_batches
+        
+        gen_losses.append(avg_gen_loss)
+        disc_losses.append(avg_disc_loss)
+        
+        # Print progress
+        if (epoch + 1) % save_interval == 0 or epoch == 0:
+            elapsed = time.time() - start_time
+            print(f"Epoch {epoch+1}/{epochs} - {elapsed:.2f}s - "
+                  f"Gen Loss: {avg_gen_loss:.4f}, Disc Loss: {avg_disc_loss:.4f}")
+            
+            # Generate and save samples
+            generate_and_save_samples(generator, epoch + 1, latent_dim)
+    
+    print("\nTraining completed!")
+    return gen_losses, disc_losses
+
+def generate_and_save_samples(generator, epoch, latent_dim, n_samples=1000):
+    """Generate and visualize samples from the trained generator."""
+    noise = tf.random.normal([n_samples, latent_dim])
+    generated_data = generator(noise, training=False)
+    
+    plt.figure(figsize=(8, 8))
+    plt.scatter(generated_data[:, 0], generated_data[:, 1], 
+                s=1, alpha=0.5, c='red', label='Generated')
+    plt.scatter(real_data[:n_samples, 0], real_data[:n_samples, 1], 
+                s=1, alpha=0.3, c='blue', label='Real')
+    plt.title(f'Generated vs Real Data (Epoch {epoch})')
+    plt.xlabel('x')
+    plt.ylabel('y')
+    plt.legend()
+    plt.axis('equal')
+    plt.grid(True)
+    plt.savefig(f'gan_samples_epoch_{epoch:03d}.png', dpi=150)
+    plt.close()
+
+# =============================================================================
+# Part 6: Run Training
+# =============================================================================
+
+# Train the GAN
+gen_losses, disc_losses = train_gan(
+    real_data, 
+    epochs=200, 
+    batch_size=256, 
+    save_interval=20
+)
+
+# =============================================================================
+# Part 7: Visualize Results
+# =============================================================================
+
+# Plot training losses
+plt.figure(figsize=(12, 5))
+
+plt.subplot(1, 2, 1)
+plt.plot(gen_losses, label='Generator Loss', color='red')
+plt.plot(disc_losses, label='Discriminator Loss', color='blue')
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
+plt.title('Training Losses')
+plt.legend()
+plt.grid(True)
+
+# Final generated samples
+plt.subplot(1, 2, 2)
+noise = tf.random.normal([5000, latent_dim])
+final_samples = generator(noise, training=False)
+plt.scatter(final_samples[:, 0], final_samples[:, 1], 
+            s=1, alpha=0.5, c='red', label='Generated')
+plt.scatter(real_data[:5000, 0], real_data[:5000, 1], 
+            s=1, alpha=0.3, c='blue', label='Real')
+plt.title('Final Generated vs Real Data')
+plt.xlabel('x')
+plt.ylabel('y')
+plt.legend()
+plt.axis('equal')
+plt.grid(True)
+
+plt.tight_layout()
+plt.savefig('gan_training_results.png', dpi=150)
+plt.show()
+
+print("\n=== Training Summary ===")
+print(f"Final Generator Loss: {gen_losses[-1]:.4f}")
+print(f"Final Discriminator Loss: {disc_losses[-1]:.4f}")
+```
+
+## Expected Output
+
+```
+=== Generator Architecture ===
+Model: "Generator"
+_________________________________________________________________
+Layer (type)                Output Shape              Param #   
+=================================================================
+dense (Dense)               (None, 128)               384       
+leaky_re_lu (LeakyReLU)     (None, 128)               0         
+batch_normalization...      (None, 128)               512       
+...
+=================================================================
+Total params: 167,170
+
+=== Discriminator Architecture ===
+Model: "Discriminator"
+_________________________________________________________________
+Layer (type)                Output Shape              Param #   
+=================================================================
+dense_4 (Dense)             (None, 512)               1,536     
+leaky_re_lu_4 (LeakyReLU)   (None, 512)               0         
+dropout (Dropout)           (None, 512)               0         
+...
+=================================================================
+Total params: 266,753
+
+Starting training for 200 epochs...
+Dataset size: 10000, Batch size: 256
+============================================================
+Epoch 1/200 - 0.52s - Gen Loss: 1.5234, Disc Loss: 1.2345
+Epoch 20/200 - 0.48s - Gen Loss: 1.2345, Disc Loss: 0.9876
+...
+Epoch 200/200 - 0.45s - Gen Loss: 0.8923, Disc Loss: 1.1234
+
+Training completed!
+```
+
+## Key Concepts Explained
+
+### 1. Generator Network
+- Takes random noise as input
+- Transforms noise through hidden layers
+- Outputs data that should match real data distribution
+- Uses BatchNorm for training stability
+
+### 2. Discriminator Network
+- Classifies input as real or fake
+- Uses Dropout for regularization
+- Output is probability (0-1) using sigmoid
+
+### 3. Training Dynamics
+- Discriminator tries to maximize classification accuracy
+- Generator tries to fool the discriminator
+- Both networks improve through adversarial training
+
+## Common Issues and Solutions
+
+### Issue 1: Vanishing Gradients
+**Symptom**: Generator loss doesn't decrease
+**Solution**: Use LeakyReLU instead of ReLU
+
+### Issue 2: Mode Collapse
+**Symptom**: Generator produces limited variety
+**Solution**: Use WGAN or add diversity loss
+
+### Issue 3: Training Instability
+**Symptom**: Loss oscillates wildly
+**Solution**: Lower learning rate, use label smoothing
+
+## Exercises
+
+### Exercise 1: Modify Architecture
+Change the generator to have 4 hidden layers instead of 3. Observe the effect on training.
+
+### Exercise 2: Different Latent Dimensions
+Try latent_dim = 10, 50, 100. How does it affect generation quality?
+
+### Exercise 3: Learning Rate Schedule
+Implement a learning rate decay and compare convergence speed.
+
+---

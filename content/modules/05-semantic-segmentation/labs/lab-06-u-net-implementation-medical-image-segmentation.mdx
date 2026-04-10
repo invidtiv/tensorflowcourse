@@ -1,0 +1,554 @@
+---
+title: "U-Net Implementation - Medical Image Segmentation"
+module: 5
+labNumber: 6
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# U-Net Implementation - Medical Image Segmentation
+
+## Objectives
+- Apply U-Net to medical image segmentation
+- Handle class imbalance in medical datasets
+- Implement evaluation metrics for medical segmentation
+- Visualize results with overlays
+
+## Complete Implementation
+
+```python
+"""
+Lab 5.5: U-Net Implementation - Medical Image Segmentation
+Complete pipeline for medical image segmentation using U-Net
+"""
+
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers, Model
+import numpy as np
+import matplotlib.pyplot as plt
+import cv2
+from skimage import measure
+
+tf.random.set_seed(42)
+np.random.seed(42)
+
+print(f"TensorFlow version: {tf.__version__}")
+
+# =============================================================================
+# Section 1: Generate Synthetic Medical Dataset
+# =============================================================================
+
+def generate_medical_dataset(num_samples=200, image_size=(256, 256), num_classes=3):
+    """
+    Generate synthetic medical segmentation dataset.
+    
+    Simulates:
+    - Background (class 0)
+    - Organ/Structure 1 (class 1)
+    - Organ/Structure 2 (class 2)
+    
+    Args:
+        num_samples: Number of samples
+        image_size: Image dimensions
+        num_classes: Number of segmentation classes
+    
+    Returns:
+        images, masks
+    """
+    print("\n" + "="*60)
+    print("GENERATING SYNTHETIC MEDICAL DATASET")
+    print("="*60)
+    
+    images = []
+    masks = []
+    
+    for i in range(num_samples):
+        # Create ultrasound-like image
+        img = np.zeros((*image_size, 3), dtype=np.float32)
+        
+        # Background texture (speckle noise)
+        speckle = np.random.randn(*image_size) * 0.1 + 0.5
+        img[:, :, 0] = speckle
+        img[:, :, 1] = speckle
+        img[:, :, 2] = speckle
+        
+        # Create multi-class mask
+        mask = np.zeros((*image_size, num_classes), dtype=np.float32)
+        mask[:, :, 0] = 1  # Background
+        
+        # Generate organ 1 (elliptical shape)
+        center1 = (np.random.randint(80, 176), np.random.randint(80, 176))
+        axes1 = (np.random.randint(30, 60), np.random.randint(20, 40))
+        angle1 = np.random.randint(0, 180)
+        
+        organ1_mask = np.zeros(image_size, dtype=np.uint8)
+        cv2.ellipse(organ1_mask, center1, axes1, angle1, 0, 360, 1, -1)
+        
+        # Update mask
+        mask[:, :, 0] = 1 - organ1_mask
+        mask[:, :, 1] = organ1_mask
+        
+        # Add intensity variation for organ 1
+        img[:, :, 0] = np.where(organ1_mask, 0.7 + np.random.randn(*image_size)*0.05, img[:, :, 0])
+        img[:, :, 1] = np.where(organ1_mask, 0.6 + np.random.randn(*image_size)*0.05, img[:, :, 1])
+        img[:, :, 2] = np.where(organ1_mask, 0.5 + np.random.randn(*image_size)*0.05, img[:, :, 2])
+        
+        # Generate organ 2 (smaller, circular)
+        if num_classes > 2:
+            center2 = (np.random.randint(60, 196), np.random.randint(60, 196))
+            radius2 = np.random.randint(10, 25)
+            
+            organ2_mask = np.zeros(image_size, dtype=np.uint8)
+            cv2.circle(organ2_mask, center2, radius2, 1, -1)
+            
+            # Ensure no overlap with organ 1
+            organ2_mask = organ2_mask * (1 - organ1_mask)
+            
+            mask[:, :, 0] = mask[:, :, 0] * (1 - organ2_mask)
+            mask[:, :, 2] = organ2_mask
+            
+            # Add intensity variation for organ 2
+            img[:, :, 0] = np.where(organ2_mask, 0.3 + np.random.randn(*image_size)*0.05, img[:, :, 0])
+            img[:, :, 1] = np.where(organ2_mask, 0.4 + np.random.randn(*image_size)*0.05, img[:, :, 1])
+            img[:, :, 2] = np.where(organ2_mask, 0.8 + np.random.randn(*image_size)*0.05, img[:, :, 2])
+        
+        # Add global noise
+        img += np.random.randn(*img.shape) * 0.02
+        img = np.clip(img, 0, 1)
+        
+        images.append(img)
+        masks.append(mask)
+    
+    images = np.array(images)
+    masks = np.array(masks)
+    
+    print(f"Generated {num_samples} samples")
+    print(f"  Images shape: {images.shape}")
+    print(f"  Masks shape: {masks.shape}")
+    
+    # Analyze class distribution
+    class_pixels = masks.sum(axis=(0, 1, 2))
+    total_pixels = masks.shape[0] * masks.shape[1] * masks.shape[2]
+    
+    print("\nClass distribution:")
+    for c in range(num_classes):
+        pct = class_pixels[c] / total_pixels * 100
+        print(f"  Class {c}: {pct:.2f}%")
+    
+    return images, masks
+
+
+# Generate dataset
+images, masks = generate_medical_dataset(num_samples=200, num_classes=3)
+
+# Split dataset
+train_size = int(0.7 * len(images))
+val_size = int(0.15 * len(images))
+
+X_train, y_train = images[:train_size], masks[:train_size]
+X_val, y_val = images[train_size:train_size+val_size], masks[train_size:train_size+val_size]
+X_test, y_test = images[train_size+val_size:], masks[train_size+val_size:]
+
+print(f"\nDataset split: Train={len(X_train)}, Val={len(X_val)}, Test={len(X_test)}")
+
+# =============================================================================
+# Section 2: Visualize Medical Data
+# =============================================================================
+
+def visualize_medical_samples(images, masks, num_samples=4):
+    """Visualize medical images with multi-class masks."""
+    print("\n" + "="*60)
+    print("VISUALIZING MEDICAL SAMPLES")
+    print("="*60)
+    
+    fig, axes = plt.subplots(2, num_samples, figsize=(num_samples*4, 8))
+    
+    colors = ['black', 'red', 'blue']  # Background, organ1, organ2
+    
+    for i in range(num_samples):
+        idx = np.random.randint(len(images))
+        
+        # Image
+        axes[0, i].imshow(images[idx])
+        axes[0, i].set_title(f'Sample {i+1}')
+        axes[0, i].axis('off')
+        
+        # Mask (combine classes)
+        mask_combined = np.argmax(masks[idx], axis=-1)
+        colored_mask = np.zeros((*mask_combined.shape, 3))
+        for c in range(masks.shape[-1]):
+            colored_mask[mask_combined == c] = plt.cm.tab10(c)[:3]
+        
+        axes[1, i].imshow(colored_mask)
+        axes[1, i].set_title(f'Multi-class Mask')
+        axes[1, i].axis('off')
+    
+    plt.tight_layout()
+    plt.savefig('/mnt/okcomputer/output/medical_samples.png', dpi=150)
+    plt.show()
+    print("Medical samples saved to /mnt/okcomputer/output/medical_samples.png")
+
+visualize_medical_samples(X_train, y_train)
+
+# =============================================================================
+# Section 3: Medical Segmentation Metrics
+# =============================================================================
+
+def sensitivity(y_true, y_pred):
+    """Sensitivity (Recall) - True Positive Rate."""
+    true_positives = tf.reduce_sum(tf.round(tf.clip_by_value(y_true * y_pred, 0, 1)))
+    possible_positives = tf.reduce_sum(tf.round(tf.clip_by_value(y_true, 0, 1)))
+    return true_positives / (possible_positives + tf.keras.backend.epsilon())
+
+
+def specificity(y_true, y_pred):
+    """Specificity - True Negative Rate."""
+    true_negatives = tf.reduce_sum(tf.round(tf.clip_by_value((1-y_true) * (1-y_pred), 0, 1)))
+    possible_negatives = tf.reduce_sum(tf.round(tf.clip_by_value(1-y_true, 0, 1)))
+    return true_negatives / (possible_negatives + tf.keras.backend.epsilon())
+
+
+def dice_coef_multiclass(y_true, y_pred, smooth=1e-6):
+    """Dice coefficient for multi-class segmentation."""
+    y_true_f = tf.reshape(y_true, [-1, y_true.shape[-1]])
+    y_pred_f = tf.reshape(y_pred, [-1, y_pred.shape[-1]])
+    
+    intersection = tf.reduce_sum(y_true_f * y_pred_f, axis=0)
+    union = tf.reduce_sum(y_true_f, axis=0) + tf.reduce_sum(y_pred_f, axis=0)
+    
+    dice = tf.reduce_mean((2. * intersection + smooth) / (union + smooth))
+    return dice
+
+
+def iou_multiclass(y_true, y_pred, smooth=1e-6):
+    """IoU (Jaccard Index) for multi-class segmentation."""
+    y_true_f = tf.reshape(y_true, [-1, y_true.shape[-1]])
+    y_pred_f = tf.reshape(y_pred, [-1, y_pred.shape[-1]])
+    
+    intersection = tf.reduce_sum(y_true_f * y_pred_f, axis=0)
+    union = tf.reduce_sum(y_true_f, axis=0) + tf.reduce_sum(y_pred_f, axis=0) - intersection
+    
+    iou = tf.reduce_mean((intersection + smooth) / (union + smooth))
+    return iou
+
+
+print("\n" + "="*60)
+print("MEDICAL SEGMENTATION METRICS DEFINED")
+print("="*60)
+print("""
+Metrics for Medical Segmentation:
+1. Sensitivity (Recall): TP / (TP + FN)
+   - Important for detecting pathology (don't miss disease)
+   
+2. Specificity: TN / (TN + FP)
+   - Important for avoiding false alarms
+   
+3. Dice Coefficient: 2*TP / (2*TP + FP + FN)
+   - Overall overlap measure
+   
+4. IoU (Jaccard): TP / (TP + FP + FN)
+   - Stricter overlap measure
+""")
+
+# =============================================================================
+# Section 4: Weighted Loss for Class Imbalance
+# =============================================================================
+
+def compute_class_weights(masks):
+    """
+    Compute class weights for imbalanced dataset.
+    
+    Uses inverse frequency weighting.
+    """
+    class_pixels = masks.sum(axis=(0, 1, 2))
+    total_pixels = masks.shape[0] * masks.shape[1] * masks.shape[2]
+    
+    # Inverse frequency
+    weights = total_pixels / (len(class_pixels) * class_pixels + 1e-6)
+    
+    # Normalize
+    weights = weights / weights.sum() * len(class_pixels)
+    
+    return weights
+
+
+class_weights = compute_class_weights(y_train)
+print("\n" + "="*60)
+print("CLASS WEIGHTS FOR IMBALANCED DATASET")
+print("="*60)
+for i, w in enumerate(class_weights):
+    print(f"  Class {i}: weight = {w:.4f}")
+
+
+def weighted_categorical_crossentropy(weights):
+    """
+    Create weighted categorical crossentropy loss.
+    
+    Args:
+        weights: Class weights array
+    
+    Returns:
+        Loss function
+    """
+    weights_tensor = tf.constant(weights, dtype=tf.float32)
+    
+    def loss(y_true, y_pred):
+        # Clip predictions to avoid log(0)
+        y_pred = tf.clip_by_value(y_pred, 1e-7, 1 - 1e-7)
+        
+        # Compute weighted loss
+        loss = y_true * tf.math.log(y_pred)
+        loss = loss * weights_tensor
+        loss = -tf.reduce_sum(loss, axis=-1)
+        
+        return tf.reduce_mean(loss)
+    
+    return loss
+
+
+# Combined weighted loss
+def combined_weighted_loss(y_true, y_pred):
+    """Combine weighted CE with Dice loss."""
+    wce = weighted_categorical_crossentropy(class_weights)(y_true, y_pred)
+    dice = 1 - dice_coef_multiclass(y_true, y_pred)
+    return wce + dice
+
+# =============================================================================
+# Section 5: Build Medical U-Net
+# =============================================================================
+
+def build_medical_unet(input_shape=(256, 256, 3), num_classes=3):
+    """Build U-Net for multi-class medical segmentation."""
+    print("\n" + "="*60)
+    print("BUILDING MEDICAL U-NET")
+    print("="*60)
+    
+    def conv_block(inputs, num_filters):
+        x = layers.Conv2D(num_filters, 3, padding='same', use_bias=False)(inputs)
+        x = layers.BatchNormalization()(x)
+        x = layers.ReLU()(x)
+        x = layers.Conv2D(num_filters, 3, padding='same', use_bias=False)(x)
+        x = layers.BatchNormalization()(x)
+        x = layers.ReLU()(x)
+        return x
+    
+    inputs = layers.Input(shape=input_shape)
+    
+    # Encoder
+    filters = [64, 128, 256, 512, 1024]
+    skips = []
+    x = inputs
+    
+    for i, f in enumerate(filters[:-1]):
+        x = conv_block(x, f)
+        skips.append(x)
+        x = layers.MaxPooling2D(2)(x)
+    
+    # Bottleneck
+    x = conv_block(x, filters[-1])
+    x = layers.Dropout(0.5)(x)
+    
+    # Decoder
+    for i, f in enumerate(reversed(filters[:-1])):
+        x = layers.Conv2DTranspose(f, 2, strides=2, padding='same')(x)
+        x = layers.Concatenate()([x, skips[-(i+1)]])
+        x = conv_block(x, f)
+    
+    # Output - softmax for multi-class
+    outputs = layers.Conv2D(num_classes, 1, activation='softmax')(x)
+    
+    model = Model(inputs, outputs, name='Medical-U-Net')
+    
+    print(f"Model input shape: {model.input_shape}")
+    print(f"Model output shape: {model.output_shape}")
+    print(f"Total parameters: {model.count_params():,}")
+    
+    return model
+
+
+medical_unet = build_medical_unet(num_classes=3)
+
+# Compile
+medical_unet.compile(
+    optimizer=keras.optimizers.Adam(learning_rate=1e-4),
+    loss=combined_weighted_loss,
+    metrics=[
+        'accuracy',
+        dice_coef_multiclass,
+        iou_multiclass
+    ]
+)
+
+# =============================================================================
+# Section 6: Train Medical U-Net
+# =============================================================================
+
+callbacks = [
+    keras.callbacks.EarlyStopping(
+        monitor='val_dice_coef_multiclass',
+        patience=15,
+        restore_best_weights=True,
+        mode='max'
+    ),
+    keras.callbacks.ReduceLROnPlateau(
+        monitor='val_loss',
+        factor=0.5,
+        patience=7,
+        min_lr=1e-7
+    ),
+    keras.callbacks.ModelCheckpoint(
+        '/mnt/okcomputer/output/medical_unet_best.keras',
+        monitor='val_dice_coef_multiclass',
+        save_best_only=True,
+        mode='max'
+    )
+]
+
+print("\n" + "="*60)
+print("TRAINING MEDICAL U-NET")
+print("="*60)
+
+history = medical_unet.fit(
+    X_train, y_train,
+    validation_data=(X_val, y_val),
+    batch_size=8,
+    epochs=100,
+    callbacks=callbacks,
+    verbose=1
+)
+
+# =============================================================================
+# Section 7: Visualize Results with Overlays
+# =============================================================================
+
+def visualize_medical_predictions(model, X_test, y_test, num_samples=4):
+    """Visualize medical segmentation with overlays."""
+    print("\n" + "="*60)
+    print("VISUALIZING MEDICAL PREDICTIONS")
+    print("="*60)
+    
+    predictions = model.predict(X_test[:num_samples], verbose=0)
+    
+    fig, axes = plt.subplots(4, num_samples, figsize=(num_samples*4, 16))
+    
+    class_colors = [
+        [0, 0, 0],       # Background - transparent/black
+        [1, 0, 0],       # Class 1 - Red
+        [0, 0, 1]        # Class 2 - Blue
+    ]
+    
+    for i in range(num_samples):
+        img = X_test[i]
+        true_mask = y_test[i]
+        pred_mask = predictions[i]
+        
+        # Input image
+        axes[0, i].imshow(img)
+        axes[0, i].set_title('Input Image')
+        axes[0, i].axis('off')
+        
+        # Ground truth overlay
+        gt_overlay = img.copy()
+        for c in range(1, y_test.shape[-1]):  # Skip background
+            mask_c = true_mask[:, :, c]
+            color = class_colors[c]
+            for ch in range(3):
+                gt_overlay[:, :, ch] = np.where(mask_c > 0.5, 
+                                                gt_overlay[:, :, ch] * 0.5 + color[ch] * 0.5,
+                                                gt_overlay[:, :, ch])
+        axes[1, i].imshow(gt_overlay)
+        axes[1, i].set_title('Ground Truth Overlay')
+        axes[1, i].axis('off')
+        
+        # Prediction overlay
+        pred_overlay = img.copy()
+        pred_classes = np.argmax(pred_mask, axis=-1)
+        for c in range(1, y_test.shape[-1]):
+            mask_c = (pred_classes == c).astype(float)
+            color = class_colors[c]
+            for ch in range(3):
+                pred_overlay[:, :, ch] = np.where(mask_c > 0.5,
+                                                  pred_overlay[:, :, ch] * 0.5 + color[ch] * 0.5,
+                                                  pred_overlay[:, :, ch])
+        axes[2, i].imshow(pred_overlay)
+        axes[2, i].set_title('Prediction Overlay')
+        axes[2, i].axis('off')
+        
+        # Difference map
+        true_classes = np.argmax(true_mask, axis=-1)
+        diff = (true_classes != pred_classes).astype(float)
+        axes[3, i].imshow(diff, cmap='hot')
+        axes[3, i].set_title('Error Map')
+        axes[3, i].axis('off')
+    
+    plt.tight_layout()
+    plt.savefig('/mnt/okcomputer/output/medical_predictions.png', dpi=150)
+    plt.show()
+    print("Predictions saved to /mnt/okcomputer/output/medical_predictions.png")
+
+visualize_medical_predictions(medical_unet, X_test, y_test)
+
+# =============================================================================
+# Section 8: Per-Class Metrics
+# =============================================================================
+
+def compute_per_class_metrics(y_true, y_pred, num_classes=3):
+    """Compute per-class segmentation metrics."""
+    print("\n" + "="*60)
+    print("PER-CLASS METRICS")
+    print("="*60)
+    
+    y_true_classes = np.argmax(y_true, axis=-1)
+    y_pred_classes = np.argmax(y_pred, axis=-1)
+    
+    print(f"{'Class':<10} {'Dice':<10} {'IoU':<10} {'Precision':<12} {'Recall':<10}")
+    print("-" * 60)
+    
+    for c in range(num_classes):
+        true_c = (y_true_classes == c).astype(float)
+        pred_c = (y_pred_classes == c).astype(float)
+        
+        # Flatten
+        true_c = true_c.flatten()
+        pred_c = pred_c.flatten()
+        
+        # Compute metrics
+        intersection = np.sum(true_c * pred_c)
+        union = np.sum(true_c) + np.sum(pred_c) - intersection
+        
+        dice = (2 * intersection) / (np.sum(true_c) + np.sum(pred_c) + 1e-6)
+        iou = intersection / (union + 1e-6)
+        
+        tp = np.sum((true_c == 1) & (pred_c == 1))
+        fp = np.sum((true_c == 0) & (pred_c == 1))
+        fn = np.sum((true_c == 1) & (pred_c == 0))
+        
+        precision = tp / (tp + fp + 1e-6)
+        recall = tp / (tp + fn + 1e-6)
+        
+        print(f"{c:<10} {dice:<10.4f} {iou:<10.4f} {precision:<12.4f} {recall:<10.4f}")
+
+predictions = medical_unet.predict(X_test, verbose=0)
+compute_per_class_metrics(y_test, predictions)
+
+# =============================================================================
+# Summary
+# =============================================================================
+
+print("\n" + "="*60)
+print("LAB 5.5 SUMMARY")
+print("="*60)
+print("""
+Key Takeaways:
+1. Medical segmentation requires handling class imbalance
+2. Weighted loss functions help with imbalanced classes
+3. Per-class metrics are important for medical evaluation
+4. Visualization with overlays helps clinical interpretation
+5. Sensitivity and specificity are crucial for medical applications
+
+Next: Lab 5.6 will implement DeepLab with Atrous Spatial Pyramid Pooling.
+""")
+```
+
+---

@@ -1,0 +1,331 @@
+---
+title: "WGAN with Gradient Penalty (WGAN-GP)"
+module: 7
+labNumber: 12
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# WGAN with Gradient Penalty (WGAN-GP)
+
+## Objectives
+- Implement WGAN-GP to replace weight clipping
+- Use gradient penalty for Lipschitz constraint
+- Achieve better training stability
+- Compare with standard WGAN
+
+## Theory Overview
+
+WGAN-GP improves upon WGAN by:
+1. Replacing weight clipping with gradient penalty
+2. Enforcing Lipschitz constraint more effectively
+3. Allowing more stable training
+
+Gradient Penalty:
+```
+GP = E[(||∇D(ŷ)||₂ - 1)²]
+```
+where ŷ is interpolated between real and fake samples.
+
+## Complete Implementation
+
+```python
+"""
+Lab 7.11: WGAN with Gradient Penalty (WGAN-GP)
+================================================
+WGAN-GP implementation using gradient penalty instead of weight clipping.
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+from tensorflow import keras
+from tensorflow.keras import layers
+import os
+
+os.makedirs('wgan_gp_output', exist_ok=True)
+
+# =============================================================================
+# Part 1: Data Loading
+# =============================================================================
+
+# Load MNIST
+(train_images, _), (_, _) = keras.datasets.mnist.load_data()
+train_images = train_images.reshape(-1, 28, 28, 1).astype('float32')
+train_images = (train_images - 127.5) / 127.5
+
+# =============================================================================
+# Part 2: Build Generator and Critic
+# =============================================================================
+
+def build_wgangp_generator(latent_dim=100):
+    """Build WGAN-GP generator."""
+    model = keras.Sequential([
+        layers.Dense(7 * 7 * 256, input_shape=(latent_dim,)),
+        layers.Reshape((7, 7, 256)),
+        layers.BatchNormalization(),
+        layers.ReLU(),
+        
+        layers.Conv2DTranspose(128, 5, strides=2, padding='same', use_bias=False),
+        layers.BatchNormalization(),
+        layers.ReLU(),
+        
+        layers.Conv2DTranspose(64, 5, strides=2, padding='same', use_bias=False),
+        layers.BatchNormalization(),
+        layers.ReLU(),
+        
+        layers.Conv2D(1, 5, padding='same', activation='tanh')
+    ], name='WGAN_GP_Generator')
+    return model
+
+def build_wgangp_critic():
+    """Build WGAN-GP critic (no sigmoid output)."""
+    model = keras.Sequential([
+        layers.Conv2D(64, 5, strides=2, padding='same', input_shape=(28, 28, 1)),
+        layers.LeakyReLU(0.2),
+        layers.Dropout(0.3),
+        
+        layers.Conv2D(128, 5, strides=2, padding='same', use_bias=False),
+        layers.BatchNormalization(),
+        layers.LeakyReLU(0.2),
+        layers.Dropout(0.3),
+        
+        layers.Conv2D(256, 5, strides=2, padding='same', use_bias=False),
+        layers.BatchNormalization(),
+        layers.LeakyReLU(0.2),
+        layers.Dropout(0.3),
+        
+        layers.Flatten(),
+        layers.Dense(1)  # Linear output
+    ], name='WGAN_GP_Critic')
+    return model
+
+# =============================================================================
+# Part 3: Gradient Penalty Function
+# =============================================================================
+
+def gradient_penalty(critic, real_images, fake_images):
+    """
+    Calculate gradient penalty for WGAN-GP.
+    
+    The gradient penalty enforces the Lipschitz constraint by
+    penalizing gradients that deviate from norm 1.
+    
+    Args:
+        critic: The critic network
+        real_images: Batch of real images
+        fake_images: Batch of fake images
+    
+    Returns:
+        Gradient penalty loss
+    """
+    batch_size = tf.shape(real_images)[0]
+    
+    # Generate random interpolation coefficients
+    alpha = tf.random.uniform([batch_size, 1, 1, 1], 0.0, 1.0)
+    
+    # Interpolate between real and fake images
+    interpolated = alpha * real_images + (1 - alpha) * fake_images
+    
+    # Get critic output for interpolated images
+    with tf.GradientTape() as tape:
+        tape.watch(interpolated)
+        pred = critic(interpolated, training=True)
+    
+    # Calculate gradients
+    gradients = tape.gradient(pred, interpolated)
+    
+    # Calculate gradient norm
+    gradients_norm = tf.sqrt(tf.reduce_sum(tf.square(gradients), axis=[1, 2, 3]))
+    
+    # Penalize deviation from norm 1
+    penalty = tf.reduce_mean(tf.square(gradients_norm - 1.0))
+    
+    return penalty
+
+# =============================================================================
+# Part 4: WGAN-GP Training Class
+# =============================================================================
+
+class WGAN_GP(keras.Model):
+    """
+    Wasserstein GAN with Gradient Penalty.
+    
+    Advantages over weight clipping:
+    1. More stable training
+    2. Better gradient flow
+    3. Can use deeper networks
+    4. No hyperparameter tuning for clip value
+    """
+    
+    def __init__(self, critic, generator, latent_dim, gp_weight=10.0, 
+                 n_critic=5):
+        super().__init__()
+        self.critic = critic
+        self.generator = generator
+        self.latent_dim = latent_dim
+        self.gp_weight = gp_weight  # Lambda for gradient penalty
+        self.n_critic = n_critic
+        
+        # Use Adam optimizer (works better with GP than RMSprop)
+        self.c_optimizer = keras.optimizers.Adam(learning_rate=0.0001, 
+                                                  beta_1=0.5, beta_2=0.9)
+        self.g_optimizer = keras.optimizers.Adam(learning_rate=0.0001,
+                                                  beta_1=0.5, beta_2=0.9)
+    
+    def compile(self):
+        super().compile()
+    
+    @tf.function
+    def train_step(self, real_images):
+        batch_size = tf.shape(real_images)[0]
+        
+        # ======================================================================
+        # Train Critic (multiple times)
+        # ======================================================================
+        for _ in range(self.n_critic):
+            noise = tf.random.normal([batch_size, self.latent_dim])
+            
+            with tf.GradientTape() as tape_c:
+                fake_images = self.generator(noise, training=True)
+                
+                real_pred = self.critic(real_images, training=True)
+                fake_pred = self.critic(fake_images, training=True)
+                
+                # Wasserstein loss
+                c_loss = tf.reduce_mean(fake_pred) - tf.reduce_mean(real_pred)
+                
+                # Add gradient penalty
+                gp = gradient_penalty(self.critic, real_images, fake_images)
+                c_loss += self.gp_weight * gp
+            
+            # Update critic
+            grads_c = tape_c.gradient(c_loss, self.critic.trainable_variables)
+            self.c_optimizer.apply_gradients(
+                zip(grads_c, self.critic.trainable_variables)
+            )
+        
+        # ======================================================================
+        # Train Generator
+        # ======================================================================
+        noise = tf.random.normal([batch_size, self.latent_dim])
+        
+        with tf.GradientTape() as tape_g:
+            fake_images = self.generator(noise, training=True)
+            fake_pred = self.critic(fake_images, training=True)
+            
+            # Generator wants to maximize E[f(G(z))]
+            g_loss = -tf.reduce_mean(fake_pred)
+        
+        # Update generator
+        grads_g = tape_g.gradient(g_loss, self.generator.trainable_variables)
+        self.g_optimizer.apply_gradients(
+            zip(grads_g, self.generator.trainable_variables)
+        )
+        
+        return {'c_loss': c_loss - self.gp_weight * gp, 'g_loss': g_loss, 
+                'gp': gp}
+
+# =============================================================================
+# Part 5: Train WGAN-GP
+# =============================================================================
+
+# Build models
+LATENT_DIM = 100
+generator = build_wgangp_generator(LATENT_DIM)
+critic = build_wgangp_critic()
+
+print("=== WGAN-GP Generator ===")
+generator.summary()
+print("\n=== WGAN-GP Critic ===")
+critic.summary()
+
+# Create WGAN-GP
+wgan_gp = WGAN_GP(critic, generator, LATENT_DIM, gp_weight=10.0, n_critic=5)
+wgan_gp.compile()
+
+# Prepare dataset
+dataset = tf.data.Dataset.from_tensor_slices(train_images)
+dataset = dataset.shuffle(60000).batch(64, drop_remainder=True)
+
+# Callback
+class WGAN_GP_Callback(keras.callbacks.Callback):
+    def __init__(self, latent_dim):
+        self.latent_dim = latent_dim
+        self.seed = tf.random.normal([16, latent_dim])
+    
+    def on_epoch_end(self, epoch, logs=None):
+        if (epoch + 1) % 10 == 0:
+            generated = self.model.generator(self.seed, training=False)
+            
+            fig, axes = plt.subplots(4, 4, figsize=(8, 8))
+            for i, ax in enumerate(axes.flat):
+                ax.imshow(generated[i, :, :, 0] * 0.5 + 0.5, cmap='gray')
+                ax.axis('off')
+            plt.suptitle(f'WGAN-GP Generated Images - Epoch {epoch+1}')
+            plt.tight_layout()
+            plt.savefig(f'wgan_gp_output/wgangp_epoch_{epoch+1:03d}.png', dpi=150)
+            plt.close()
+            
+            print(f"Epoch {epoch+1}: C Loss: {logs['c_loss']:.4f}, "
+                  f"G Loss: {logs['g_loss']:.4f}, GP: {logs['gp']:.4f}")
+
+# Train
+print("\nStarting WGAN-GP training...")
+history = wgan_gp.fit(
+    dataset,
+    epochs=100,
+    callbacks=[WGAN_GP_Callback(LATENT_DIM)],
+    verbose=0
+)
+
+# =============================================================================
+# Part 6: Visualize and Compare
+# =============================================================================
+
+# Plot losses
+fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+
+axes[0].plot(history.history['c_loss'], color='blue')
+axes[0].set_title('Critic Loss')
+axes[0].set_xlabel('Epoch')
+axes[0].grid(True, alpha=0.3)
+
+axes[1].plot(history.history['g_loss'], color='red')
+axes[1].set_title('Generator Loss')
+axes[1].set_xlabel('Epoch')
+axes[1].grid(True, alpha=0.3)
+
+axes[2].plot(history.history['gp'], color='green')
+axes[2].set_title('Gradient Penalty')
+axes[2].set_xlabel('Epoch')
+axes[2].grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.savefig('wgan_gp_output/training_losses.png', dpi=150)
+plt.show()
+
+# Generate final samples
+noise = tf.random.normal([64, LATENT_DIM])
+generated = generator(noise, training=False)
+
+fig, axes = plt.subplots(8, 8, figsize=(10, 10))
+for i, ax in enumerate(axes.flat):
+    ax.imshow(generated[i, :, :, 0] * 0.5 + 0.5, cmap='gray')
+    ax.axis('off')
+plt.suptitle('WGAN-GP Generated Images')
+plt.tight_layout()
+plt.savefig('wgan_gp_output/final_generated.png', dpi=150)
+plt.show()
+
+# Save models
+generator.save('wgan_gp_output/wgangp_generator.h5')
+critic.save('wgan_gp_output/wgangp_critic.h5')
+
+print("\n=== WGAN-GP Training Complete ===")
+print(f"Final Critic Loss: {history.history['c_loss'][-1]:.4f}")
+print(f"Final Generator Loss: {history.history['g_loss'][-1]:.4f}")
+print(f"Final Gradient Penalty: {history.history['gp'][-1]:.4f}")
+```
+
+---

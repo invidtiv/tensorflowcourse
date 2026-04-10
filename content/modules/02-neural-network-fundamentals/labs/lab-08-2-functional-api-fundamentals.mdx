@@ -1,0 +1,327 @@
+---
+title: "2: Functional API Fundamentals"
+module: 2
+labNumber: 8
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-03-part3.md"
+---
+# 2: Functional API Fundamentals
+
+```python
+"""
+Lab 2.2.2: Functional API Fundamentals
+Comprehensive guide to building models with Keras Functional API.
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+
+print("=" * 60)
+print("LAB 2.2.2: Functional API Fundamentals")
+print("=" * 60)
+
+# ============================================================
+# STEP 1: Basic Functional API Model
+# ============================================================
+print("\n[STEP 1] Creating basic Functional API model...")
+
+# Define inputs
+inputs = tf.keras.Input(shape=(784,), name='input_layer')
+
+# Build the model
+x = tf.keras.layers.Dense(256, activation='relu', name='dense_1')(inputs)
+x = tf.keras.layers.Dropout(0.3, name='dropout_1')(x)
+x = tf.keras.layers.Dense(128, activation='relu', name='dense_2')(x)
+x = tf.keras.layers.Dropout(0.3, name='dropout_2')(x)
+outputs = tf.keras.layers.Dense(10, activation='softmax', name='output')(x)
+
+# Create model
+model = tf.keras.Model(inputs=inputs, outputs=outputs, name='functional_basic')
+
+print("\nBasic Functional Model:")
+model.summary()
+
+# ============================================================
+# STEP 2: Multi-Input Model
+# ============================================================
+print("\n[STEP 2] Creating multi-input model...")
+
+# Input 1: Image features
+image_input = tf.keras.Input(shape=(784,), name='image_input')
+x1 = tf.keras.layers.Dense(256, activation='relu')(image_input)
+x1 = tf.keras.layers.Dropout(0.3)(x1)
+x1 = tf.keras.layers.Dense(128, activation='relu')(x1)
+
+# Input 2: Metadata features
+meta_input = tf.keras.Input(shape=(10,), name='metadata_input')
+x2 = tf.keras.layers.Dense(32, activation='relu')(meta_input)
+x2 = tf.keras.layers.Dense(16, activation='relu')(x2)
+
+# Concatenate inputs
+combined = tf.keras.layers.Concatenate(name='concatenate')([x1, x2])
+
+# Shared layers
+x = tf.keras.layers.Dense(128, activation='relu')(combined)
+x = tf.keras.layers.Dropout(0.3)(x)
+x = tf.keras.layers.Dense(64, activation='relu')(x)
+
+# Output
+output = tf.keras.layers.Dense(10, activation='softmax', name='prediction')(x)
+
+# Create multi-input model
+multi_input_model = tf.keras.Model(
+    inputs=[image_input, meta_input],
+    outputs=output,
+    name='multi_input_model'
+)
+
+print("\nMulti-Input Model:")
+multi_input_model.summary()
+
+# Visualize model structure
+tf.keras.utils.plot_model(
+    multi_input_model,
+    to_file='/mnt/okcomputer/output/multi_input_model.png',
+    show_shapes=True,
+    show_layer_names=True,
+    rankdir='TB'
+)
+print("\nModel diagram saved to: /mnt/okcomputer/output/multi_input_model.png")
+
+# ============================================================
+# STEP 3: Multi-Output Model
+# ============================================================
+print("\n[STEP 3] Creating multi-output model...")
+
+# Shared base
+base_input = tf.keras.Input(shape=(784,), name='input')
+x = tf.keras.layers.Dense(256, activation='relu')(base_input)
+x = tf.keras.layers.Dropout(0.3)(x)
+x = tf.keras.layers.Dense(128, activation='relu')(x)
+shared = tf.keras.layers.Dense(64, activation='relu')(x)
+
+# Output 1: Classification
+classification_output = tf.keras.layers.Dense(
+    10, activation='softmax', name='class_output'
+)(shared)
+
+# Output 2: Regression (auxiliary)
+regression_output = tf.keras.layers.Dense(
+    1, activation='linear', name='reg_output'
+)(shared)
+
+# Output 3: Binary classification (auxiliary)
+binary_output = tf.keras.layers.Dense(
+    1, activation='sigmoid', name='binary_output'
+)(shared)
+
+# Create multi-output model
+multi_output_model = tf.keras.Model(
+    inputs=base_input,
+    outputs=[classification_output, regression_output, binary_output],
+    name='multi_output_model'
+)
+
+print("\nMulti-Output Model:")
+multi_output_model.summary()
+
+# Compile with different losses for each output
+multi_output_model.compile(
+    optimizer='adam',
+    loss={
+        'class_output': 'categorical_crossentropy',
+        'reg_output': 'mse',
+        'binary_output': 'binary_crossentropy'
+    },
+    loss_weights={
+        'class_output': 1.0,
+        'reg_output': 0.5,
+        'binary_output': 0.3
+    },
+    metrics={
+        'class_output': 'accuracy',
+        'reg_output': 'mae',
+        'binary_output': 'accuracy'
+    }
+)
+
+print("\nCompiled with multiple losses and metrics!")
+
+# ============================================================
+# STEP 4: Shared Layers Model
+# ============================================================
+print("\n[STEP 4] Creating model with shared layers...")
+
+# Create a shared LSTM layer
+shared_lstm = tf.keras.layers.LSTM(64, name='shared_lstm')
+
+# Input 1
+input_1 = tf.keras.Input(shape=(100, 10), name='input_1')
+processed_1 = shared_lstm(input_1)
+
+# Input 2
+input_2 = tf.keras.Input(shape=(100, 10), name='input_2')
+processed_2 = shared_lstm(input_2)
+
+# Merge and output
+merged = tf.keras.layers.Concatenate()([processed_1, processed_2])
+output = tf.keras.layers.Dense(1, activation='sigmoid')(merged)
+
+# Create shared layer model
+shared_layer_model = tf.keras.Model(
+    inputs=[input_1, input_2],
+    outputs=output,
+    name='shared_layer_model'
+)
+
+print("\nShared Layer Model:")
+shared_layer_model.summary()
+
+# ============================================================
+# STEP 5: Residual Connections (ResNet-style)
+# ============================================================
+print("\n[STEP 5] Creating model with residual connections...")
+
+def residual_block(x, units, dropout_rate=0.3):
+    """Create a residual block."""
+    # Save input for skip connection
+    shortcut = x
+    
+    # Main path
+    x = tf.keras.layers.Dense(units, activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Dropout(dropout_rate)(x)
+    x = tf.keras.layers.Dense(units)(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    
+    # Skip connection (with projection if needed)
+    if shortcut.shape[-1] != units:
+        shortcut = tf.keras.layers.Dense(units)(shortcut)
+    
+    # Add skip connection
+    x = tf.keras.layers.Add()([x, shortcut])
+    x = tf.keras.layers.Activation('relu')(x)
+    
+    return x
+
+# Build residual model
+inputs = tf.keras.Input(shape=(784,), name='input')
+x = tf.keras.layers.Dense(256, activation='relu')(inputs)
+
+# Stack residual blocks
+x = residual_block(x, 256)
+x = residual_block(x, 256)
+x = residual_block(x, 128)
+x = residual_block(x, 128)
+x = residual_block(x, 64)
+
+# Output
+outputs = tf.keras.layers.Dense(10, activation='softmax')(x)
+
+residual_model = tf.keras.Model(inputs=inputs, outputs=outputs, name='residual_model')
+
+print("\nResidual Connection Model:")
+residual_model.summary()
+
+# ============================================================
+# STEP 6: Training Multi-Input Model
+# ============================================================
+print("\n[STEP 7] Training multi-input model...")
+
+# Generate synthetic multi-input data
+np.random.seed(42)
+X_image = np.random.randn(1000, 784)
+X_meta = np.random.randn(1000, 10)
+y = np.random.randint(0, 10, 1000)
+y_cat = tf.keras.utils.to_categorical(y, 10)
+
+# Compile
+multi_input_model.compile(
+    optimizer='adam',
+    loss='categorical_crossentropy',
+    metrics=['accuracy']
+)
+
+# Train
+history = multi_input_model.fit(
+    [X_image, X_meta], y_cat,
+    validation_split=0.2,
+    epochs=10,
+    batch_size=32,
+    verbose=1
+)
+
+print("\nTraining completed!")
+
+# ============================================================
+# STEP 7: Model Subclassing from Functional
+# ============================================================
+print("\n[STEP 8] Converting Functional to reusable class...")
+
+class MultiInputClassifier(tf.keras.Model):
+    """Reusable multi-input classifier."""
+    
+    def __init__(self, image_dim, meta_dim, num_classes, **kwargs):
+        super().__init__(**kwargs)
+        
+        # Image branch
+        self.image_dense1 = tf.keras.layers.Dense(256, activation='relu')
+        self.image_dropout1 = tf.keras.layers.Dropout(0.3)
+        self.image_dense2 = tf.keras.layers.Dense(128, activation='relu')
+        
+        # Meta branch
+        self.meta_dense1 = tf.keras.layers.Dense(32, activation='relu')
+        self.meta_dense2 = tf.keras.layers.Dense(16, activation='relu')
+        
+        # Combined
+        self.concat = tf.keras.layers.Concatenate()
+        self.combined_dense1 = tf.keras.layers.Dense(128, activation='relu')
+        self.combined_dropout = tf.keras.layers.Dropout(0.3)
+        self.combined_dense2 = tf.keras.layers.Dense(64, activation='relu')
+        
+        # Output
+        self.output_layer = tf.keras.layers.Dense(num_classes, activation='softmax')
+    
+    def call(self, inputs, training=False):
+        image_input, meta_input = inputs
+        
+        # Image branch
+        x1 = self.image_dense1(image_input)
+        x1 = self.image_dropout1(x1, training=training)
+        x1 = self.image_dense2(x1)
+        
+        # Meta branch
+        x2 = self.meta_dense1(meta_input)
+        x2 = self.meta_dense2(x2)
+        
+        # Combine
+        combined = self.concat([x1, x2])
+        x = self.combined_dense1(combined)
+        x = self.combined_dropout(x, training=training)
+        x = self.combined_dense2(x)
+        
+        return self.output_layer(x)
+
+# Create and test
+subclassed_model = MultiInputClassifier(784, 10, 10, name='subclassed_multi_input')
+
+# Build by calling
+_ = subclassed_model([X_image[:1], X_meta[:1]])
+
+print("\nSubclassed Multi-Input Model:")
+subclassed_model.summary()
+
+print("\n" + "=" * 60)
+print("LAB 2.2.2 COMPLETED SUCCESSFULLY!")
+print("=" * 60)
+print("\nKEY TAKEAWAYS:")
+print("1. Functional API is more flexible than Sequential")
+print("2. Supports multiple inputs, outputs, and shared layers")
+print("3. Easy to implement complex architectures (ResNet, Inception)")
+print("4. Models can be visualized with plot_model()")
+print("5. Can be converted to Model subclassing for reusability")
+```
+
+---

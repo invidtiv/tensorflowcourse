@@ -1,0 +1,377 @@
+---
+title: "Named Entity Recognition with BiLSTM"
+module: 8
+labNumber: 11
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Named Entity Recognition with BiLSTM
+
+### Objectives
+- Build BiLSTM-CRF for NER
+- Implement token-level classification
+- Handle sequence labeling
+
+### Complete Implementation
+
+```python
+"""
+Lab 8.10: Named Entity Recognition with BiLSTM
+===============================================
+Build a Named Entity Recognition system using BiLSTM.
+"""
+
+import tensorflow as tf
+import numpy as np
+from collections import defaultdict
+
+# ============================================================
+# PART 1: Synthetic NER Dataset
+# ============================================================
+
+print("=" * 60)
+print("NAMED ENTITY RECOGNITION WITH BILSTM")
+print("=" * 60)
+
+# Create synthetic NER dataset
+# Tags: O (Outside), PER (Person), ORG (Organization), LOC (Location)
+
+ner_data = [
+    ("John works at Google in New York".split(), 
+     ["B-PER", "O", "O", "B-ORG", "O", "B-LOC", "I-LOC"]),
+    
+    ("Mary visited Paris last summer".split(),
+     ["B-PER", "O", "B-LOC", "O", "O"]),
+    
+    ("Microsoft was founded by Bill Gates".split(),
+     ["B-ORG", "O", "O", "O", "B-PER", "I-PER"]),
+    
+    ("The Eiffel Tower is in France".split(),
+     ["O", "B-LOC", "I-LOC", "O", "O", "B-LOC"]),
+    
+    ("Amazon opened a new office in London".split(),
+     ["B-ORG", "O", "O", "O", "O", "O", "B-LOC"]),
+]
+
+# Repeat to create more training data
+ner_data = ner_data * 100
+
+# Build vocabularies
+word_counts = defaultdict(int)
+tag_set = set()
+
+for words, tags in ner_data:
+    for word in words:
+        word_counts[word.lower()] += 1
+    for tag in tags:
+        tag_set.add(tag)
+
+# Create word vocabulary (add special tokens)
+word_to_idx = {"<PAD>": 0, "<UNK>": 1}
+for word, count in word_counts.items():
+    if count >= 1:
+        word_to_idx[word] = len(word_to_idx)
+
+# Create tag vocabulary
+tag_to_idx = {tag: idx for idx, tag in enumerate(sorted(tag_set))}
+idx_to_tag = {idx: tag for tag, idx in tag_to_idx.items()}
+
+num_words = len(word_to_idx)
+num_tags = len(tag_to_idx)
+
+print(f"Number of unique words: {num_words}")
+print(f"Number of tags: {num_tags}")
+print(f"Tags: {list(tag_to_idx.keys())}")
+
+
+# ============================================================
+# PART 2: Data Preparation
+# ============================================================
+
+def prepare_data(data, word_to_idx, tag_to_idx, max_len=20):
+    """
+    Prepare data for training.
+    
+    Args:
+        data: List of (words, tags) tuples
+        word_to_idx: Word to index mapping
+        tag_to_idx: Tag to index mapping
+        max_len: Maximum sequence length
+        
+    Returns:
+        X, y arrays
+    """
+    X = []
+    y = []
+    
+    for words, tags in data:
+        # Encode words
+        word_ids = [word_to_idx.get(w.lower(), word_to_idx["<UNK>"]) for w in words]
+        
+        # Encode tags
+        tag_ids = [tag_to_idx[t] for t in tags]
+        
+        # Pad sequences
+        word_ids = word_ids + [word_to_idx["<PAD>"]] * (max_len - len(word_ids))
+        tag_ids = tag_ids + [tag_to_idx["O"]] * (max_len - len(tag_ids))
+        
+        X.append(word_ids[:max_len])
+        y.append(tag_ids[:max_len])
+    
+    return np.array(X), np.array(y)
+
+# Prepare data
+max_len = 15
+X, y = prepare_data(ner_data, word_to_idx, tag_to_idx, max_len)
+
+print(f"\nData shape: X={X.shape}, y={y.shape}")
+
+# Split into train/test
+split = int(0.8 * len(X))
+X_train, X_test = X[:split], X[split:]
+y_train, y_test = y[:split], y[split:]
+
+
+# ============================================================
+# PART 3: BiLSTM Model for NER
+# ============================================================
+
+def build_ner_model(num_words, num_tags, max_len, embedding_dim=50, lstm_units=64):
+    """
+    Build BiLSTM model for NER.
+    
+    Args:
+        num_words: Vocabulary size
+        num_tags: Number of NER tags
+        max_len: Maximum sequence length
+        embedding_dim: Word embedding dimension
+        lstm_units: LSTM hidden units
+        
+    Returns:
+        Compiled model
+    """
+    model = tf.keras.Sequential([
+        # Word embedding
+        tf.keras.layers.Embedding(
+            num_words, embedding_dim, 
+            input_length=max_len,
+            mask_zero=True
+        ),
+        
+        # Bidirectional LSTM
+        tf.keras.layers.Bidirectional(
+            tf.keras.layers.LSTM(
+                lstm_units, 
+                return_sequences=True,
+                dropout=0.2
+            )
+        ),
+        
+        # Another BiLSTM layer
+        tf.keras.layers.Bidirectional(
+            tf.keras.layers.LSTM(
+                lstm_units // 2,
+                return_sequences=True,
+                dropout=0.2
+            )
+        ),
+        
+        # Output layer (one prediction per token)
+        tf.keras.layers.Dense(num_tags, activation='softmax')
+    ])
+    
+    model.compile(
+        optimizer='adam',
+        loss='sparse_categorical_crossentropy',
+        metrics=['accuracy']
+    )
+    
+    return model
+
+# Build model
+model = build_ner_model(num_words, num_tags, max_len)
+
+print("\nModel Architecture:")
+model.summary()
+
+
+# ============================================================
+# PART 4: Training
+# ============================================================
+
+# Reshape y for training (add channel dimension)
+y_train_reshaped = y_train.reshape(y_train.shape[0], y_train.shape[1], 1)
+y_test_reshaped = y_test.reshape(y_test.shape[0], y_test.shape[1], 1)
+
+print("\nTraining...")
+history = model.fit(
+    X_train, y_train_reshaped,
+    validation_split=0.2,
+    epochs=30,
+    batch_size=32,
+    verbose=1
+)
+
+# Evaluate
+test_loss, test_acc = model.evaluate(X_test, y_test_reshaped, verbose=0)
+print(f"\nTest accuracy: {test_acc:.4f}")
+
+
+# ============================================================
+# PART 5: Inference
+# ============================================================
+
+def predict_entities(text, model, word_to_idx, idx_to_tag, max_len=15):
+    """
+    Predict entities in text.
+    
+    Args:
+        text: Input text string
+        model: Trained NER model
+        word_to_idx: Word vocabulary
+        idx_to_tag: Tag vocabulary
+        max_len: Maximum sequence length
+        
+    Returns:
+        List of (word, tag) tuples
+    """
+    words = text.lower().split()
+    
+    # Encode
+    word_ids = [word_to_idx.get(w, word_to_idx["<UNK>"]) for w in words]
+    word_ids = word_ids + [word_to_idx["<PAD>"]] * (max_len - len(word_ids))
+    word_ids = word_ids[:max_len]
+    
+    # Predict
+    X = np.array([word_ids])
+    predictions = model.predict(X, verbose=0)[0]
+    
+    # Decode
+    predicted_tags = [idx_to_tag[np.argmax(p)] for p in predictions[:len(words)]]
+    
+    return list(zip(words, predicted_tags))
+
+
+# Test predictions
+test_sentences = [
+    "John works at Google",
+    "Mary visited Paris",
+    "Microsoft was founded by Bill Gates",
+    "Amazon opened an office in London"
+]
+
+print("\n" + "=" * 60)
+print("PREDICTION EXAMPLES")
+print("=" * 60)
+
+for sentence in test_sentences:
+    predictions = predict_entities(sentence, model, word_to_idx, idx_to_tag)
+    print(f"\nText: {sentence}")
+    print("Predictions:")
+    for word, tag in predictions:
+        if tag != "O":
+            print(f"  {word}: {tag}")
+
+
+# ============================================================
+# PART 6: Evaluation Metrics
+# ============================================================
+
+def compute_metrics(y_true, y_pred, idx_to_tag):
+    """
+    Compute precision, recall, F1 for each entity type.
+    """
+    from collections import defaultdict
+    
+    # Initialize counters
+    metrics = defaultdict(lambda: {'tp': 0, 'fp': 0, 'fn': 0})
+    
+    for true_seq, pred_seq in zip(y_true, y_pred):
+        for true_tag_idx, pred_tag_idx in zip(true_seq, pred_seq):
+            true_tag = idx_to_tag[true_tag_idx]
+            pred_tag = idx_to_tag[pred_tag_idx]
+            
+            # Skip padding
+            if true_tag == "O" and pred_tag == "O":
+                continue
+            
+            # Get entity type
+            true_type = true_tag.split("-")[-1] if "-" in true_tag else "O"
+            pred_type = pred_tag.split("-")[-1] if "-" in pred_tag else "O"
+            
+            if true_tag == pred_tag and true_tag != "O":
+                metrics[true_type]['tp'] += 1
+            elif pred_tag != "O":
+                metrics[pred_type]['fp'] += 1
+            elif true_tag != "O":
+                metrics[true_type]['fn'] += 1
+    
+    # Compute metrics
+    print("\n" + "=" * 60)
+    print("ENTITY-LEVEL METRICS")
+    print("=" * 60)
+    
+    for entity_type, counts in metrics.items():
+        tp, fp, fn = counts['tp'], counts['fp'], counts['fn']
+        
+        precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+        recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
+        
+        print(f"\n{entity_type}:")
+        print(f"  Precision: {precision:.4f}")
+        print(f"  Recall: {recall:.4f}")
+        print(f"  F1-Score: {f1:.4f}")
+
+# Compute metrics
+y_pred = model.predict(X_test)
+y_pred_classes = np.argmax(y_pred, axis=-1)
+compute_metrics(y_test, y_pred_classes, idx_to_tag)
+
+
+# ============================================================
+# EXERCISES
+# ============================================================
+
+print("\n" + "=" * 60)
+print("EXERCISES")
+print("=" * 60)
+
+exercises = """
+Exercise 1: CRF Layer
+---------------------
+Add CRF (Conditional Random Field) layer:
+- Model tag dependencies
+- Use Viterbi decoding
+- Compare with independent classification
+
+Exercise 2: Character-level Features
+------------------------------------
+Add character-level CNN:
+- Extract character features
+- Concatenate with word embeddings
+- Handle out-of-vocabulary words
+
+Exercise 3: Pretrained Embeddings
+---------------------------------
+Use pretrained word embeddings:
+- Load GloVe or Word2Vec
+- Fine-tune on NER task
+- Compare with random initialization
+
+Exercise 4: Real Dataset
+------------------------
+Train on CoNLL-2003 dataset:
+- Download and preprocess
+- Handle real-world challenges
+- Compare with state-of-the-art
+"""
+
+print(exercises)
+```
+
+
+---
+
+# Attention Mechanism Labs

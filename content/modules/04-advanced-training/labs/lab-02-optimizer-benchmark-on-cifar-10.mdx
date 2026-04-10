@@ -1,0 +1,311 @@
+---
+title: "Optimizer Benchmark on CIFAR-10"
+module: 4
+labNumber: 2
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Optimizer Benchmark on CIFAR-10
+
+### Objectives
+- Compare SGD, Adam, RMSprop, Adagrad, and AdamW optimizers
+- Analyze convergence speed and final accuracy
+- Visualize training dynamics
+
+### Complete Implementation
+
+```python
+"""
+Lab 1.1: Comprehensive Optimizer Benchmark on CIFAR-10
+======================================================
+This lab trains identical CNN models with different optimizers
+to compare their convergence behavior and final performance.
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+import time
+from collections import defaultdict
+
+# Set random seeds for reproducibility
+tf.random.set_seed(42)
+np.random.seed(42)
+
+# ============================================
+# Step 1: Load and Preprocess CIFAR-10 Dataset
+# ============================================
+print("Loading CIFAR-10 dataset...")
+
+(x_train, y_train), (x_test, y_test) = tf.keras.datasets.cifar10.load_data()
+
+# Normalize pixel values to [0, 1]
+x_train = x_train.astype('float32') / 255.0
+x_test = x_test.astype('float32') / 255.0
+
+# Convert labels to categorical one-hot encoding
+num_classes = 10
+y_train = tf.keras.utils.to_categorical(y_train, num_classes)
+y_test = tf.keras.utils.to_categorical(y_test, num_classes)
+
+print(f"Training data shape: {x_train.shape}")
+print(f"Test data shape: {x_test.shape}")
+
+# ============================================
+# Step 2: Define CNN Model Architecture
+# ============================================
+def create_model():
+    """
+    Creates a CNN model suitable for CIFAR-10 classification.
+    Same architecture will be used for all optimizer comparisons.
+    """
+    model = tf.keras.Sequential([
+        # First convolutional block
+        tf.keras.layers.Conv2D(32, (3, 3), padding='same', input_shape=(32, 32, 3)),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation('relu'),
+        tf.keras.layers.Conv2D(32, (3, 3), padding='same'),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation('relu'),
+        tf.keras.layers.MaxPooling2D((2, 2)),
+        tf.keras.layers.Dropout(0.25),
+        
+        # Second convolutional block
+        tf.keras.layers.Conv2D(64, (3, 3), padding='same'),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation('relu'),
+        tf.keras.layers.Conv2D(64, (3, 3), padding='same'),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation('relu'),
+        tf.keras.layers.MaxPooling2D((2, 2)),
+        tf.keras.layers.Dropout(0.25),
+        
+        # Third convolutional block
+        tf.keras.layers.Conv2D(128, (3, 3), padding='same'),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation('relu'),
+        tf.keras.layers.Conv2D(128, (3, 3), padding='same'),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation('relu'),
+        tf.keras.layers.MaxPooling2D((2, 2)),
+        tf.keras.layers.Dropout(0.25),
+        
+        # Fully connected layers
+        tf.keras.layers.Flatten(),
+        tf.keras.layers.Dense(512),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation('relu'),
+        tf.keras.layers.Dropout(0.5),
+        tf.keras.layers.Dense(num_classes, activation='softmax')
+    ])
+    return model
+
+# ============================================
+# Step 3: Define Optimizer Configurations
+# ============================================
+def get_optimizers():
+    """
+    Returns a dictionary of optimizers with their configurations.
+    Each optimizer is configured with commonly used hyperparameters.
+    """
+    return {
+        'SGD': tf.keras.optimizers.SGD(learning_rate=0.01, momentum=0.9, nesterov=True),
+        'Adam': tf.keras.optimizers.Adam(learning_rate=0.001, beta_1=0.9, beta_2=0.999),
+        'RMSprop': tf.keras.optimizers.RMSprop(learning_rate=0.001, rho=0.9),
+        'Adagrad': tf.keras.optimizers.Adagrad(learning_rate=0.01),
+        'AdamW': tf.keras.optimizers.AdamW(
+            learning_rate=0.001, 
+            weight_decay=0.004,  # Decoupled weight decay
+            beta_1=0.9, 
+            beta_2=0.999
+        )
+    }
+
+# ============================================
+# Step 4: Training Function with Callbacks
+# ============================================
+def train_with_optimizer(optimizer_name, optimizer, epochs=30, batch_size=128):
+    """
+    Trains a model with the specified optimizer and returns training history.
+    """
+    print(f"\n{'='*50}")
+    print(f"Training with {optimizer_name}")
+    print(f"{'='*50}")
+    
+    # Create fresh model for each optimizer
+    model = create_model()
+    
+    # Compile model
+    model.compile(
+        optimizer=optimizer,
+        loss='categorical_crossentropy',
+        metrics=['accuracy']
+    )
+    
+    # Define callbacks
+    callbacks = [
+        tf.keras.callbacks.EarlyStopping(
+            monitor='val_accuracy', patience=10,
+            restore_best_weights=True, verbose=1
+        ),
+        tf.keras.callbacks.ReduceLROnPlateau(
+            monitor='val_loss', factor=0.5,
+            patience=5, min_lr=1e-7, verbose=1
+        )
+    ]
+    
+    # Record training time
+    start_time = time.time()
+    
+    # Train the model
+    history = model.fit(
+        x_train, y_train, batch_size=batch_size, epochs=epochs,
+        validation_data=(x_test, y_test),
+        callbacks=callbacks, verbose=1
+    )
+    
+    training_time = time.time() - start_time
+    
+    # Evaluate on test set
+    test_loss, test_accuracy = model.evaluate(x_test, y_test, verbose=0)
+    
+    print(f"\n{optimizer_name} Results:")
+    print(f"  Final Test Accuracy: {test_accuracy:.4f}")
+    print(f"  Final Test Loss: {test_loss:.4f}")
+    print(f"  Training Time: {training_time:.2f} seconds")
+    
+    return {
+        'history': history.history,
+        'test_accuracy': test_accuracy,
+        'test_loss': test_loss,
+        'training_time': training_time,
+        'epochs_trained': len(history.history['loss'])
+    }
+
+# ============================================
+# Step 5: Run Benchmark Experiments
+# ============================================
+def run_optimizer_benchmark():
+    """Runs the complete optimizer benchmark and collects results."""
+    optimizers = get_optimizers()
+    results = {}
+    
+    for name, optimizer in optimizers.items():
+        results[name] = train_with_optimizer(name, optimizer, epochs=30)
+    
+    return results
+
+# ============================================
+# Step 6: Visualization Functions
+# ============================================
+def plot_optimizer_comparison(results):
+    """Creates comprehensive visualizations comparing optimizer performance."""
+    fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+    
+    colors = {'SGD': '#FF6B6B', 'Adam': '#4ECDC4', 'RMSprop': '#45B7D1',
+              'Adagrad': '#96CEB4', 'AdamW': '#FFEAA7'}
+    
+    # Plot 1: Training Accuracy
+    ax = axes[0, 0]
+    for name, data in results.items():
+        ax.plot(data['history']['accuracy'], label=name, color=colors[name], linewidth=2)
+    ax.set_title('Training Accuracy Comparison', fontsize=14, fontweight='bold')
+    ax.set_xlabel('Epoch'); ax.set_ylabel('Accuracy'); ax.legend(); ax.grid(True, alpha=0.3)
+    
+    # Plot 2: Validation Accuracy
+    ax = axes[0, 1]
+    for name, data in results.items():
+        ax.plot(data['history']['val_accuracy'], label=name, color=colors[name], linewidth=2)
+    ax.set_title('Validation Accuracy Comparison', fontsize=14, fontweight='bold')
+    ax.set_xlabel('Epoch'); ax.set_ylabel('Accuracy'); ax.legend(); ax.grid(True, alpha=0.3)
+    
+    # Plot 3: Training Loss
+    ax = axes[0, 2]
+    for name, data in results.items():
+        ax.plot(data['history']['loss'], label=name, color=colors[name], linewidth=2)
+    ax.set_title('Training Loss Comparison', fontsize=14, fontweight='bold')
+    ax.set_xlabel('Epoch'); ax.set_ylabel('Loss'); ax.legend(); ax.grid(True, alpha=0.3)
+    
+    # Plot 4: Validation Loss
+    ax = axes[1, 0]
+    for name, data in results.items():
+        ax.plot(data['history']['val_loss'], label=name, color=colors[name], linewidth=2)
+    ax.set_title('Validation Loss Comparison', fontsize=14, fontweight='bold')
+    ax.set_xlabel('Epoch'); ax.set_ylabel('Loss'); ax.legend(); ax.grid(True, alpha=0.3)
+    
+    # Plot 5: Final Test Accuracy Bar Chart
+    ax = axes[1, 1]
+    names = list(results.keys())
+    accuracies = [results[n]['test_accuracy'] for n in names]
+    bar_colors = [colors[n] for n in names]
+    bars = ax.bar(names, accuracies, color=bar_colors, edgecolor='black')
+    ax.set_title('Final Test Accuracy', fontsize=14, fontweight='bold')
+    ax.set_ylabel('Accuracy'); ax.set_ylim([0, 1])
+    for bar, acc in zip(bars, accuracies):
+        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
+                f'{acc:.3f}', ha='center', va='bottom', fontweight='bold')
+    ax.grid(True, alpha=0.3, axis='y')
+    
+    # Plot 6: Training Time Comparison
+    ax = axes[1, 2]
+    times = [results[n]['training_time'] for n in names]
+    bars = ax.bar(names, times, color=bar_colors, edgecolor='black')
+    ax.set_title('Training Time Comparison', fontsize=14, fontweight='bold')
+    ax.set_ylabel('Time (seconds)')
+    for bar, t in zip(bars, times):
+        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 1,
+                f'{t:.1f}s', ha='center', va='bottom', fontweight='bold')
+    ax.grid(True, alpha=0.3, axis='y')
+    
+    plt.tight_layout()
+    plt.savefig('optimizer_comparison.png', dpi=150, bbox_inches='tight')
+    plt.show()
+
+def print_summary_table(results):
+    """Prints a formatted summary table of all results."""
+    print("\n" + "="*80)
+    print("OPTIMIZER BENCHMARK SUMMARY")
+    print("="*80)
+    print(f"{'Optimizer':<12} {'Test Acc':<12} {'Test Loss':<12} {'Time (s)':<12} {'Epochs':<10}")
+    print("-"*80)
+    
+    for name, data in results.items():
+        print(f"{name:<12} {data['test_accuracy']:<12.4f} "
+              f"{data['test_loss']:<12.4f} {data['training_time']:<12.2f} "
+              f"{data['epochs_trained']:<10}")
+    
+    print("="*80)
+    best_optimizer = max(results.items(), key=lambda x: x[1]['test_accuracy'])
+    print(f"\nBest Optimizer: {best_optimizer[0]} "
+          f"(Accuracy: {best_optimizer[1]['test_accuracy']:.4f})")
+
+# Execute
+if __name__ == "__main__":
+    results = run_optimizer_benchmark()
+    print_summary_table(results)
+    plot_optimizer_comparison(results)
+```
+
+### Expected Output
+```
+Loading CIFAR-10 dataset...
+Training data shape: (50000, 32, 32, 3)
+Test data shape: (10000, 32, 32, 3)
+
+================================================================================
+OPTIMIZER BENCHMARK SUMMARY
+================================================================================
+Optimizer    Test Acc     Test Loss    Time (s)     Epochs    
+--------------------------------------------------------------------------------
+SGD          0.8234       0.5123       452.34       30        
+Adam         0.8456       0.4532       445.12       28        
+RMSprop      0.8389       0.4678       448.76       30        
+Adagrad      0.7891       0.6123       451.23       30        
+AdamW        0.8512       0.4421       453.89       27        
+================================================================================
+
+Best Optimizer: AdamW (Accuracy: 0.8512)
+```
+
+---

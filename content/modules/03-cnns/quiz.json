@@ -1,0 +1,136 @@
+{
+  "version": 1,
+  "passingScore": 80,
+  "questions": [
+    {
+      "id": "m3-q1",
+      "type": "multiple-choice",
+      "difficulty": "easy",
+      "topic": "Convolution Basics",
+      "question": "What is the output spatial size for a convolution with input size 32, kernel 3, stride 1, and padding 1?",
+      "options": [
+        {
+          "text": "30",
+          "correct": false
+        },
+        {
+          "text": "32",
+          "correct": true
+        },
+        {
+          "text": "34",
+          "correct": false
+        },
+        {
+          "text": "16",
+          "correct": false
+        }
+      ],
+      "explanation": "Output = (32 + 2\u00b71 \u2212 3)/1 + 1 = 32. 'Same' padding preserves spatial dimensions at stride 1."
+    },
+    {
+      "id": "m3-q2",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Convolution vs Cross-Correlation",
+      "question": "What is a key difference between mathematical convolution and the 'convolution' used in deep learning?",
+      "options": [
+        {
+          "text": "DL convolution uses matrix multiplication; math convolution doesn't",
+          "correct": false
+        },
+        {
+          "text": "DL convolution skips the kernel flip, so it's actually cross-correlation",
+          "correct": true
+        },
+        {
+          "text": "DL convolution only works on 1D data",
+          "correct": false
+        },
+        {
+          "text": "They are computationally identical with no difference",
+          "correct": false
+        }
+      ],
+      "explanation": "Deep learning 'convolution' layers skip the kernel-flip step, making them cross-correlation. For learned kernels, this is functionally equivalent."
+    },
+    {
+      "id": "m3-q3",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Receptive Field",
+      "question": "Stacking two 3\u00d73 convolutions (stride 1) produces an effective receptive field of what size?",
+      "options": [
+        {
+          "text": "3\u00d73",
+          "correct": false
+        },
+        {
+          "text": "5\u00d75",
+          "correct": true
+        },
+        {
+          "text": "6\u00d76",
+          "correct": false
+        },
+        {
+          "text": "9\u00d79",
+          "correct": false
+        }
+      ],
+      "explanation": "Two 3\u00d73 convolutions compose to cover 5\u00d75 input pixels \u2014 the motivation behind VGG's stacked small filters."
+    },
+    {
+      "id": "m3-q4",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Dilated Convolution",
+      "question": "What is the main benefit of dilated (atrous) convolutions?",
+      "options": [
+        {
+          "text": "They reduce the number of parameters relative to standard convolutions",
+          "correct": false
+        },
+        {
+          "text": "They expand the receptive field without increasing parameters or losing resolution",
+          "correct": true
+        },
+        {
+          "text": "They automatically learn the optimal kernel size",
+          "correct": false
+        },
+        {
+          "text": "They eliminate the need for pooling",
+          "correct": false
+        }
+      ],
+      "explanation": "Dilation inserts gaps between kernel taps, enlarging the receptive field while keeping parameter count and feature map size fixed."
+    },
+    {
+      "id": "m3-q5",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "Translation Invariance",
+      "question": "Which operation in a CNN contributes most to approximate translation invariance of the final representation?",
+      "options": [
+        {
+          "text": "Weight sharing in convolutional filters",
+          "correct": false
+        },
+        {
+          "text": "Spatial pooling (e.g. max pooling)",
+          "correct": true
+        },
+        {
+          "text": "Batch normalization",
+          "correct": false
+        },
+        {
+          "text": "Dropout",
+          "correct": false
+        }
+      ],
+      "explanation": "Convolution gives equivariance; pooling (plus the final global average) is what yields approximate translation invariance of outputs."
+    }
+  ]
+}

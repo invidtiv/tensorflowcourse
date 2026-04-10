@@ -1,0 +1,883 @@
+---
+title: "Generative Adversarial Networks"
+module: 7
+moduleId: "07-gans"
+description: "Minimax theory, mode collapse, DCGAN, conditional GAN, WGAN-GP, StyleGAN concepts, and evaluation metrics (IS/FID)."
+shortTitle: "GANs"
+duration: "1 week"
+difficulty: "intermediate"
+icon: "drama"
+color: "#a855f7"
+prerequisites:
+  - "4"
+objectives:
+  - "Understand adversarial training theory"
+  - "Implement GAN, DCGAN, and conditional GAN"
+  - "Address mode collapse with WGAN-GP"
+  - "Evaluate generative models with IS and FID"
+  - "Explore StyleGAN architecture concepts"
+source: "content/modules/07-gans/theory.md"
+generatedBy: "scripts/convert-theory.mjs"
+lastConverted: "2026-04-10T18:28:37.022Z"
+---
+## Table of Contents
+1. [Foundations of Adversarial Learning](#1-foundations-of-adversarial-learning)
+2. [Minimax Game Theory and Nash Equilibrium](#2-minimax-game-theory-and-nash-equilibrium)
+3. [Jensen-Shannon Divergence and Optimal Discriminator](#3-jensen-shannon-divergence-and-optimal-discriminator)
+4. [Training Instability and Mode Collapse](#4-training-instability-and-mode-collapse)
+5. [Wasserstein GAN Theory](#5-wasserstein-gan-theory)
+6. [Spectral Normalization Theory](#6-spectral-normalization-theory)
+7. [Progressive Growing Theory](#7-progressive-growing-theory)
+8. [StyleGAN Architecture Innovations](#8-stylegan-architecture-innovations)
+9. [Conditional Generation Techniques](#9-conditional-generation-techniques)
+10. [GAN Evaluation Theory](#10-gan-evaluation-theory)
+11. [Introduction to Diffusion Models](#11-introduction-to-diffusion-models)
+
+---
+
+## 1. Foundations of Adversarial Learning
+
+### 1.1 The Generative Modeling Problem
+
+Generative modeling aims to learn the underlying probability distribution $p_{data}(x)$ from a set of samples $\{x^{(i)}\}_{i=1}^N$ drawn from this distribution. The fundamental challenge is to construct a model that can:
+
+- **Generate new samples** that appear to come from $p_{data}(x)$
+- **Capture the full diversity** of the data distribution
+- **Enable sampling** in a computationally efficient manner
+
+Traditional approaches to generative modeling include:
+
+| Approach | Method | Limitation |
+|----------|--------|------------|
+| Explicit density | Maximum likelihood estimation | Requires tractable density |
+| Approximate density | Variational inference | Loose lower bounds |
+| Implicit density | MCMC methods | Slow convergence |
+| Implicit sampling | GANs | No explicit density |
+
+### 1.2 The Adversarial Framework
+
+GANs introduce a novel paradigm where two neural networks compete in a zero-sum game:
+
+**Generator Network G:**
+- Input: Random noise $z \sim p_z(z)$ (typically Gaussian)
+- Output: Synthetic sample $G(z)$
+- Objective: Fool the discriminator into classifying fake samples as real
+
+**Discriminator Network D:**
+- Input: Sample $x$ (real or generated)
+- Output: Probability $D(x) \in [0,1]$ that $x$ is real
+- Objective: Distinguish between real and fake samples
+
+### 1.3 The Adversarial Objective Function
+
+The original GAN objective (Goodfellow et al., 2014) is formulated as:
+
+$$\min_G \max_D V(D, G) = \mathbb{E}_{x \sim p_{data}(x)}[\log D(x)] + \mathbb{E}_{z \sim p_z(z)}[\log(1 - D(G(z)))]$$
+
+This can be decomposed into two optimization problems:
+
+**Discriminator's Objective (for fixed G):**
+$$\max_D V(D, G) = \mathbb{E}_{x \sim p_{data}}[\log D(x)] + \mathbb{E}_{z \sim p_z}[\log(1 - D(G(z)))]$$
+
+**Generator's Objective (for fixed D):**
+$$\min_G V(D, G) = \mathbb{E}_{z \sim p_z}[\log(1 - D(G(z)))]$$
+
+### Key Insight: Why This Works
+
+The discriminator provides a **learned loss function** that adapts to the generator's current capabilities. Unlike fixed losses (MSE, cross-entropy), the discriminator loss evolves as the generator improves, providing increasingly sophisticated feedback.
+
+---
+
+## 2. Minimax Game Theory and Nash Equilibrium
+
+### 2.1 Game-Theoretic Foundations
+
+GAN training can be understood through the lens of **game theory**, specifically **two-player zero-sum games**.
+
+**Definition (Zero-Sum Game):**
+A game where one player's gain is exactly balanced by the other player's loss:
+$$V(G, D) + V(D, G) = 0$$
+
+**Definition (Nash Equilibrium):**
+A strategy profile $(G^*, D^*)$ is a Nash equilibrium if neither player can improve their payoff by unilaterally changing their strategy:
+$$V(G^*, D^*) \geq V(G, D^*) \quad \forall G$$
+$$V(G^*, D^*) \leq V(G^*, D) \quad \forall D$$
+
+### 2.2 The Minimax Theorem
+
+For zero-sum games, von Neumann's minimax theorem states:
+
+$$\min_G \max_D V(D, G) = \max_D \min_G V(D, G)$$
+
+This equality holds when:
+- The strategy spaces are convex
+- The value function is convex-concave
+- Saddle points exist
+
+**Theorem (GAN Nash Equilibrium):**
+For the GAN objective, the unique Nash equilibrium occurs when:
+1. $p_g = p_{data}$ (generator perfectly matches data distribution)
+2. $D^*(x) = \frac{1}{2}$ for all $x$ (discriminator cannot distinguish)
+
+At this equilibrium, the value function achieves:
+$$V(D^*, G^*) = -\log 4 = -2\log 2$$
+
+### 2.3 Proof of Global Optimality
+
+**Proposition:** The global minimum of the virtual training criterion $C(G) = \max_D V(D, G)$ is achieved if and only if $p_g = p_{data}$.
+
+**Proof:**
+
+For fixed $G$, the optimal discriminator is:
+$$D^*_G(x) = \frac{p_{data}(x)}{p_{data}(x) + p_g(x)}$$
+
+Substituting into the objective:
+$$C(G) = \mathbb{E}_{x \sim p_{data}}\left[\log \frac{p_{data}(x)}{p_{data}(x) + p_g(x)}\right] + \mathbb{E}_{x \sim p_g}\left[\log \frac{p_g(x)}{p_{data}(x) + p_g(x)}\right]$$
+
+Adding and subtracting $\log 2$:
+$$C(G) = -\log 4 + KL\left(p_{data} \bigg\| \frac{p_{data} + p_g}{2}\right) + KL\left(p_g \bigg\| \frac{p_{data} + p_g}{2}\right)$$
+
+Recognizing that:
+$$KL(P \| Q) + KL(R \| Q) = 2 \cdot JSD(P \| R)$$
+
+where $Q = \frac{P+R}{2}$, we obtain:
+$$C(G) = -\log 4 + 2 \cdot JSD(p_{data} \| p_g)$$
+
+Since $JSD \geq 0$ with equality iff $P = R$, the minimum $C^* = -\log 4$ is achieved only when $p_g = p_{data}$. ∎
+
+### 2.4 Practical Implications
+
+| Theoretical Property | Practical Challenge |
+|---------------------|---------------------|
+| Unique equilibrium | Non-convex optimization landscape |
+| Simultaneous updates | Sequential gradient descent |
+| Infinite capacity | Finite network capacity |
+| Global convergence | Local minima and saddle points |
+
+---
+
+## 3. Jensen-Shannon Divergence and Optimal Discriminator
+
+### 3.1 f-Divergences Background
+
+**Definition (f-Divergence):**
+For convex function $f$ with $f(1) = 0$:
+$$D_f(P \| Q) = \int q(x) f\left(\frac{p(x)}{q(x)}\right) dx$$
+
+Common f-divergences:
+
+| Divergence | $f(u)$ | Formula |
+|-----------|--------|---------|
+| KL | $u \log u$ | $\int p \log \frac{p}{q}$ |
+| Reverse KL | $-\log u$ | $\int q \log \frac{q}{p}$ |
+| $\chi^2$ | $(u-1)^2$ | $\int \frac{(p-q)^2}{q}$ |
+| JSD | $-(u+1)\log\frac{u+1}{2} + u\log u$ | $\frac{1}{2}KL(P\|M) + \frac{1}{2}KL(Q\|M)$ |
+
+where $M = \frac{P+Q}{2}$
+
+### 3.2 Jensen-Shannon Divergence
+
+**Definition:**
+$$JSD(P \| Q) = \frac{1}{2}KL\left(P \bigg\| \frac{P+Q}{2}\right) + \frac{1}{2}KL\left(Q \bigg\| \frac{P+Q}{2}\right)$$
+
+**Properties:**
+- Symmetric: $JSD(P \| Q) = JSD(Q \| P)$
+- Bounded: $0 \leq JSD(P \| Q) \leq \log 2$
+- Zero iff identical: $JSD(P \| Q) = 0 \iff P = Q$
+- Metric-like but not a true metric
+
+### 3.3 GANs as Minimizing JSD
+
+**Theorem:** The GAN objective is equivalent to minimizing the Jensen-Shannon divergence between $p_{data}$ and $p_g$.
+
+**Proof:**
+Starting from the optimal discriminator:
+$$D^*(x) = \frac{p_{data}(x)}{p_{data}(x) + p_g(x)}$$
+
+The generator's objective becomes:
+$$\min_G \mathbb{E}_{x \sim p_g}[\log(1 - D^*(x))]$$
+
+Expanding:
+$$= \min_G \int p_g(x) \log\left(\frac{p_g(x)}{p_{data}(x) + p_g(x)}\right) dx$$
+
+Adding the discriminator's term and simplifying:
+$$V(D^*, G) = -\log 4 + 2 \cdot JSD(p_{data} \| p_g)$$
+
+Therefore, minimizing $V(D^*, G)$ is equivalent to minimizing $JSD(p_{data} \| p_g)$. ∎
+
+### 3.4 Limitations of JSD
+
+**Problem: Vanishing Gradients**
+
+When the discriminator is too good ($D(x) \approx 1$ for real, $D(x) \approx 0$ for fake):
+$$\nabla_\theta \log(1 - D(G(z))) \approx 0$$
+
+This creates a **gradient saturation** problem where the generator receives no learning signal.
+
+**Problem: Disconnected Supports**
+
+If $p_{data}$ and $p_g$ have disjoint support (common in high dimensions), $JSD$ saturates at $\log 2$, providing no gradient information about how to move distributions closer.
+
+---
+
+## 4. Training Instability and Mode Collapse
+
+### 4.1 Sources of Instability
+
+GAN training faces several fundamental challenges:
+
+**1. Non-Stationary Objective**
+- The discriminator's optimal strategy changes as $G$ improves
+- Creates a "moving target" problem
+
+**2. Non-Convergence**
+- Gradient descent on non-convex games may not converge
+- Oscillations and limit cycles are common
+
+**3. Unbalanced Competition**
+- If $D$ is too strong: Generator gets no gradient signal
+- If $D$ is too weak: Generator receives poor guidance
+
+### 4.2 Mode Collapse: Mechanisms and Causes
+
+**Definition (Mode Collapse):**
+A failure mode where the generator learns to produce only a limited subset of the data distribution, ignoring other valid modes.
+
+**Mathematical Characterization:**
+
+Let $p_{data} = \sum_{i=1}^k \pi_i p_i$ be a mixture distribution with $k$ modes.
+
+Mode collapse occurs when $p_g \approx p_j$ for some $j$, ignoring modes $\{p_i\}_{i \neq j}$.
+
+**Causes of Mode Collapse:**
+
+1. **JSD Saturation:**
+   - When $p_g$ concentrates on a subset of modes
+   - $JSD(p_{data} \| p_g)$ may still be relatively small
+   - Insufficient penalty for missing modes
+
+2. **Discriminator Blind Spots:**
+   - Discriminator may have regions of high uncertainty
+   - Generator exploits these to produce low-quality samples
+
+3. **Gradient Direction:**
+   - Generator gradient points toward nearest mode
+   - No incentive to explore distant modes
+
+4. **Training Dynamics:**
+   ```
+   Mode Collapse Cycle:
+   1. Generator discovers easy mode → exploits it
+   2. Discriminator learns to detect this mode
+   3. Generator switches to different mode
+   4. Cycle repeats, never covering all modes
+   ```
+
+### 4.3 Quantifying Mode Collapse
+
+**Mode Coverage Ratio:**
+$$\text{MCR} = \frac{\text{Number of modes captured by } p_g}{\text{Total number of modes in } p_{data}}$$
+
+**Reverse KL Interpretation:**
+Mode collapse is related to minimizing reverse KL divergence:
+$$KL(p_g \| p_{data}) = \int p_g \log \frac{p_g}{p_{data}}$$
+
+This objective heavily penalizes generating samples where $p_{data} = 0$, encouraging the generator to be conservative and stick to high-probability regions.
+
+### 4.4 Architectural Solutions
+
+| Technique | Mechanism | Effectiveness |
+|-----------|-----------|---------------|
+| Minibatch discrimination | Compare samples within batch | Moderate |
+| Unrolled GANs | Lookahead gradient computation | High (expensive) |
+| Multi-scale structure | Hierarchical generation | High |
+| Wasserstein loss | Continuous distance metric | Very High |
+
+---
+
+## 5. Wasserstein GAN Theory
+
+### 5.1 Motivation: Earth Mover's Distance
+
+The **Wasserstein distance** (Earth Mover's Distance) addresses the limitations of JSD by providing a continuous, meaningful distance metric even for distributions with disjoint support.
+
+**Intuition:**
+Imagine $p$ and $q$ as piles of dirt. The Wasserstein distance measures the minimum "work" required to transform one pile into the other.
+
+### 5.2 Mathematical Definition
+
+**Definition (Wasserstein-1 Distance / Earth Mover's Distance):**
+$$W_1(P, Q) = \inf_{\gamma \in \Pi(P, Q)} \mathbb{E}_{(x,y) \sim \gamma}[\|x - y\|]$$
+
+where $\Pi(P, Q)$ is the set of all joint distributions with marginals $P$ and $Q$.
+
+**Kantorovich-Rubinstein Duality:**
+$$W_1(P, Q) = \sup_{\|f\|_L \leq 1} \mathbb{E}_{x \sim P}[f(x)] - \mathbb{E}_{x \sim Q}[f(x)]$$
+
+where the supremum is over all **1-Lipschitz** functions $f$.
+
+### 5.3 Wasserstein GAN Formulation
+
+**Theorem (WGAN):** Replacing the discriminator with a critic that approximates a 1-Lipschitz function yields:
+
+$$\min_G \max_{\|D\|_L \leq 1} \mathbb{E}_{x \sim p_{data}}[D(x)] - \mathbb{E}_{z \sim p_z}[D(G(z))]$$
+
+**Key Advantages:**
+
+1. **Continuous Gradients:** $W_1$ is continuous and differentiable everywhere
+2. **Meaningful Distance:** Provides useful gradients even for disjoint supports
+3. **Correlates with Quality:** Lower $W_1$ generally means better sample quality
+
+### 5.4 Lipschitz Constraint Enforcement
+
+**Method 1: Weight Clipping**
+$$w \leftarrow \text{clip}(w, -c, c)$$
+- Simple but limits network capacity
+- May create pathological behavior
+
+**Method 2: Gradient Penalty (WGAN-GP)**
+$$\mathcal{L}_{GP} = \lambda \mathbb{E}_{\hat{x}}[(\|\nabla_{\hat{x}} D(\hat{x})\|_2 - 1)^2]$$
+
+where $\hat{x} = \epsilon x + (1-\epsilon)G(z)$ for $\epsilon \sim U[0,1]$.
+
+**Theorem (WGAN-GP):** The gradient penalty encourages the critic to be approximately 1-Lipschitz in the region of interest.
+
+### 5.5 Comparison: JSD vs Wasserstein
+
+| Property | JSD (Original GAN) | Wasserstein (WGAN) |
+|----------|-------------------|-------------------|
+| Continuity | Discontinuous | Continuous |
+| Gradients | Vanish with good D | Always informative |
+| Training stability | Unstable | More stable |
+| Mode coverage | Poor | Better |
+| Convergence | Oscillatory | Smoother |
+| Computational cost | Lower | Higher |
+
+---
+
+## 6. Spectral Normalization Theory
+
+### 6.1 Lipschitz Constants and Spectral Norm
+
+**Definition (Spectral Norm):**
+For a matrix $W$, the spectral norm is:
+$$\sigma(W) = \max_{h \neq 0} \frac{\|Wh\|_2}{\|h\|_2} = \sqrt{\lambda_{max}(W^T W)}$$
+
+where $\lambda_{max}$ denotes the largest eigenvalue.
+
+**Property:** For a linear layer $f(x) = Wx$, the Lipschitz constant equals $\sigma(W)$.
+
+### 6.2 Spectral Normalization for GANs
+
+**Theorem (Spectral Normalization):** Normalizing each layer's weight matrix by its spectral norm ensures the entire network is 1-Lipschitz:
+
+$$\bar{W}_{SN} = \frac{W}{\sigma(W)}$$
+
+**Proof Sketch:**
+For a neural network $f = f_n \circ f_{n-1} \circ \cdots \circ f_1$:
+$$\text{Lip}(f) \leq \prod_{i=1}^n \text{Lip}(f_i)$$
+
+For linear layers with spectral normalization:
+$$\text{Lip}(f_i) = \sigma(\bar{W}_{SN}) = 1$$
+
+Therefore, $\text{Lip}(f) \leq 1$. ∎
+
+### 6.3 Power Iteration Method
+
+Computing $\sigma(W)$ exactly via SVD is expensive. The **power iteration method** provides an efficient approximation:
+
+```python
+Algorithm: Power Iteration
+1. Initialize u randomly
+2. For k iterations:
+   v ← W^T u / ||W^T u||
+   u ← Wv / ||Wv||
+3. Return σ ≈ u^T W v
+```
+
+**Complexity:** $O(d^2)$ per iteration vs $O(d^3)$ for full SVD.
+
+### 6.4 Comparison with Other Normalization
+
+| Method | Constraint | Computational Cost | Effectiveness |
+|--------|-----------|-------------------|---------------|
+| Weight Clipping | $\|W\|_\infty \leq c$ | Low | Poor capacity |
+| Gradient Penalty | Soft Lipschitz | High (forward+backward) | Good |
+| Spectral Norm | $\sigma(W) = 1$ | Medium (power iter) | Excellent |
+| Layer Norm | Mean=0, Var=1 | Low | No Lipschitz guarantee |
+| Batch Norm | Per-batch stats | Low | Training instability |
+
+---
+
+## 7. Progressive Growing Theory
+
+### 7.1 Multi-Scale Generation
+
+Progressive Growing of GANs (PGGAN) introduces a training methodology where both generator and discriminator are built up progressively, starting from low resolution.
+
+**Core Principle:**
+Learning coarse-to-fine structure is easier than learning full resolution directly.
+
+### 7.2 Progressive Training Schedule
+
+**Phase Structure:**
+```python
+Phase 1: 4×4 resolution
+  └─ Train G_4 and D_4
+
+Phase 2: 8×8 resolution
+  └─ Fade in layers to G_8 and D_8
+  └─ Blend: α·G_4 + (1-α)·G_8
+
+Phase 3: 16×16 resolution
+  └─ Fade in additional layers
+  └─ Continue blending
+
+... up to target resolution (1024×1024)
+```
+
+### 7.3 Smooth Transition Mechanism
+
+**Fade-in Layer:**
+During transition from $2^n \times 2^n$ to $2^{n+1} \times 2^{n+1}$:
+
+$$G_{new}(z) = (1 - \alpha) \cdot \text{upsample}(G_{old}(z)) + \alpha \cdot G_{additional}(z)$$
+
+where $\alpha$ linearly increases from 0 to 1 over training iterations.
+
+### 7.4 Theoretical Justification
+
+**Benefit 1: Curriculum Learning**
+- Early layers learn coarse structure (pose, general shape)
+- Later layers refine details (texture, fine features)
+- Natural curriculum emerges from the architecture
+
+**Benefit 2: Stabilized Training**
+- Lower resolution = smaller latent space
+- Easier to achieve good coverage of data manifold
+- Progressive refinement prevents mode collapse
+
+**Benefit 3: Computational Efficiency**
+- Early training is fast (small networks)
+- Most iterations at lower resolution
+- Total training time comparable to fixed architecture
+
+### 7.5 Minibatch Standard Deviation
+
+To encourage diversity, PGGAN adds a feature to the discriminator:
+
+$$\text{MinibatchStd}(x) = \sqrt{\frac{1}{B}\sum_{i=1}^B (x_i - \bar{x})^2}$$
+
+This is concatenated as an additional feature channel, forcing the discriminator to consider batch statistics and thereby encouraging the generator to produce diverse samples.
+
+---
+
+## 8. StyleGAN Architecture Innovations
+
+### 8.1 Beyond Progressive Growing
+
+StyleGAN (Karras et al., 2019) builds on PGGAN but introduces fundamental architectural innovations inspired by style transfer literature.
+
+### 8.2 Style-Based Generator Architecture
+
+**Key Innovation:** Instead of feeding latent code $z$ only at the input, StyleGAN uses **adaptive instance normalization (AdaIN)** to control each layer's style.
+
+**Architecture Components:**
+
+```python
+Mapping Network: z (512-dim) → w (512-dim)
+  └─ 8-layer MLP
+  └─ Disentangles latent space
+
+Synthesis Network: w → image
+  └─ Constant learned input (4×4×512)
+  └─ For each resolution layer:
+      ├─ Upsample
+      ├─ Convolution
+      ├─ AdaIN(w) ← style injection
+      └─ Noise injection
+```
+
+### 8.3 Adaptive Instance Normalization (AdaIN)
+
+**Definition:**
+$$\text{AdaIN}(x, y) = \sigma(y) \cdot \frac{x - \mu(x)}{\sigma(x)} + \mu(y)$$
+
+where $y$ is the style vector derived from $w$.
+
+**Interpretation:**
+- $\mu(x), \sigma(x)$: Normalize content
+- $\mu(y), \sigma(y)$: Apply style
+
+### 8.4 Disentangled Latent Space
+
+**Mapping Network Purpose:**
+Transform $z \sim \mathcal{N}(0, I)$ into an **intermediate latent space** $W$ that is more disentangled.
+
+**Properties of W Space:**
+- Better separation of factors of variation
+- Linear subspaces correspond to semantic attributes
+- More suitable for style mixing and controlled generation
+
+### 8.5 Stochastic Variation
+
+**Noise Injection:**
+Uncorrelated Gaussian noise is added after each convolution:
+
+$$x' = x + \text{noise} \cdot \gamma$$
+
+where $\gamma$ is learned per-channel.
+
+**Effect:**
+- Adds stochastic detail (hair, pores, stubble)
+- Does not affect overall structure
+- Creates natural-looking variation
+
+### 8.6 Style Mixing
+
+**Technique:** Use different $w$ vectors for different layers:
+
+```python
+# Style mixing example
+w1 = mapping_network(z1)  # Coarse styles
+w2 = mapping_network(z2)  # Fine styles
+
+# Apply w1 to coarse layers (4×4 - 8×8)
+# Apply w2 to fine layers (16×16 - 1024×1024)
+```
+
+**Semantic Layer Groups:**
+| Resolution | Controls |
+|-----------|----------|
+| 4×4 - 8×8 | Pose, general shape, glasses |
+| 16×16 - 32×32 | Facial features, hair style |
+| 64×64 - 1024×1024 | Color scheme, fine details |
+
+### 8.7 StyleGAN2 and StyleGAN3 Improvements
+
+**StyleGAN2 Fixes:**
+- Removed progressive growing artifacts
+- Revised normalization (weight demodulation)
+- Improved path length regularization
+
+**StyleGAN3 Improvements:**
+- Translation and rotation equivariance
+- Better handling of texture sticking
+- Continuous motion in latent space
+
+---
+
+## 9. Conditional Generation Techniques
+
+### 9.1 Conditional GAN Framework
+
+**Objective:** Generate samples conditioned on auxiliary information $y$:
+$$x \sim p_g(x | y)$$
+
+**Conditional GAN Objective:**
+$$\min_G \max_D V(D, G) = \mathbb{E}_{x,y}[\log D(x, y)] + \mathbb{E}_{z,y}[\log(1 - D(G(z, y), y))]$$
+
+### 9.2 Conditioning Mechanisms
+
+**Method 1: Concatenation**
+- Concatenate $y$ with $z$ at input
+- Concatenate $y$ with image at discriminator
+
+**Method 2: Projection Discriminator**
+$$D(x, y) = \phi(x)^T \psi(y)$$
+- Encourages feature alignment
+- More stable training
+
+**Method 3: Auxiliary Classifier (AC-GAN)**
+$$\mathcal{L} = \mathcal{L}_{GAN} + \lambda \mathcal{L}_{classifier}$$
+- Discriminator also predicts class label
+- Strong conditioning signal
+
+### 9.3 cGAN with Projection
+
+**Miyato & Koyama (2018):**
+$$D(x, y) = \frac{\phi(x)^T \psi(y)}{\|\phi(x)\| \|\psi(y)\|}$$
+
+**Advantages:**
+- No additional parameters for conditioning
+- Works with any number of classes
+- More stable than concatenation
+
+### 9.4 Class-Conditional Batch Normalization
+
+**Technique:** Use separate batch norm parameters per class:
+
+$$\text{CCBN}(x, y) = \gamma_y \cdot \frac{x - \mu_y}{\sqrt{\sigma_y^2 + \epsilon}} + \beta_y$$
+
+**Application:**
+- BigGAN uses this for large-scale conditional generation
+- Each class learns its own normalization statistics
+
+### 9.5 Hierarchical Conditioning
+
+For complex conditional generation (e.g., text-to-image):
+
+**Stacked Architecture:**
+```python
+Stage 1: Text → Low-res image (64×64)
+Stage 2: Low-res + Text → Mid-res (128×128)
+Stage 3: Mid-res + Text → High-res (256×256)
+```
+
+**Attention Mechanisms:**
+- Word-level attention to image regions
+- Fine-grained control over generation
+
+---
+
+## 10. GAN Evaluation Theory
+
+### 10.1 Challenges in GAN Evaluation
+
+Unlike supervised learning with clear metrics (accuracy, loss), GAN evaluation faces:
+
+1. **No explicit likelihood** (for most GAN variants)
+2. **Multiple objectives** (quality vs. diversity)
+3. **Mode coverage** vs. sample quality trade-off
+4. **Human perception** is the ultimate judge
+
+### 10.2 Inception Score (IS)
+
+**Definition:**
+$$IS(G) = \exp\left(\mathbb{E}_{x \sim p_g} KL(p(y|x) \| p(y))\right)$$
+
+where:
+- $p(y|x)$: Conditional label distribution (from Inception network)
+- $p(y) = \int p(y|x) p_g(x) dx$: Marginal label distribution
+
+**Interpretation:**
+- High $p(y|x)$: Image has clear, distinct class (high quality)
+- High entropy $p(y)$: Diverse class distribution (good coverage)
+- IS balances both objectives
+
+**Properties:**
+| Aspect | Evaluation |
+|--------|-----------|
+| Quality sensitivity | High |
+| Mode coverage | Moderate |
+| Sensitivity to class imbalance | High |
+| Computational cost | Low |
+
+**Limitations:**
+- Favors "memorization" of training data
+- Insensitive to intra-class diversity
+- Depends on Inception network's classification ability
+
+### 10.3 Fréchet Inception Distance (FID)
+
+**Definition:**
+$$FID = \|\mu_{real} - \mu_{gen}\|^2 + \text{Tr}\left(\Sigma_{real} + \Sigma_{gen} - 2\sqrt{\Sigma_{real}\Sigma_{gen}}\right)$$
+
+where $\mu$ and $\Sigma$ are mean and covariance of Inception features.
+
+**Interpretation:**
+- Measures distance between feature distributions
+- Lower FID = more similar to real data
+- Captures both quality and diversity
+
+**Advantages over IS:**
+- More robust to noise
+- Better correlation with human judgment
+- Measures actual distribution distance
+
+**Properties:**
+| Aspect | Evaluation |
+|--------|-----------|
+| Quality sensitivity | High |
+| Mode coverage | High |
+| Sample size sensitivity | Moderate |
+| Computational cost | Medium |
+
+### 10.4 Precision and Recall
+
+**Motivation:** Separate quality (precision) from diversity (recall).
+
+**Precision:** Fraction of generated samples that are "realistic"
+$$\text{Precision} = \frac{|\{x_g : x_g \text{ is realistic}\}|}{|\{x_g\}|}$$
+
+**Recall:** Fraction of real data manifold covered by generated samples
+$$\text{Recall} = \frac{|\{x_r : x_r \text{ is matched by } x_g\}|}{|\{x_r\}|}$$
+
+**Implementation:**
+1. Extract features using Inception/VGG
+2. Define "realistic" via k-NN in feature space
+3. Compute precision/recall based on manifold coverage
+
+**Trade-off Analysis:**
+```python
+High Precision, Low Recall  → Good quality, poor diversity (mode collapse)
+Low Precision, High Recall  → Poor quality, good diversity
+High Precision, High Recall → Ideal GAN
+```
+
+### 10.5 Kernel Inception Distance (KID)
+
+**Definition:**
+$$KID = \mathbb{E}_{x,x' \sim p_{data}}[k(x, x')] + \mathbb{E}_{y,y' \sim p_g}[k(y, y')] - 2\mathbb{E}_{x \sim p_{data}, y \sim p_g}[k(x, y)]$$
+
+where $k$ is a polynomial kernel.
+
+**Advantages:**
+- Unbiased estimator (unlike FID)
+- Works better with small sample sizes
+- No assumptions about Gaussianity
+
+### 10.6 Comparison of Metrics
+
+| Metric | What it Measures | Best For | Limitations |
+|--------|-----------------|----------|-------------|
+| IS | Quality + Diversity | Quick evaluation | Class bias |
+| FID | Distribution distance | Standard benchmark | Sample size dependent |
+| Precision | Quality | Quality-focused analysis | Ignores diversity |
+| Recall | Diversity | Mode coverage analysis | Ignores quality |
+| KID | Distribution distance | Small sample evaluation | Less interpretable |
+| LPIPS | Perceptual similarity | Image similarity | Pairwise only |
+
+---
+
+## 11. Introduction to Diffusion Models
+
+### 11.1 Limitations of GANs
+
+Despite their success, GANs have fundamental limitations:
+
+1. **Training instability:** Requires careful balancing of G and D
+2. **Mode collapse:** Difficulty covering full data distribution
+3. **No explicit likelihood:** Cannot compute $p(x)$
+4. **Non-reversible:** Cannot easily invert the generation process
+
+### 11.2 Diffusion Models: Core Concept
+
+Diffusion models (Denoising Diffusion Probabilistic Models, DDPM) take a fundamentally different approach:
+
+**Forward Process (Diffusion):**
+Gradually add Gaussian noise to data over $T$ steps:
+$$q(x_t | x_{t-1}) = \mathcal{N}(x_t; \sqrt{1-\beta_t} x_{t-1}, \beta_t I)$$
+
+**Reverse Process (Denoising):**
+Learn to reverse the diffusion:
+$$p_\theta(x_{t-1} | x_t) = \mathcal{N}(x_{t-1}; \mu_\theta(x_t, t), \Sigma_\theta(x_t, t))$$
+
+### 11.3 Forward Process Properties
+
+**Closed-form Sampling:**
+$$q(x_t | x_0) = \mathcal{N}(x_t; \sqrt{\bar{\alpha}_t} x_0, (1 - \bar{\alpha}_t) I)$$
+
+where $\alpha_t = 1 - \beta_t$ and $\bar{\alpha}_t = \prod_{s=1}^t \alpha_s$.
+
+**Key Property:** Can sample $x_t$ directly from $x_0$ without iterating through intermediate steps.
+
+### 11.4 Training Objective
+
+**Simplified Loss:**
+$$\mathcal{L}_{simple} = \mathbb{E}_{x_0, t, \epsilon}\left[\|\epsilon - \epsilon_\theta(x_t, t)\|^2\right]$$
+
+where:
+- $x_t = \sqrt{\bar{\alpha}_t} x_0 + \sqrt{1 - \bar{\alpha}_t} \epsilon$
+- $\epsilon \sim \mathcal{N}(0, I)$
+- $\epsilon_\theta$ is the noise prediction network
+
+**Interpretation:** Learn to predict the noise that was added.
+
+### 11.5 Comparison: GANs vs Diffusion Models
+
+| Aspect | GANs | Diffusion Models |
+|--------|------|-----------------|
+| Training stability | Unstable | Stable |
+| Mode coverage | Prone to collapse | Excellent |
+| Sample quality | Very high | Very high |
+| Generation speed | Fast (single forward) | Slow (many steps) |
+| Likelihood | Implicit | Explicit |
+| Invertibility | No | Yes |
+| Conditioning | Moderate | Excellent |
+| Training time | Fast | Slow |
+
+### 11.6 Accelerated Sampling
+
+**Problem:** Original DDPM requires 1000+ steps for generation.
+
+**Solutions:**
+
+| Method | Approach | Speedup |
+|--------|----------|---------|
+| DDIM | Non-Markovian sampling | 10-50× |
+| Progressive distillation | Student-teacher | 1000× |
+| Latent diffusion | Operate in latent space | 10× |
+| Consistency models | Single-step generation | 1000× |
+
+### 11.7 Connection to Score-Based Models
+
+**Score Function:**
+$$s_\theta(x, t) = \nabla_x \log p_\theta(x, t)$$
+
+**Equivalence:**
+The diffusion model's noise prediction is related to the score:
+$$\epsilon_\theta(x_t, t) \propto -\sqrt{1 - \bar{\alpha}_t} \cdot s_\theta(x_t, t)$$
+
+This connects diffusion models to **score matching** and **Langevin dynamics**.
+
+---
+
+## Key Insights Summary
+
+### Theoretical Foundations
+1. **GANs minimize JSD** between data and generated distributions
+2. **Nash equilibrium** occurs when $p_g = p_{data}$ and $D(x) = 0.5$
+3. **Wasserstein distance** provides continuous gradients unlike JSD
+
+### Training Challenges
+1. **Mode collapse** arises from JSD properties and gradient dynamics
+2. **Instability** comes from non-stationary objectives and non-convex games
+3. **Lipschitz constraints** are essential for WGAN stability
+
+### Architectural Innovations
+1. **Progressive growing** enables stable high-resolution generation
+2. **StyleGAN** separates content and style through AdaIN
+3. **Spectral normalization** provides elegant Lipschitz constraint
+
+### Evaluation
+1. **FID** is the standard metric for overall quality
+2. **Precision/Recall** separate quality from diversity
+3. **Multiple metrics** should be used for comprehensive evaluation
+
+### Future Directions
+1. **Diffusion models** offer stable training with explicit likelihood
+2. **Hybrid approaches** combine GAN speed with diffusion quality
+3. **Conditional generation** enables controllable, application-specific models
+
+---
+
+## Common Pitfalls and Solutions
+
+| Pitfall | Cause | Solution |
+|---------|-------|----------|
+| Vanishing gradients | Too strong discriminator | Use WGAN or adjust learning rates |
+| Mode collapse | JSD limitations | Minibatch discrimination, WGAN |
+| Training oscillation | Non-convergence | Reduce learning rate, use spectral norm |
+| Checkerboard artifacts | Transposed convolutions | Use resize-convolution |
+| Blurry images | L2 loss in pixel space | Use perceptual loss |
+| Poor conditioning | Weak conditional signal | Use projection discriminator |
+
+---
+
+## References
+
+1. Goodfellow, I., et al. (2014). Generative Adversarial Networks. NeurIPS.
+2. Arjovsky, M., et al. (2017). Wasserstein GAN. ICML.
+3. Gulrajani, I., et al. (2017). Improved Training of Wasserstein GANs. NeurIPS.
+4. Miyato, T., et al. (2018). Spectral Normalization for GANs. ICLR.
+5. Karras, T., et al. (2018). Progressive Growing of GANs. ICLR.
+6. Karras, T., et al. (2019). A Style-Based Generator Architecture for GANs. CVPR.
+7. Brock, A., et al. (2019). Large Scale GAN Training for High Fidelity Natural Image Synthesis. ICLR.
+8. Heusel, M., et al. (2017). GANs Trained by a Two Time-Scale Update Rule. NeurIPS.
+9. Salimans, T., et al. (2016). Improved Techniques for Training GANs. NeurIPS.
+10. Ho, J., et al. (2020). Denoising Diffusion Probabilistic Models. NeurIPS.
+
+---
+
+*This theoretical content is designed for a semester-long graduate course on deep learning with TensorFlow. Each section provides the mathematical foundation necessary for understanding and implementing state-of-the-art generative models.*

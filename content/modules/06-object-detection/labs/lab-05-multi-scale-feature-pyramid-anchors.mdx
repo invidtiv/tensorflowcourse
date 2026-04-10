@@ -1,0 +1,490 @@
+---
+title: "Multi-Scale Feature Pyramid Anchors"
+module: 6
+labNumber: 5
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Multi-Scale Feature Pyramid Anchors
+
+## Objectives
+- Implement Feature Pyramid Network (FPN) style anchor generation
+- Create anchors for different pyramid levels
+- Understand scale assignment for objects
+- Implement anchor-to-ground-truth matching
+
+## Complete Implementation
+
+```python
+"""
+Lab 6.4: Multi-Scale Feature Pyramid Anchors
+Object Detection Systems - Module 6
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+from typing import List, Tuple, Dict
+
+# =============================================================================
+# Section 1: FPN Anchor Generator Class
+# =============================================================================
+
+class FPNAnchorGenerator:
+    """
+    Feature Pyramid Network anchor generator.
+    Generates anchors at multiple scales for multi-scale detection.
+    """
+    
+    def __init__(self,
+                 image_size: Tuple[int, int] = (640, 640),
+                 strides: List[int] = [8, 16, 32, 64, 128],
+                 scales_per_level: List[List[float]] = None,
+                 aspect_ratios: List[float] = [0.5, 1.0, 2.0]):
+        """
+        Initialize FPN anchor generator.
+        
+        Args:
+            image_size: (height, width) of input image
+            strides: Feature map strides for each pyramid level
+            scales_per_level: Anchor scales for each level (in pixels)
+            aspect_ratios: Aspect ratios for all levels
+        """
+        self.image_size = image_size
+        self.strides = strides
+        self.aspect_ratios = aspect_ratios
+        
+        if scales_per_level is None:
+            # Default scales: P3 to P7
+            self.scales_per_level = [
+                [32, 64, 128],      # P3 (stride 8)
+                [64, 128, 256],     # P4 (stride 16)
+                [128, 256, 512],    # P5 (stride 32)
+                [256, 512, 768],    # P6 (stride 64)
+                [512, 768, 1024]    # P7 (stride 128)
+            ]
+        else:
+            self.scales_per_level = scales_per_level
+        
+        # Generate all anchors
+        self.anchors_dict = self._generate_all_anchors()
+        self.all_anchors = self._concatenate_anchors()
+        
+    def _generate_base_anchors(self, scale: float, aspect_ratios: List[float]) -> tf.Tensor:
+        """Generate base anchors for a single scale."""
+        anchors = []
+        for ratio in aspect_ratios:
+            width = scale * np.sqrt(ratio)
+            height = scale / np.sqrt(ratio)
+            
+            x_min = -width / 2
+            y_min = -height / 2
+            x_max = width / 2
+            y_max = height / 2
+            
+            anchors.append([x_min, y_min, x_max, y_max])
+        
+        return tf.constant(anchors, dtype=tf.float32)
+    
+    def _generate_level_anchors(self,
+                                 stride: int,
+                                 scales: List[float]) -> tf.Tensor:
+        """Generate anchors for a single pyramid level."""
+        ih, iw = self.image_size
+        fh = ih // stride
+        fw = iw // stride
+        
+        # Generate base anchors (normalized by stride)
+        base_anchors_list = []
+        for scale in scales:
+            normalized_scale = scale / stride
+            base_anchors = self._generate_base_anchors(normalized_scale, self.aspect_ratios)
+            base_anchors_list.append(base_anchors)
+        
+        base_anchors = tf.concat(base_anchors_list, axis=0)
+        
+        # Create grid
+        shift_x = tf.range(fw, dtype=tf.float32) * stride
+        shift_y = tf.range(fh, dtype=tf.float32) * stride
+        shift_x, shift_y = tf.meshgrid(shift_x, shift_y)
+        
+        shift_x = tf.reshape(shift_x, [-1])
+        shift_y = tf.reshape(shift_y, [-1])
+        shifts = tf.stack([shift_x, shift_y, shift_x, shift_y], axis=1)
+        
+        # Add shifts to base anchors
+        anchors = tf.expand_dims(base_anchors, 0) + tf.expand_dims(shifts, 1)
+        anchors = tf.reshape(anchors, [-1, 4])
+        
+        # Normalize to [0, 1]
+        anchors = anchors / tf.constant([iw, ih, iw, ih], dtype=tf.float32)
+        anchors = tf.clip_by_value(anchors, 0.0, 1.0)
+        
+        return anchors
+    
+    def _generate_all_anchors(self) -> Dict[int, Dict]:
+        """Generate anchors for all pyramid levels."""
+        anchors_dict = {}
+        
+        for stride, scales in zip(self.strides, self.scales_per_level):
+            anchors = self._generate_level_anchors(stride, scales)
+            ih, iw = self.image_size
+            fh, fw = ih // stride, iw // stride
+            
+            anchors_dict[stride] = {
+                'anchors': anchors,
+                'feature_size': (fh, fw),
+                'num_anchors_per_location': len(scales) * len(self.aspect_ratios),
+                'stride': stride
+            }
+        
+        return anchors_dict
+    
+    def _concatenate_anchors(self) -> tf.Tensor:
+        """Concatenate all level anchors."""
+        all_anchors = []
+        for data in self.anchors_dict.values():
+            all_anchors.append(data['anchors'])
+        return tf.concat(all_anchors, axis=0)
+    
+    def get_anchors_for_level(self, level: int) -> tf.Tensor:
+        """Get anchors for a specific pyramid level (0-indexed)."""
+        stride = self.strides[level]
+        return self.anchors_dict[stride]['anchors']
+    
+    def get_level_indices(self) -> List[Tuple[int, int]]:
+        """Get start and end indices for each level in concatenated anchors."""
+        indices = []
+        start = 0
+        for stride in self.strides:
+            num_anchors = len(self.anchors_dict[stride]['anchors'])
+            indices.append((start, start + num_anchors))
+            start += num_anchors
+        return indices
+
+
+# =============================================================================
+# Section 2: Anchor-to-Ground-Truth Matching
+# =============================================================================
+
+def match_anchors_to_gt(anchors: tf.Tensor,
+                        gt_boxes: tf.Tensor,
+                        gt_labels: tf.Tensor,
+                        pos_iou_thresh: float = 0.5,
+                        neg_iou_thresh: float = 0.4) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+    """
+    Match anchors to ground truth boxes based on IoU.
+    
+    Args:
+        anchors: All anchor boxes [N, 4]
+        gt_boxes: Ground truth boxes [M, 4]
+        gt_labels: Ground truth labels [M]
+        pos_iou_thresh: IoU threshold for positive match
+        neg_iou_thresh: IoU threshold for negative match
+    
+    Returns:
+        matched_gt_boxes: Matched GT box for each anchor [N, 4]
+        matched_labels: Matched label for each anchor [N]
+        matched_indices: Index of matched GT for each anchor [N]
+    """
+    # Calculate IoU between all anchors and GT boxes
+    # anchors: [N, 1, 4], gt_boxes: [1, M, 4]
+    anchors_exp = tf.expand_dims(anchors, 1)
+    gt_boxes_exp = tf.expand_dims(gt_boxes, 0)
+    
+    # Calculate intersection
+    x_min = tf.maximum(anchors_exp[:, :, 0], gt_boxes_exp[:, :, 0])
+    y_min = tf.maximum(anchors_exp[:, :, 1], gt_boxes_exp[:, :, 1])
+    x_max = tf.minimum(anchors_exp[:, :, 2], gt_boxes_exp[:, :, 2])
+    y_max = tf.minimum(anchors_exp[:, :, 3], gt_boxes_exp[:, :, 3])
+    
+    intersect_w = tf.maximum(0.0, x_max - x_min)
+    intersect_h = tf.maximum(0.0, y_max - y_min)
+    intersect_area = intersect_w * intersect_h
+    
+    # Calculate areas
+    anchor_area = (anchors[:, 2] - anchors[:, 0]) * (anchors[:, 3] - anchors[:, 1])
+    gt_area = (gt_boxes[:, 2] - gt_boxes[:, 0]) * (gt_boxes[:, 3] - gt_boxes[:, 1])
+    
+    anchor_area = tf.expand_dims(anchor_area, 1)
+    gt_area = tf.expand_dims(gt_area, 0)
+    
+    # Calculate IoU
+    union_area = anchor_area + gt_area - intersect_area
+    iou = intersect_area / (union_area + 1e-7)
+    
+    # Find best matching GT for each anchor
+    best_gt_iou = tf.reduce_max(iou, axis=1)
+    best_gt_idx = tf.argmax(iou, axis=1, output_type=tf.int32)
+    
+    # Assign labels
+    # -1: ignore, 0: background, >0: object class
+    matched_labels = tf.where(
+        best_gt_iou >= pos_iou_thresh,
+        tf.gather(gt_labels, best_gt_idx),
+        tf.where(best_gt_iou < neg_iou_thresh,
+                 tf.constant(0, dtype=gt_labels.dtype),
+                 tf.constant(-1, dtype=gt_labels.dtype))
+    )
+    
+    # Get matched GT boxes
+    matched_gt_boxes = tf.gather(gt_boxes, best_gt_idx)
+    
+    return matched_gt_boxes, matched_labels, best_gt_idx
+
+
+def compute_anchor_targets(anchors: tf.Tensor,
+                           matched_gt_boxes: tf.Tensor,
+                           matched_labels: tf.Tensor) -> Tuple[tf.Tensor, tf.Tensor]:
+    """
+    Compute regression targets for matched anchors.
+    
+    Args:
+        anchors: Anchor boxes [N, 4] in xyxy format
+        matched_gt_boxes: Matched GT boxes [N, 4]
+        matched_labels: Matched labels [N]
+    
+    Returns:
+        box_targets: Box regression targets [N, 4]
+        class_targets: Class targets [N]
+    """
+    # Convert to center format
+    anchor_centers = (anchors[:, :2] + anchors[:, 2:]) / 2
+    anchor_sizes = anchors[:, 2:] - anchors[:, :2]
+    
+    gt_centers = (matched_gt_boxes[:, :2] + matched_gt_boxes[:, 2:]) / 2
+    gt_sizes = matched_gt_boxes[:, 2:] - matched_gt_boxes[:, :2]
+    
+    # Compute targets (using log-space for sizes)
+    center_targets = (gt_centers - anchor_centers) / anchor_sizes
+    size_targets = tf.math.log(gt_sizes / anchor_sizes + 1e-7)
+    
+    box_targets = tf.concat([center_targets, size_targets], axis=1)
+    
+    # Only compute targets for positive anchors
+    positive_mask = matched_labels > 0
+    box_targets = box_targets * tf.expand_dims(tf.cast(positive_mask, tf.float32), 1)
+    
+    return box_targets, matched_labels
+
+
+# =============================================================================
+# Section 3: Scale Assignment for Objects
+# =============================================================================
+
+def assign_boxes_to_levels(boxes: tf.Tensor,
+                            image_size: Tuple[int, int],
+                            strides: List[int]) -> Dict[int, tf.Tensor]:
+    """
+    Assign ground truth boxes to appropriate FPN levels based on their size.
+    
+    Formula: level = floor(log2(sqrt(w*h) / 224) + 4)
+    
+    Args:
+        boxes: Ground truth boxes [N, 4]
+        image_size: (height, width) of image
+        strides: List of strides for each level
+    
+    Returns:
+        Dictionary mapping level index to box indices
+    """
+    # Compute box areas
+    widths = boxes[:, 2] - boxes[:, 0]
+    heights = boxes[:, 3] - boxes[:, 1]
+    areas = widths * heights * image_size[0] * image_size[1]  # Convert to pixels
+    
+    # Compute target level for each box
+    # Using formula: k = floor(log2(sqrt(w*h) / 224) + 4)
+    target_levels = tf.floor(tf.math.log(tf.sqrt(areas) / 224) / tf.math.log(2.0) + 4)
+    target_levels = tf.cast(target_levels, tf.int32)
+    
+    # Clamp to valid levels
+    min_level = 0
+    max_level = len(strides) - 1
+    target_levels = tf.clip_by_value(target_levels, min_level, max_level)
+    
+    # Group boxes by level
+    level_assignments = {}
+    for level in range(len(strides)):
+        mask = target_levels == level
+        indices = tf.where(mask)[:, 0]
+        level_assignments[level] = indices
+    
+    return level_assignments
+
+
+# =============================================================================
+# Section 4: Visualization
+# =============================================================================
+
+def visualize_anchor_matching(anchors: tf.Tensor,
+                               gt_boxes: tf.Tensor,
+                               matched_labels: tf.Tensor,
+                               image_size: Tuple[int, int] = (640, 640)):
+    """
+    Visualize anchor-to-GT matching.
+    """
+    fig, ax = plt.subplots(1, 1, figsize=(12, 12))
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.set_aspect('equal')
+    ax.invert_yaxis()
+    
+    # Plot all anchors (subsample for visibility)
+    sample_indices = np.linspace(0, len(anchors) - 1, min(500, len(anchors)), dtype=int)
+    sample_anchors = anchors.numpy()[sample_indices]
+    
+    for anchor in sample_anchors:
+        x_min, y_min, x_max, y_max = anchor
+        width = x_max - x_min
+        height = y_max - y_min
+        rect = patches.Rectangle(
+            (x_min, y_min), width, height,
+            linewidth=0.5, edgecolor='lightgray', facecolor='none', alpha=0.3
+        )
+        ax.add_patch(rect)
+    
+    # Plot positive anchors
+    positive_mask = matched_labels.numpy() > 0
+    positive_anchors = anchors.numpy()[positive_mask]
+    
+    for anchor in positive_anchors:
+        x_min, y_min, x_max, y_max = anchor
+        width = x_max - x_min
+        height = y_max - y_min
+        rect = patches.Rectangle(
+            (x_min, y_min), width, height,
+            linewidth=2, edgecolor='green', facecolor='none', alpha=0.7
+        )
+        ax.add_patch(rect)
+    
+    # Plot GT boxes
+    for gt_box in gt_boxes.numpy():
+        x_min, y_min, x_max, y_max = gt_box
+        width = x_max - x_min
+        height = y_max - y_min
+        rect = patches.Rectangle(
+            (x_min, y_min), width, height,
+            linewidth=3, edgecolor='red', facecolor='none'
+        )
+        ax.add_patch(rect)
+    
+    ax.set_title(f'Anchor Matching: {np.sum(positive_mask)} positive anchors')
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+    plt.show()
+
+
+def visualize_level_assignment(boxes: tf.Tensor,
+                                level_assignments: Dict[int, tf.Tensor],
+                                image_size: Tuple[int, int] = (640, 640)):
+    """
+    Visualize box-to-level assignment.
+    """
+    fig, ax = plt.subplots(1, 1, figsize=(10, 8))
+    
+    colors = plt.cm.rainbow(np.linspace(0, 1, len(level_assignments)))
+    
+    for (level, indices), color in zip(level_assignments.items(), colors):
+        if len(indices) == 0:
+            continue
+        
+        level_boxes = tf.gather(boxes, indices).numpy()
+        areas = (level_boxes[:, 2] - level_boxes[:, 0]) * (level_boxes[:, 3] - level_boxes[:, 1])
+        areas_pixels = areas * image_size[0] * image_size[1]
+        
+        ax.scatter(areas_pixels, [level] * len(indices),
+                  c=[color], alpha=0.6, s=50, label=f'Level {level}')
+    
+    ax.set_xlabel('Box Area (pixels²)')
+    ax.set_ylabel('FPN Level')
+    ax.set_title('Box-to-Level Assignment')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    plt.show()
+
+
+# =============================================================================
+# Main Execution
+# =============================================================================
+
+if __name__ == "__main__":
+    print("\n" + "=" * 70)
+    print("Lab 6.4: Multi-Scale Feature Pyramid Anchors")
+    print("=" * 70)
+    
+    # Initialize FPN anchor generator
+    print("\n" + "-" * 60)
+    print("Initializing FPN Anchor Generator")
+    print("-" * 60)
+    
+    image_size = (640, 640)
+    anchor_gen = FPNAnchorGenerator(
+        image_size=image_size,
+        strides=[8, 16, 32, 64, 128]
+    )
+    
+    print(f"Image size: {image_size}")
+    print(f"Strides: {anchor_gen.strides}")
+    print(f"Total anchors: {len(anchor_gen.all_anchors)}")
+    
+    for stride, data in anchor_gen.anchors_dict.items():
+        print(f"  Stride {stride}: {len(data['anchors'])} anchors, "
+              f"feature size {data['feature_size']}")
+    
+    # Create sample GT boxes
+    print("\n" + "-" * 60)
+    print("Anchor-to-GT Matching Demo")
+    print("-" * 60)
+    
+    gt_boxes = tf.constant([
+        [0.2, 0.2, 0.4, 0.5],   # Medium object
+        [0.5, 0.5, 0.8, 0.8],   # Large object
+        [0.1, 0.6, 0.2, 0.7],   # Small object
+    ])
+    gt_labels = tf.constant([1, 2, 3])  # Class labels
+    
+    # Match anchors to GT
+    matched_gt, matched_labels, matched_idx = match_anchors_to_gt(
+        anchor_gen.all_anchors, gt_boxes, gt_labels,
+        pos_iou_thresh=0.5, neg_iou_thresh=0.4
+    )
+    
+    # Count matches
+    positive_count = tf.reduce_sum(tf.cast(matched_labels > 0, tf.int32))
+    negative_count = tf.reduce_sum(tf.cast(matched_labels == 0, tf.int32))
+    ignore_count = tf.reduce_sum(tf.cast(matched_labels < 0, tf.int32))
+    
+    print(f"Total anchors: {len(anchor_gen.all_anchors)}")
+    print(f"Positive matches: {positive_count.numpy()}")
+    print(f"Negative matches: {negative_count.numpy()}")
+    print(f"Ignored anchors: {ignore_count.numpy()}")
+    
+    # Compute targets
+    box_targets, class_targets = compute_anchor_targets(
+        anchor_gen.all_anchors, matched_gt, matched_labels
+    )
+    
+    print(f"\nBox targets shape: {box_targets.shape}")
+    print(f"Class targets shape: {class_targets.shape}")
+    
+    # Level assignment
+    print("\n" + "-" * 60)
+    print("Box-to-Level Assignment")
+    print("-" * 60)
+    
+    level_assignments = assign_boxes_to_levels(
+        gt_boxes, image_size, anchor_gen.strides
+    )
+    
+    for level, indices in level_assignments.items():
+        print(f"Level {level}: {len(indices)} boxes assigned")
+    
+    print("\n" + "=" * 70)
+    print("Lab 6.4 Complete!")
+    print("=" * 70)
+```
+
+---

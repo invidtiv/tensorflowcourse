@@ -1,0 +1,362 @@
+---
+title: "TensorFlow Lite Model Conversion"
+module: 10
+labNumber: 5
+difficulty: "hard"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# TensorFlow Lite Model Conversion
+
+## Objectives
+- Convert Keras models to TFLite format
+- Understand TFLite converter options
+- Handle complex model architectures
+- Validate converted models
+
+## Complete Implementation
+
+```python
+"""
+Lab 10.4: TensorFlow Lite Model Conversion
+==========================================
+Comprehensive guide to converting various model types
+to TensorFlow Lite format with best practices.
+"""
+
+import tensorflow as tf
+import numpy as np
+import os
+
+print("=" * 60)
+print("Lab 10.4: TensorFlow Lite Model Conversion")
+print("=" * 60)
+
+# ============================================================
+# PART 1: Basic Model Conversion
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 1: Basic Model Conversion")
+print("=" * 60)
+
+# Create a simple model
+model = tf.keras.Sequential([
+    tf.keras.layers.Dense(128, activation='relu', input_shape=(784,)),
+    tf.keras.layers.Dropout(0.2),
+    tf.keras.layers.Dense(64, activation='relu'),
+    tf.keras.layers.Dense(10, activation='softmax')
+])
+
+model.compile(optimizer='adam',
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+
+# Train briefly
+(x_train, y_train), _ = tf.keras.datasets.mnist.load_data()
+x_train = x_train[:1000].reshape(-1, 784).astype('float32') / 255.0
+y_train = y_train[:1000]
+
+model.fit(x_train, y_train, epochs=2, verbose=0)
+
+# Method 1: Convert from Keras model directly
+print("\nMethod 1: From Keras Model")
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+tflite_model = converter.convert()
+
+with open('model_from_keras.tflite', 'wb') as f:
+    f.write(tflite_model)
+print(f"Saved: model_from_keras.tflite ({len(tflite_model)/1024:.2f} KB)")
+
+# Method 2: Convert from SavedModel format
+print("\nMethod 2: From SavedModel")
+model.save('saved_model_dir')
+converter = tf.lite.TFLiteConverter.from_saved_model('saved_model_dir')
+tflite_model = converter.convert()
+
+with open('model_from_savedmodel.tflite', 'wb') as f:
+    f.write(tflite_model)
+print(f"Saved: model_from_savedmodel.tflite ({len(tflite_model)/1024:.2f} KB)")
+
+# ============================================================
+# PART 2: Converter Configuration Options
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 2: Converter Configuration Options")
+print("=" * 60)
+
+"""
+Key Converter Options:
+- optimizations: Enable optimizations (quantization)
+- representative_dataset: For full integer quantization
+- target_spec.supported_ops: Limit supported operations
+- target_spec.supported_types: Enable specific types (float16)
+- inference_input_type/output_type: Set I/O types
+"""
+
+# Option 1: Default optimization
+print("\n1. Default Optimization")
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+tflite_optimized = converter.convert()
+
+with open('model_optimized.tflite', 'wb') as f:
+    f.write(tflite_optimized)
+print(f"Optimized model size: {len(tflite_optimized)/1024:.2f} KB")
+
+# Option 2: Allow custom ops
+print("\n2. Allow Custom Operations")
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+converter.allow_custom_ops = True  # For unsupported operations
+tflite_custom = converter.convert()
+
+# Option 3: Select TF ops
+print("\n3. Select TensorFlow Operations")
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+converter.target_spec.supported_ops = [
+    tf.lite.OpsSet.TFLITE_BUILTINS,  # Default TFLite ops
+    tf.lite.OpsSet.SELECT_TF_OPS     # Select TF ops for compatibility
+]
+tflite_select = converter.convert()
+
+with open('model_select_ops.tflite', 'wb') as f:
+    f.write(tflite_select)
+print(f"Select ops model size: {len(tflite_select)/1024:.2f} KB")
+
+# ============================================================
+# PART 3: Handling Complex Models
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 3: Handling Complex Models")
+print("=" * 60)
+
+# Model with multiple inputs
+print("\n1. Multi-Input Model")
+
+input_a = tf.keras.Input(shape=(32,), name='input_a')
+input_b = tf.keras.Input(shape=(16,), name='input_b')
+
+x = tf.keras.layers.Dense(64, activation='relu')(input_a)
+y = tf.keras.layers.Dense(32, activation='relu')(input_b)
+
+combined = tf.keras.layers.concatenate([x, y])
+z = tf.keras.layers.Dense(10, activation='softmax')(combined)
+
+multi_input_model = tf.keras.Model(inputs=[input_a, input_b], outputs=z)
+
+# Convert multi-input model
+converter = tf.lite.TFLiteConverter.from_keras_model(multi_input_model)
+tflite_multi = converter.convert()
+
+with open('model_multi_input.tflite', 'wb') as f:
+    f.write(tflite_multi)
+print(f"Multi-input model converted: {len(tflite_multi)/1024:.2f} KB")
+
+# Model with multiple outputs
+print("\n2. Multi-Output Model")
+
+inputs = tf.keras.Input(shape=(64,))
+x = tf.keras.layers.Dense(128, activation='relu')(inputs)
+
+output_1 = tf.keras.layers.Dense(10, activation='softmax', name='class')(x)
+output_2 = tf.keras.layers.Dense(1, activation='sigmoid', name='confidence')(x)
+
+multi_output_model = tf.keras.Model(inputs=inputs, outputs=[output_1, output_2])
+
+converter = tf.lite.TFLiteConverter.from_keras_model(multi_output_model)
+tflite_multi_out = converter.convert()
+
+with open('model_multi_output.tflite', 'wb') as f:
+    f.write(tflite_multi_out)
+print(f"Multi-output model converted: {len(tflite_multi_out)/1024:.2f} KB")
+
+# ============================================================
+# PART 4: Validating Converted Models
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 4: Validating Converted Models")
+print("=" * 60)
+
+def validate_tflite_model(tflite_path, test_input):
+    """Validate TFLite model by running inference."""
+    
+    # Load interpreter
+    interpreter = tf.lite.Interpreter(model_path=tflite_path)
+    interpreter.allocate_tensors()
+    
+    # Get I/O details
+    input_details = interpreter.get_input_details()
+    output_details = interpreter.get_output_details()
+    
+    print(f"\nModel: {tflite_path}")
+    print(f"Input shape: {input_details[0]['shape']}")
+    print(f"Input dtype: {input_details[0]['dtype']}")
+    print(f"Output shape: {output_details[0]['shape']}")
+    print(f"Output dtype: {output_details[0]['dtype']}")
+    
+    # Run inference
+    interpreter.set_tensor(input_details[0]['index'], test_input)
+    interpreter.invoke()
+    output = interpreter.get_tensor(output_details[0]['index'])
+    
+    print(f"Output shape: {output.shape}")
+    print(f"Output sum (should be ~1.0 for softmax): {np.sum(output):.4f}")
+    
+    return output
+
+# Validate simple model
+test_input = np.random.random((1, 784)).astype(np.float32)
+output = validate_tflite_model('model_from_keras.tflite', test_input)
+
+# Validate multi-input model
+print("\nValidating multi-input model...")
+interpreter = tf.lite.Interpreter(model_path='model_multi_input.tflite')
+interpreter.allocate_tensors()
+
+input_details = interpreter.get_input_details()
+print(f"Number of inputs: {len(input_details)}")
+for i, detail in enumerate(input_details):
+    print(f"  Input {i}: {detail['name']} - {detail['shape']}")
+
+# Set multiple inputs
+test_input_a = np.random.random((1, 32)).astype(np.float32)
+test_input_b = np.random.random((1, 16)).astype(np.float32)
+
+interpreter.set_tensor(input_details[0]['index'], test_input_a)
+interpreter.set_tensor(input_details[1]['index'], test_input_b)
+interpreter.invoke()
+
+output_details = interpreter.get_output_details()
+output = interpreter.get_tensor(output_details[0]['index'])
+print(f"Output shape: {output.shape}")
+
+# ============================================================
+# PART 5: Conversion Debugging
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 5: Conversion Debugging")
+print("=" * 60)
+
+"""
+Debugging Tips:
+1. Use converter.experimental_new_converter = False for old behavior
+2. Check unsupported ops with converter.get_input_arrays()
+3. Enable logging for detailed conversion info
+"""
+
+# Enable detailed logging
+print("\nEnabling conversion logging...")
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+
+# Get conversion metadata (TF 2.x+)
+try:
+    # Try conversion with error details
+    tflite_model = converter.convert()
+    print("Conversion successful!")
+except Exception as e:
+    print(f"Conversion error: {e}")
+    print("\nTroubleshooting:")
+    print("1. Check for unsupported operations")
+    print("2. Try enabling SELECT_TF_OPS")
+    print("3. Simplify model architecture")
+
+# ============================================================
+# PART 6: Post-Conversion Analysis
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 6: Post-Conversion Analysis")
+print("=" * 60)
+
+def analyze_tflite_model(tflite_path):
+    """Analyze TFLite model structure."""
+    interpreter = tf.lite.Interpreter(model_path=tflite_path)
+    interpreter.allocate_tensors()
+    
+    # Get tensor details
+    tensor_details = interpreter.get_tensor_details()
+    
+    print(f"\nModel Analysis: {tflite_path}")
+    print(f"Total tensors: {len(tensor_details)}")
+    
+    # Count by type
+    type_counts = {}
+    for detail in tensor_details:
+        dtype = detail['dtype']
+        type_counts[dtype] = type_counts.get(dtype, 0) + 1
+    
+    print("Tensor types:")
+    for dtype, count in type_counts.items():
+        print(f"  {dtype}: {count}")
+    
+    # Get op details
+    op_details = interpreter._get_ops_details()
+    print(f"Total operations: {len(op_details)}")
+    
+    # Count op types
+    op_types = {}
+    for op in op_details:
+        op_type = op['op_name']
+        op_types[op_type] = op_types.get(op_type, 0) + 1
+    
+    print("Operation types:")
+    for op_type, count in list(op_types.items())[:10]:  # Top 10
+        print(f"  {op_type}: {count}")
+
+analyze_tflite_model('model_from_keras.tflite')
+
+# ============================================================
+# PART 7: Summary
+# ============================================================
+
+print("\n" + "=" * 60)
+print("SUMMARY: TFLite Conversion Best Practices")
+print("=" * 60)
+
+print("""
+Best Practices:
+===============
+
+1. Choose Conversion Method:
+   - from_keras_model(): For Keras models
+   - from_saved_model(): For SavedModel format
+   - from_concrete_functions(): For custom models
+
+2. Optimization Strategy:
+   - Start with DEFAULT optimization
+   - Use representative_dataset for full integer
+   - Consider Float16 for GPU deployment
+
+3. Handle Compatibility:
+   - Enable SELECT_TF_OPS for unsupported ops
+   - Use allow_custom_ops for special layers
+   - Test thoroughly after conversion
+
+4. Validation:
+   - Always validate converted model
+   - Compare outputs with original
+   - Check I/O tensor shapes and types
+
+5. Size Optimization:
+   - Dynamic range: 4x reduction
+   - Full integer: 4x reduction, fastest
+   - Float16: 2x reduction, GPU optimized
+""")
+
+# Cleanup
+import shutil
+for f in ['model_from_keras.tflite', 'model_from_savedmodel.tflite',
+          'model_optimized.tflite', 'model_select_ops.tflite',
+          'model_multi_input.tflite', 'model_multi_output.tflite']:
+    if os.path.exists(f):
+        os.remove(f)
+if os.path.exists('saved_model_dir'):
+    shutil.rmtree('saved_model_dir')
+print("\nCleanup completed!")
+```
+
+---

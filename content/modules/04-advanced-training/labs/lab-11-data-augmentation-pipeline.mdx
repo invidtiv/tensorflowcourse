@@ -1,0 +1,182 @@
+---
+title: "Data Augmentation Pipeline"
+module: 4
+labNumber: 11
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Data Augmentation Pipeline
+
+```python
+"""
+Lab 3.2: Efficient Data Augmentation Pipeline
+==============================================
+Implement and benchmark data augmentation strategies.
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+import time
+
+class RandomCutout(tf.keras.layers.Layer):
+    """Random cutout augmentation layer."""
+    
+    def __init__(self, mask_size=8, n_masks=1, **kwargs):
+        super().__init__(**kwargs)
+        self.mask_size = mask_size
+        self.n_masks = n_masks
+    
+    def call(self, inputs, training=None):
+        if not training:
+            return inputs
+        
+        def apply_cutout(image):
+            h, w = tf.shape(image)[0], tf.shape(image)[1]
+            for _ in range(self.n_masks):
+                y = tf.random.uniform([], 0, h, dtype=tf.int32)
+                x = tf.random.uniform([], 0, w, dtype=tf.int32)
+                
+                y1 = tf.maximum(0, y - self.mask_size // 2)
+                y2 = tf.minimum(h, y + self.mask_size // 2)
+                x1 = tf.maximum(0, x - self.mask_size // 2)
+                x2 = tf.minimum(w, x + self.mask_size // 2)
+                
+                mask = tf.ones_like(image)
+                mask = tf.pad(tf.zeros([y2-y1, x2-x1, tf.shape(image)[2]]),
+                             [[y1, h-y2], [x1, w-x2], [0, 0]], constant_values=1)
+                image = image * mask
+            return image
+        
+        return tf.map_fn(apply_cutout, inputs)
+    
+    def get_config(self):
+        config = super().get_config()
+        config.update({'mask_size': self.mask_size, 'n_masks': self.n_masks})
+        return config
+
+class MixUp(tf.keras.layers.Layer):
+    """MixUp augmentation layer."""
+    
+    def __init__(self, alpha=0.2, **kwargs):
+        super().__init__(**kwargs)
+        self.alpha = alpha
+    
+    def call(self, inputs, training=None):
+        if not training:
+            return inputs
+        
+        images, labels = inputs
+        batch_size = tf.shape(images)[0]
+        lam = tf.random.uniform([], 0, self.alpha)
+        indices = tf.random.shuffle(tf.range(batch_size))
+        
+        mixed_images = lam * images + (1 - lam) * tf.gather(images, indices)
+        mixed_labels = lam * labels + (1 - lam) * tf.gather(labels, indices)
+        
+        return mixed_images, mixed_labels
+    
+    def get_config(self):
+        config = super().get_config()
+        config.update({'alpha': self.alpha})
+        return config
+
+def create_basic_augmentation(image, label):
+    image = tf.image.random_flip_left_right(image)
+    image = tf.image.random_brightness(image, 0.1)
+    image = tf.clip_by_value(image, 0, 1)
+    return image, label
+
+def create_advanced_augmentation(image, label):
+    image = tf.image.random_flip_left_right(image)
+    image = tf.image.random_flip_up_down(image)
+    image = tf.image.random_brightness(image, 0.2)
+    image = tf.image.random_contrast(image, 0.8, 1.2)
+    image = tf.image.random_saturation(image, 0.8, 1.2)
+    image = tf.clip_by_value(image, 0, 1)
+    image = tf.image.resize_with_crop_or_pad(image, 40, 40)
+    image = tf.image.random_crop(image, size=[32, 32, 3])
+    return image, label
+
+def create_keras_augmentation_layer():
+    return tf.keras.Sequential([
+        tf.keras.layers.RandomFlip('horizontal'),
+        tf.keras.layers.RandomRotation(0.1),
+        tf.keras.layers.RandomZoom(0.1),
+        tf.keras.layers.RandomContrast(0.1),
+    ])
+
+def benchmark_augmentation_pipelines():
+    (x_train, y_train), _ = tf.keras.datasets.cifar10.load_data()
+    x_train = x_train.astype('float32') / 255.0
+    y_train = tf.keras.utils.to_categorical(y_train, 10)
+    
+    batch_size = 64
+    num_batches = 100
+    results = {}
+    
+    # No augmentation
+    print("Benchmarking: No Augmentation")
+    dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train)).batch(batch_size).prefetch(tf.data.AUTOTUNE)
+    start = time.time()
+    for _ in range(num_batches):
+        for batch in dataset.take(1):
+            pass
+    results['No Augmentation'] = time.time() - start
+    
+    # Basic augmentation (CPU)
+    print("Benchmarking: Basic Augmentation (CPU)")
+    dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train))
+    dataset = dataset.map(create_basic_augmentation, num_parallel_calls=tf.data.AUTOTUNE)
+    dataset = dataset.batch(batch_size).prefetch(tf.data.AUTOTUNE)
+    start = time.time()
+    for _ in range(num_batches):
+        for batch in dataset.take(1):
+            pass
+    results['Basic Aug (CPU)'] = time.time() - start
+    
+    # Advanced augmentation (CPU)
+    print("Benchmarking: Advanced Augmentation (CPU)")
+    dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train))
+    dataset = dataset.map(create_advanced_augmentation, num_parallel_calls=tf.data.AUTOTUNE)
+    dataset = dataset.batch(batch_size).prefetch(tf.data.AUTOTUNE)
+    start = time.time()
+    for _ in range(num_batches):
+        for batch in dataset.take(1):
+            pass
+    results['Advanced Aug (CPU)'] = time.time() - start
+    
+    # Keras layers (GPU)
+    print("Benchmarking: Keras Augmentation Layers (GPU)")
+    aug_layer = create_keras_augmentation_layer()
+    
+    @tf.function
+    def apply_keras_aug(images, labels):
+        return aug_layer(images, training=True), labels
+    
+    dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train)).batch(batch_size).prefetch(tf.data.AUTOTUNE)
+    start = time.time()
+    for _ in range(num_batches):
+        for images, labels in dataset.take(1):
+            _ = apply_keras_aug(images, labels)
+    results['Keras Layers (GPU)'] = time.time() - start
+    
+    plt.figure(figsize=(10, 6))
+    names = list(results.keys())
+    times = list(results.values())
+    
+    plt.bar(names, times, color='coral', edgecolor='black')
+    plt.ylabel('Time (seconds)')
+    plt.title('Augmentation Pipeline Benchmark', fontweight='bold')
+    plt.xticks(rotation=45, ha='right')
+    plt.tight_layout()
+    plt.savefig('augmentation_benchmark.png', dpi=150)
+    plt.show()
+    
+    return results
+
+results = benchmark_augmentation_pipelines()
+```
+
+---

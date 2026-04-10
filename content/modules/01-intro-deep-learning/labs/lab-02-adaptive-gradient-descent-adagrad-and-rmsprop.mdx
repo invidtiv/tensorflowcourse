@@ -1,0 +1,390 @@
+---
+title: "Adaptive Gradient Descent (AdaGrad and RMSprop)"
+module: 1
+labNumber: 2
+difficulty: "easy"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Adaptive Gradient Descent (AdaGrad and RMSprop)
+
+### Objectives
+- Implement AdaGrad and RMSprop
+- Understand per-parameter learning rates
+- Compare adaptive methods with momentum
+
+### Complete Code
+
+```python
+"""
+Lab 3.3: Adaptive Gradient Descent (AdaGrad and RMSprop)
+==========================================================
+Implement and compare adaptive learning rate methods.
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+print("=" * 70)
+print("Lab 3.3: Adaptive Gradient Descent (AdaGrad and RMSprop)")
+print("=" * 70)
+
+# =============================================================================
+# PART 1: AdaGrad Implementation
+# =============================================================================
+
+print("\n" + "=" * 70)
+print("PART 1: AdaGrad Implementation")
+print("=" * 70)
+
+def adagrad(grad_func, x_init, learning_rate=0.1, epsilon=1e-8, n_iterations=1000):
+    """
+    AdaGrad: Adaptive Gradient Algorithm.
+    
+    Update rule:
+        cache_t = cache_{t-1} + gradient^2
+        x_t = x_{t-1} - learning_rate * gradient / (sqrt(cache_t) + epsilon)
+    """
+    x = x_init.copy() if isinstance(x_init, np.ndarray) else x_init
+    cache = np.zeros_like(x) if isinstance(x, np.ndarray) else 0
+    
+    history = [x.copy() if isinstance(x, np.ndarray) else x]
+    
+    for i in range(n_iterations):
+        gradient = grad_func(x)
+        cache = cache + gradient ** 2
+        x = x - learning_rate * gradient / (np.sqrt(cache) + epsilon)
+        history.append(x.copy() if isinstance(x, np.ndarray) else x)
+    
+    return x, history
+
+# =============================================================================
+# PART 2: RMSprop Implementation
+# =============================================================================
+
+print("\n" + "=" * 70)
+print("PART 2: RMSprop Implementation")
+print("=" * 70)
+
+def rmsprop(grad_func, x_init, learning_rate=0.001, decay_rate=0.9, 
+            epsilon=1e-8, n_iterations=1000):
+    """
+    RMSprop: Root Mean Square Propagation.
+    
+    Update rule:
+        cache_t = decay_rate * cache_{t-1} + (1 - decay_rate) * gradient^2
+        x_t = x_{t-1} - learning_rate * gradient / (sqrt(cache_t) + epsilon)
+    """
+    x = x_init.copy() if isinstance(x_init, np.ndarray) else x_init
+    cache = np.zeros_like(x) if isinstance(x, np.ndarray) else 0
+    
+    history = [x.copy() if isinstance(x, np.ndarray) else x]
+    
+    for i in range(n_iterations):
+        gradient = grad_func(x)
+        cache = decay_rate * cache + (1 - decay_rate) * gradient ** 2
+        x = x - learning_rate * gradient / (np.sqrt(cache) + epsilon)
+        history.append(x.copy() if isinstance(x, np.ndarray) else x)
+    
+    return x, history
+
+# =============================================================================
+# PART 3: Adam Implementation (Bonus)
+# =============================================================================
+
+def adam(grad_func, x_init, learning_rate=0.001, beta1=0.9, beta2=0.999,
+         epsilon=1e-8, n_iterations=1000):
+    """
+    Adam: Adaptive Moment Estimation.
+    
+    Combines momentum with adaptive learning rates.
+    """
+    x = x_init.copy() if isinstance(x_init, np.ndarray) else x_init
+    m = np.zeros_like(x) if isinstance(x, np.ndarray) else 0  # First moment
+    v = np.zeros_like(x) if isinstance(x, np.ndarray) else 0  # Second moment
+    
+    history = [x.copy() if isinstance(x, np.ndarray) else x]
+    
+    for t in range(1, n_iterations + 1):
+        gradient = grad_func(x)
+        
+        # Update biased first moment estimate
+        m = beta1 * m + (1 - beta1) * gradient
+        # Update biased second raw moment estimate
+        v = beta2 * v + (1 - beta2) * gradient ** 2
+        
+        # Bias correction
+        m_hat = m / (1 - beta1 ** t)
+        v_hat = v / (1 - beta2 ** t)
+        
+        # Update parameters
+        x = x - learning_rate * m_hat / (np.sqrt(v_hat) + epsilon)
+        history.append(x.copy() if isinstance(x, np.ndarray) else x)
+    
+    return x, history
+
+# =============================================================================
+# PART 4: Test Functions
+# =============================================================================
+
+def quadratic_2d(x):
+    """f(x,y) = x^2 + 10*y^2"""
+    return x[0]**2 + 10 * x[1]**2
+
+def quadratic_2d_grad(x):
+    """Gradient of quadratic."""
+    return np.array([2 * x[0], 20 * x[1]])
+
+def rosenbrock(x):
+    """Rosenbrock function."""
+    return (1 - x[0])**2 + 100 * (x[1] - x[0]**2)**2
+
+def rosenbrock_grad(x):
+    """Gradient of Rosenbrock."""
+    dx = -2 * (1 - x[0]) - 400 * x[0] * (x[1] - x[0]**2)
+    dy = 200 * (x[1] - x[0]**2)
+    return np.array([dx, dy])
+
+# =============================================================================
+# PART 5: Comparison on Quadratic Function
+# =============================================================================
+
+print("\n" + "=" * 70)
+print("PART 5: Comparison on Quadratic Function")
+print("=" * 70)
+
+x_init = np.array([5.0, 5.0])
+n_iterations = 500
+
+# Run all optimizers
+x_vanilla, hist_vanilla = gradient_descent_vanilla(
+    quadratic_2d_grad, x_init, learning_rate=0.01, n_iterations=n_iterations)
+
+x_momentum, hist_momentum = gradient_descent_momentum(
+    quadratic_2d_grad, x_init, learning_rate=0.01, momentum=0.9, n_iterations=n_iterations)
+
+x_adagrad, hist_adagrad = adagrad(
+    quadratic_2d_grad, x_init, learning_rate=0.5, n_iterations=n_iterations)
+
+x_rmsprop, hist_rmsprop = rmsprop(
+    quadratic_2d_grad, x_init, learning_rate=0.01, decay_rate=0.9, n_iterations=n_iterations)
+
+x_adam, hist_adam = adam(
+    quadratic_2d_grad, x_init, learning_rate=0.01, n_iterations=n_iterations)
+
+# Compute function values
+values_vanilla = [quadratic_2d(x) for x in hist_vanilla]
+values_momentum = [quadratic_2d(x) for x in hist_momentum]
+values_adagrad = [quadratic_2d(x) for x in hist_adagrad]
+values_rmsprop = [quadratic_2d(x) for x in hist_rmsprop]
+values_adam = [quadratic_2d(x) for x in hist_adam]
+
+print(f"\nInitial point: {x_init}")
+print(f"True minimum: [0, 0]")
+print(f"\nVanilla GD:     f={quadratic_2d(x_vanilla):.10f}")
+print(f"Momentum GD:    f={quadratic_2d(x_momentum):.10f}")
+print(f"AdaGrad:        f={quadratic_2d(x_adagrad):.10f}")
+print(f"RMSprop:        f={quadratic_2d(x_rmsprop):.10f}")
+print(f"Adam:           f={quadratic_2d(x_adam):.10f}")
+
+# =============================================================================
+# PART 6: Comparison on Rosenbrock Function
+# =============================================================================
+
+print("\n" + "=" * 70)
+print("PART 6: Comparison on Rosenbrock Function")
+print("=" * 70)
+
+x_init_rosen = np.array([-1.0, 2.0])
+n_iterations_rosen = 3000
+
+x_rosen_vanilla, hist_rosen_vanilla = gradient_descent_vanilla(
+    rosenbrock_grad, x_init_rosen, learning_rate=0.001, n_iterations=n_iterations_rosen)
+
+x_rosen_momentum, hist_rosen_momentum = gradient_descent_momentum(
+    rosenbrock_grad, x_init_rosen, learning_rate=0.001, momentum=0.9, n_iterations=n_iterations_rosen)
+
+x_rosen_adagrad, hist_rosen_adagrad = adagrad(
+    rosenbrock_grad, x_init_rosen, learning_rate=0.1, n_iterations=n_iterations_rosen)
+
+x_rosen_rmsprop, hist_rosen_rmsprop = rmsprop(
+    rosenbrock_grad, x_init_rosen, learning_rate=0.001, decay_rate=0.9, n_iterations=n_iterations_rosen)
+
+x_rosen_adam, hist_rosen_adam = adam(
+    rosenbrock_grad, x_init_rosen, learning_rate=0.001, n_iterations=n_iterations_rosen)
+
+values_rosen_vanilla = [rosenbrock(x) for x in hist_rosen_vanilla]
+values_rosen_momentum = [rosenbrock(x) for x in hist_rosen_momentum]
+values_rosen_adagrad = [rosenbrock(x) for x in hist_rosen_adagrad]
+values_rosen_rmsprop = [rosenbrock(x) for x in hist_rosen_rmsprop]
+values_rosen_adam = [rosenbrock(x) for x in hist_rosen_adam]
+
+print(f"\nInitial point: {x_init_rosen}")
+print(f"True minimum: [1, 1]")
+print(f"\nVanilla GD:     f={rosenbrock(x_rosen_vanilla):.10f}")
+print(f"Momentum GD:    f={rosenbrock(x_rosen_momentum):.10f}")
+print(f"AdaGrad:        f={rosenbrock(x_rosen_adagrad):.10f}")
+print(f"RMSprop:        f={rosenbrock(x_rosen_rmsprop):.10f}")
+print(f"Adam:           f={rosenbrock(x_rosen_adam):.10f}")
+
+# =============================================================================
+# PART 7: Visualization
+# =============================================================================
+
+print("\n" + "=" * 70)
+print("PART 7: Visualization")
+print("=" * 70)
+
+fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+
+# Plot 1: Quadratic convergence comparison
+axes[0, 0].semilogy(values_vanilla, 'b-', linewidth=2, label='Vanilla', alpha=0.7)
+axes[0, 0].semilogy(values_momentum, 'g-', linewidth=2, label='Momentum', alpha=0.7)
+axes[0, 0].semilogy(values_adagrad, 'r-', linewidth=2, label='AdaGrad', alpha=0.7)
+axes[0, 0].semilogy(values_rmsprop, 'm-', linewidth=2, label='RMSprop', alpha=0.7)
+axes[0, 0].semilogy(values_adam, 'orange', linewidth=2, label='Adam', alpha=0.7)
+axes[0, 0].set_xlabel('Iteration')
+axes[0, 0].set_ylabel('f(x,y) (log scale)')
+axes[0, 0].set_title('Quadratic Function: All Optimizers')
+axes[0, 0].legend()
+axes[0, 0].grid(True, alpha=0.3)
+
+# Plot 2: Rosenbrock convergence comparison
+axes[0, 1].semilogy(values_rosen_vanilla, 'b-', linewidth=2, label='Vanilla', alpha=0.7)
+axes[0, 1].semilogy(values_rosen_momentum, 'g-', linewidth=2, label='Momentum', alpha=0.7)
+axes[0, 1].semilogy(values_rosen_adagrad, 'r-', linewidth=2, label='AdaGrad', alpha=0.7)
+axes[0, 1].semilogy(values_rosen_rmsprop, 'm-', linewidth=2, label='RMSprop', alpha=0.7)
+axes[0, 1].semilogy(values_rosen_adam, 'orange', linewidth=2, label='Adam', alpha=0.7)
+axes[0, 1].set_xlabel('Iteration')
+axes[0, 1].set_ylabel('f(x,y) (log scale)')
+axes[0, 1].set_title('Rosenbrock Function: All Optimizers')
+axes[0, 1].legend()
+axes[0, 1].grid(True, alpha=0.3)
+
+# Plot 3: Optimization paths on quadratic
+x_range = np.linspace(-6, 6, 100)
+y_range = np.linspace(-6, 6, 100)
+X, Y = np.meshgrid(x_range, y_range)
+Z = X**2 + 10 * Y**2
+
+axes[0, 2].contour(X, Y, Z, levels=20, cmap='viridis', alpha=0.5)
+hist_adam_arr = np.array(hist_adam)
+hist_rmsprop_arr = np.array(hist_rmsprop)
+axes[0, 2].plot(hist_adam_arr[:, 0], hist_adam_arr[:, 1], 'orange', 
+                linewidth=2, label='Adam')
+axes[0, 2].plot(hist_rmsprop_arr[:, 0], hist_rmsprop_arr[:, 1], 'm', 
+                linewidth=2, label='RMSprop')
+axes[0, 2].plot(0, 0, 'r*', markersize=15, label='Minimum')
+axes[0, 2].set_xlabel('x')
+axes[0, 2].set_ylabel('y')
+axes[0, 2].set_title('Quadratic: Adaptive Optimizer Paths')
+axes[0, 2].legend()
+axes[0, 2].grid(True, alpha=0.3)
+
+# Plot 4: Early iterations comparison (first 100)
+axes[1, 0].semilogy(values_vanilla[:100], 'b-', linewidth=2, label='Vanilla')
+axes[1, 0].semilogy(values_momentum[:100], 'g-', linewidth=2, label='Momentum')
+axes[1, 0].semilogy(values_adagrad[:100], 'r-', linewidth=2, label='AdaGrad')
+axes[1, 0].semilogy(values_rmsprop[:100], 'm-', linewidth=2, label='RMSprop')
+axes[1, 0].semilogy(values_adam[:100], 'orange', linewidth=2, label='Adam')
+axes[1, 0].set_xlabel('Iteration')
+axes[1, 0].set_ylabel('f(x,y) (log scale)')
+axes[1, 0].set_title('Early Iterations (First 100)')
+axes[1, 0].legend()
+axes[1, 0].grid(True, alpha=0.3)
+
+# Plot 5: Learning rate adaptation visualization
+# Show how effective learning rate changes for AdaGrad
+cache_history = []
+cache = np.zeros(2)
+x = x_init.copy()
+for i in range(100):
+    grad = quadratic_2d_grad(x)
+    cache = cache + grad ** 2
+    cache_history.append(np.sqrt(cache))
+    x = x - 0.5 * grad / (np.sqrt(cache) + 1e-8)
+
+cache_history = np.array(cache_history)
+axes[1, 1].semilogy(cache_history[:, 0], 'b-', linewidth=2, label='Cache x')
+axes[1, 1].semilogy(cache_history[:, 1], 'r-', linewidth=2, label='Cache y')
+axes[1, 1].set_xlabel('Iteration')
+axes[1, 1].set_ylabel('Cache Value (log scale)')
+axes[1, 1].set_title('AdaGrad Cache Growth')
+axes[1, 1].legend()
+axes[1, 1].grid(True, alpha=0.3)
+
+# Plot 6: Final comparison bar chart
+methods = ['Vanilla', 'Momentum', 'AdaGrad', 'RMSprop', 'Adam']
+final_values = [
+    quadratic_2d(x_vanilla),
+    quadratic_2d(x_momentum),
+    quadratic_2d(x_adagrad),
+    quadratic_2d(x_rmsprop),
+    quadratic_2d(x_adam)
+]
+colors = ['blue', 'green', 'red', 'purple', 'orange']
+bars = axes[1, 2].bar(methods, final_values, color=colors, alpha=0.7)
+axes[1, 2].set_ylabel('Final f(x,y)')
+axes[1, 2].set_title('Final Objective Value Comparison')
+axes[1, 2].set_yscale('log')
+axes[1, 2].grid(True, alpha=0.3, axis='y')
+for bar, val in zip(bars, final_values):
+    axes[1, 2].text(bar.get_x() + bar.get_width()/2, bar.get_height() * 1.1,
+                    f'{val:.2e}', ha='center', va='bottom', fontsize=9)
+
+plt.tight_layout()
+plt.savefig('lab3_3_adaptive_gradient_descent.png', dpi=150, bbox_inches='tight')
+print("\nVisualization saved as 'lab3_3_adaptive_gradient_descent.png'")
+plt.show()
+
+# =============================================================================
+# PART 8: Summary
+# =============================================================================
+
+print("\n" + "=" * 70)
+print("PART 8: Summary")
+print("=" * 70)
+
+print("""
+Optimizer Comparison:
+=====================
+
+1. VANILLA GD:
+   - Pros: Simple, no hyperparameters beyond learning rate
+   - Cons: Slow convergence, sensitive to feature scaling
+   - Best for: Simple problems, convex functions
+
+2. MOMENTUM:
+   - Pros: Accelerates in consistent directions, dampens oscillations
+   - Cons: Still uses global learning rate
+   - Best for: Problems with consistent gradient directions
+
+3. ADAGRAD:
+   - Pros: Per-parameter learning rates, good for sparse gradients
+   - Cons: Cache grows indefinitely, learning rate decays too much
+   - Best for: Sparse data (NLP), convex problems
+
+4. RMSPROP:
+   - Pros: Fixes AdaGrad's decay issue with moving average
+   - Cons: Still requires tuning learning rate
+   - Best for: Non-stationary objectives, RNNs
+
+5. ADAM:
+   - Pros: Combines momentum + adaptive rates, works well in practice
+   - Cons: Can generalize worse than SGD in some cases
+   - Best for: General-purpose, default choice for many problems
+
+RECOMMENDATIONS:
+================
+- Start with Adam for most problems
+- Use SGD + Momentum for better generalization
+- Use AdaGrad for sparse gradients (NLP)
+- Tune learning rate for all optimizers!
+""")
+
+print("\n" + "=" * 70)
+print("Lab 3.3 Complete!")
+print("=" * 70)
+```
+
+---

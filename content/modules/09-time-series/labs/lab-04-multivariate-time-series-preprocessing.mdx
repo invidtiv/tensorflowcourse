@@ -1,0 +1,168 @@
+---
+title: "Multivariate Time Series Preprocessing"
+module: 9
+labNumber: 4
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Multivariate Time Series Preprocessing
+
+### Complete Implementation
+
+```python
+"""
+Lab 1.3: Multivariate Time Series Preprocessing
+Topic: Energy Demand Prediction Data
+"""
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.preprocessing import MinMaxScaler
+import tensorflow as tf
+
+np.random.seed(42)
+tf.random.set_seed(42)
+
+# Generate Synthetic Energy Data
+def generate_energy_data(n_hours=24*365*2):
+    dates = pd.date_range(start='2020-01-01', periods=n_hours, freq='H')
+    hour = np.arange(n_hours) % 24
+    day_of_week = (np.arange(n_hours) // 24) % 7
+    month = ((np.arange(n_hours) // 24) % 365) / 30.44 % 12
+    temp_daily = 5 * np.sin(2 * np.pi * hour / 24 - np.pi/2)
+    temp_seasonal = 15 * np.sin(2 * np.pi * ((np.arange(n_hours) // 24) % 365) / 365 - np.pi/2)
+    temperature = 20 + temp_daily + temp_seasonal + np.random.normal(0, 2, n_hours)
+    humidity = 70 - 0.5 * temperature + 10 * np.sin(2 * np.pi * hour / 24) + np.random.normal(0, 5, n_hours)
+    humidity = np.clip(humidity, 20, 100)
+    wind_speed = 10 + 5 * np.sin(2 * np.pi * ((np.arange(n_hours) // 24) % 365) / 365) + np.random.exponential(3, n_hours)
+    wind_speed = np.clip(wind_speed, 0, 50)
+    base_demand = 500
+    hourly_pattern = 100 * (np.sin(2 * np.pi * hour / 24 - np.pi/3) + 0.5 * np.sin(4 * np.pi * hour / 24))
+    weekly_pattern = np.where(day_of_week < 5, 50, -30)
+    temp_effect = 2 * (temperature - 20)**2
+    seasonal_effect = 30 * np.sin(2 * np.pi * ((np.arange(n_hours) // 24) % 365) / 365)
+    demand = base_demand + hourly_pattern + weekly_pattern + temp_effect + seasonal_effect + np.random.normal(0, 20, n_hours)
+    demand = np.maximum(demand, 200)
+    df = pd.DataFrame({
+        'demand': demand,
+        'temperature': temperature,
+        'humidity': humidity,
+        'wind_speed': wind_speed,
+        'hour': hour,
+        'day_of_week': day_of_week,
+        'month': month.astype(int)
+    }, index=dates)
+    return df
+
+print("=" * 60)
+print("STEP 1: Generating Multivariate Energy Data")
+print("=" * 60)
+energy_data = generate_energy_data(n_hours=24*365*2)
+print(f"Generated {len(energy_data)} hours of energy data")
+print(energy_data.describe())
+
+# Correlation Analysis
+print("\n" + "=" * 60)
+print("STEP 2: Correlation Analysis")
+print("=" * 60)
+
+numeric_cols = ['demand', 'temperature', 'humidity', 'wind_speed']
+correlation_matrix = energy_data[numeric_cols].corr()
+print("\nCorrelation Matrix:")
+print(correlation_matrix.round(3))
+
+fig, axes = plt.subplots(1, 2, figsize=(15, 6))
+sns.heatmap(correlation_matrix, annot=True, cmap='RdBu_r', center=0,
+            square=True, ax=axes[0], cbar_kws={'label': 'Correlation'})
+axes[0].set_title('Correlation Matrix Heatmap', fontsize=12, fontweight='bold')
+sample = energy_data[numeric_cols].sample(1000, random_state=42)
+axes[1].scatter(sample['temperature'], sample['demand'], alpha=0.5, s=10)
+axes[1].set_title('Demand vs Temperature', fontsize=12, fontweight='bold')
+axes[1].set_xlabel('Temperature (C)')
+axes[1].set_ylabel('Demand (MW)')
+axes[1].grid(True, alpha=0.3)
+plt.tight_layout()
+plt.savefig('/mnt/okcomputer/output/lab1_3_correlation.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+# Feature Engineering
+print("\n" + "=" * 60)
+print("STEP 3: Feature Engineering for Multivariate Data")
+print("=" * 60)
+
+def create_multivariate_features(df):
+    data = df.copy()
+    data['hour_sin'] = np.sin(2 * np.pi * data['hour'] / 24)
+    data['hour_cos'] = np.cos(2 * np.pi * data['hour'] / 24)
+    data['dow_sin'] = np.sin(2 * np.pi * data['day_of_week'] / 7)
+    data['dow_cos'] = np.cos(2 * np.pi * data['day_of_week'] / 7)
+    data['month_sin'] = np.sin(2 * np.pi * data['month'] / 12)
+    data['month_cos'] = np.cos(2 * np.pi * data['month'] / 12)
+    for lag in [1, 2, 3, 6, 12, 24, 48]:
+        data[f'demand_lag_{lag}'] = data['demand'].shift(lag)
+    for lag in [1, 6, 24]:
+        data[f'temp_lag_{lag}'] = data['temperature'].shift(lag)
+    for window in [6, 12, 24]:
+        data[f'demand_ma_{window}'] = data['demand'].rolling(window=window).mean()
+        data[f'demand_std_{window}'] = data['demand'].rolling(window=window).std()
+    data['demand_diff_1'] = data['demand'].diff(1)
+    data['demand_diff_24'] = data['demand'].diff(24)
+    data['temp_humidity'] = data['temperature'] * data['humidity']
+    data['temp_squared'] = data['temperature'] ** 2
+    data['is_weekend'] = (data['day_of_week'] >= 5).astype(int)
+    data['is_peak_hour'] = ((data['hour'] >= 8) & (data['hour'] <= 10) | 
+                            (data['hour'] >= 18) & (data['hour'] <= 21)).astype(int)
+    return data
+
+energy_features = create_multivariate_features(energy_data)
+print(f"Original features: {len(energy_data.columns)}")
+print(f"Total features after engineering: {len(energy_features.columns)}")
+
+# Scale and Save Data
+print("\n" + "=" * 60)
+print("STEP 4: Scaling Multivariate Data")
+print("=" * 60)
+
+feature_cols = [col for col in energy_features.columns 
+                if col not in ['hour', 'day_of_week', 'month']]
+data_clean = energy_features[feature_cols].dropna()
+X_cols = [col for col in feature_cols if col != 'demand']
+y_col = 'demand'
+X = data_clean[X_cols]
+y = data_clean[y_col]
+split_idx = int(len(data_clean) * 0.8)
+X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
+y_train, y_test = y.iloc[:split_idx], y.iloc[split_idx:]
+
+scaler_X = MinMaxScaler()
+scaler_y = MinMaxScaler()
+X_train_scaled = scaler_X.fit_transform(X_train)
+X_test_scaled = scaler_X.transform(X_test)
+y_train_scaled = scaler_y.fit_transform(y_train.values.reshape(-1, 1))
+y_test_scaled = scaler_y.transform(y_test.values.reshape(-1, 1))
+
+print(f"Train set: X={X_train_scaled.shape}, y={y_train_scaled.shape}")
+print(f"Test set: X={X_test_scaled.shape}, y={y_test_scaled.shape}")
+
+# Save data
+import joblib
+np.save('/mnt/okcomputer/output/lab1_3_X_train.npy', X_train_scaled)
+np.save('/mnt/okcomputer/output/lab1_3_X_test.npy', X_test_scaled)
+np.save('/mnt/okcomputer/output/lab1_3_y_train.npy', y_train_scaled)
+np.save('/mnt/okcomputer/output/lab1_3_y_test.npy', y_test_scaled)
+joblib.dump(scaler_X, '/mnt/okcomputer/output/lab1_3_scaler_X.pkl')
+joblib.dump(scaler_y, '/mnt/okcomputer/output/lab1_3_scaler_y.pkl')
+pd.Series(X_cols).to_csv('/mnt/okcomputer/output/lab1_3_feature_names.csv', index=False)
+print("\nSaved all preprocessed data")
+
+print("\n" + "=" * 60)
+print("Lab 1.3 Complete!")
+print("=" * 60)
+```
+
+---
+
+# Part 2: Windowing Implementations

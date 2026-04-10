@@ -1,0 +1,438 @@
+---
+title: "Word2Vec from Scratch - Skip-gram"
+module: 8
+labNumber: 5
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Word2Vec from Scratch - Skip-gram
+
+### Objectives
+- Implement Skip-gram Word2Vec from scratch
+- Understand negative sampling
+- Visualize learned embeddings
+
+### Complete Implementation
+
+```python
+"""
+Lab 8.4: Word2Vec Skip-gram from Scratch
+========================================
+Implement the Skip-gram Word2Vec model from scratch.
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+from collections import Counter
+import random
+import re
+
+# ============================================================
+# PART 1: Data Preparation
+# ============================================================
+
+class Word2VecDataGenerator:
+    """
+    Generate training data for Word2Vec Skip-gram model.
+    """
+    
+    def __init__(self, texts, window_size=2, min_count=1):
+        """
+        Initialize data generator.
+        
+        Args:
+            texts: List of text strings
+            window_size: Context window size (on each side)
+            min_count: Minimum word frequency
+        """
+        self.window_size = window_size
+        
+        # Build vocabulary
+        word_counts = Counter()
+        for text in texts:
+            words = self._tokenize(text)
+            word_counts.update(words)
+        
+        # Filter by min_count
+        self.vocab = ['<PAD>', '<UNK>']
+        self.word_counts = {}
+        
+        for word, count in word_counts.items():
+            if count >= min_count:
+                self.vocab.append(word)
+                self.word_counts[word] = count
+        
+        self.word_to_id = {word: idx for idx, word in enumerate(self.vocab)}
+        self.id_to_word = {idx: word for word, idx in self.word_to_id.items()}
+        self.vocab_size = len(self.vocab)
+        
+        print(f"Vocabulary size: {self.vocab_size}")
+        
+        # Generate training pairs
+        self.training_data = self._generate_pairs(texts)
+        print(f"Training pairs: {len(self.training_data)}")
+        
+    def _tokenize(self, text):
+        """Simple tokenization."""
+        text = text.lower()
+        text = re.sub(r'[^a-z0-9\s]', '', text)
+        return text.split()
+    
+    def _generate_pairs(self, texts):
+        """Generate (target, context) pairs."""
+        pairs = []
+        
+        for text in texts:
+            words = self._tokenize(text)
+            word_ids = [self.word_to_id.get(w, self.word_to_id['<UNK>']) 
+                       for w in words]
+            
+            for i, target_id in enumerate(word_ids):
+                # Get context window
+                start = max(0, i - self.window_size)
+                end = min(len(word_ids), i + self.window_size + 1)
+                
+                for j in range(start, end):
+                    if i != j:
+                        context_id = word_ids[j]
+                        pairs.append((target_id, context_id))
+        
+        return pairs
+    
+    def generate_batch(self, batch_size, negative_samples=5):
+        """
+        Generate a batch of training data with negative sampling.
+        
+        Args:
+            batch_size: Number of positive pairs
+            negative_samples: Number of negative samples per positive
+            
+        Returns:
+            target_words, context_words, labels
+        """
+        # Sample positive pairs
+        batch_pairs = random.sample(self.training_data, batch_size)
+        
+        targets = []
+        contexts = []
+        labels = []
+        
+        for target, context in batch_pairs:
+            # Positive sample
+            targets.append(target)
+            contexts.append(context)
+            labels.append(1)
+            
+            # Negative samples
+            for _ in range(negative_samples):
+                negative_context = random.randint(0, self.vocab_size - 1)
+                targets.append(target)
+                contexts.append(negative_context)
+                labels.append(0)
+        
+        return (np.array(targets), np.array(contexts)), np.array(labels)
+
+
+# ============================================================
+# PART 2: Skip-gram Model Implementation
+# ============================================================
+
+class SkipGramModel(tf.keras.Model):
+    """
+    Skip-gram Word2Vec model with negative sampling.
+    """
+    
+    def __init__(self, vocab_size, embedding_dim):
+        super(SkipGramModel, self).__init__()
+        
+        self.vocab_size = vocab_size
+        self.embedding_dim = embedding_dim
+        
+        # Target word embeddings (input)
+        self.target_embedding = tf.keras.layers.Embedding(
+            vocab_size, embedding_dim, name='target_embedding'
+        )
+        
+        # Context word embeddings (output)
+        self.context_embedding = tf.keras.layers.Embedding(
+            vocab_size, embedding_dim, name='context_embedding'
+        )
+        
+    def call(self, inputs):
+        """
+        Forward pass.
+        
+        Args:
+            inputs: Tuple of (target_words, context_words)
+            
+        Returns:
+            Similarity scores
+        """
+        target_words, context_words = inputs
+        
+        # Get embeddings
+        target_embed = self.target_embedding(target_words)  # (batch, embed_dim)
+        context_embed = self.context_embedding(context_words)  # (batch, embed_dim)
+        
+        # Compute dot product similarity
+        dots = tf.reduce_sum(target_embed * context_embed, axis=1)
+        
+        return dots
+    
+    def get_word_embedding(self, word_id):
+        """Get embedding for a word."""
+        return self.target_embedding(tf.constant([word_id]))[0]
+
+
+def create_skipgram_model(vocab_size, embedding_dim=100):
+    """
+    Create and compile Skip-gram model.
+    """
+    model = SkipGramModel(vocab_size, embedding_dim)
+    
+    # Custom loss for negative sampling
+    def negative_sampling_loss(y_true, y_pred):
+        """
+        Negative sampling loss.
+        
+        For positive samples (y=1): maximize log(sigmoid(pred))
+        For negative samples (y=0): maximize log(sigmoid(-pred))
+        """
+        return tf.reduce_mean(
+            tf.nn.sigmoid_cross_entropy_with_logits(
+                labels=tf.cast(y_true, tf.float32),
+                logits=y_pred
+            )
+        )
+    
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+        loss=negative_sampling_loss,
+        metrics=['accuracy']
+    )
+    
+    return model
+
+
+# ============================================================
+# PART 3: Training
+# ============================================================
+
+print("=" * 60)
+print("WORD2VEC SKIP-GRAM FROM SCRATCH")
+print("=" * 60)
+
+# Sample corpus
+corpus = [
+    "the quick brown fox jumps over the lazy dog",
+    "machine learning is fascinating and powerful",
+    "deep learning models can understand language",
+    "natural language processing is a subset of ai",
+    "neural networks learn patterns from data",
+    "the dog was lazy and the fox was quick",
+    "ai and machine learning are transforming industries",
+    "data science combines statistics and programming",
+    "python is a popular language for machine learning",
+    "tensorflow and pytorch are deep learning frameworks"
+] * 50  # Repeat for more data
+
+# Create data generator
+data_gen = Word2VecDataGenerator(corpus, window_size=2, min_count=1)
+
+# Create model
+embedding_dim = 50
+model = create_skipgram_model(data_gen.vocab_size, embedding_dim)
+
+print(f"\nModel created with embedding dim: {embedding_dim}")
+
+# Training loop
+batch_size = 256
+negative_samples = 5
+epochs = 100
+steps_per_epoch = 50
+
+print("\nTraining...")
+for epoch in range(epochs):
+    total_loss = 0
+    
+    for step in range(steps_per_epoch):
+        # Generate batch
+        (targets, contexts), labels = data_gen.generate_batch(
+            batch_size, negative_samples
+        )
+        
+        # Train
+        loss = model.train_on_batch([targets, contexts], labels)
+        total_loss += loss[0]
+    
+    if (epoch + 1) % 20 == 0:
+        avg_loss = total_loss / steps_per_epoch
+        print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}")
+
+
+# ============================================================
+# PART 4: Embedding Visualization
+# ============================================================
+
+print("\n" + "=" * 60)
+print("EMBEDDING VISUALIZATION")
+print("=" * 60)
+
+# Get embeddings
+embeddings = model.target_embedding.weights[0].numpy()
+
+print(f"Embedding matrix shape: {embeddings.shape}")
+
+# Find similar words
+def find_similar_words(word, top_k=5):
+    """Find most similar words using cosine similarity."""
+    if word not in data_gen.word_to_id:
+        return []
+    
+    word_id = data_gen.word_to_id[word]
+    word_vec = embeddings[word_id]
+    
+    # Compute cosine similarities
+    similarities = []
+    for i, vec in enumerate(embeddings):
+        if i != word_id and i > 1:  # Skip special tokens
+            sim = np.dot(word_vec, vec) / (np.linalg.norm(word_vec) * np.linalg.norm(vec))
+            similarities.append((data_gen.id_to_word[i], sim))
+    
+    # Sort by similarity
+    similarities.sort(key=lambda x: x[1], reverse=True)
+    
+    return similarities[:top_k]
+
+# Test similarity
+test_words = ['learning', 'machine', 'dog', 'data']
+
+print("\nWord Similarities:")
+for word in test_words:
+    if word in data_gen.word_to_id:
+        similar = find_similar_words(word)
+        print(f"\n  Words similar to '{word}':")
+        for sim_word, sim_score in similar:
+            print(f"    {sim_word}: {sim_score:.4f}")
+
+# PCA visualization
+try:
+    from sklearn.decomposition import PCA
+    
+    # Apply PCA
+    pca = PCA(n_components=2)
+    embeddings_2d = pca.fit_transform(embeddings[2:])  # Skip special tokens
+    
+    # Plot
+    plt.figure(figsize=(12, 8))
+    
+    words_to_plot = [w for w in data_gen.vocab[2:] if data_gen.word_counts.get(w, 0) >= 5]
+    
+    for word in words_to_plot:
+        idx = data_gen.word_to_id[word] - 2
+        x, y = embeddings_2d[idx]
+        plt.scatter(x, y, c='blue', alpha=0.5)
+        plt.annotate(word, (x, y), fontsize=9)
+    
+    plt.title('Word2Vec Embeddings (PCA)')
+    plt.xlabel('PC1')
+    plt.ylabel('PC2')
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig('word2vec_embeddings.png', dpi=150)
+    plt.show()
+    
+    print("\nVisualization saved to 'word2vec_embeddings.png'")
+    
+except ImportError:
+    print("\nNote: Install scikit-learn for visualization: pip install scikit-learn")
+
+
+# ============================================================
+# PART 5: Analogy Tasks
+# ============================================================
+
+print("\n" + "=" * 60)
+print("WORD ANALOGIES")
+print("=" * 60)
+
+def word_analogy(word_a, word_b, word_c, top_k=3):
+    """
+    Solve analogy: word_a is to word_b as word_c is to ?
+    
+    Formula: result = word_c + (word_b - word_a)
+    """
+    if not all(w in data_gen.word_to_id for w in [word_a, word_b, word_c]):
+        return []
+    
+    # Get vectors
+    vec_a = embeddings[data_gen.word_to_id[word_a]]
+    vec_b = embeddings[data_gen.word_to_id[word_b]]
+    vec_c = embeddings[data_gen.word_to_id[word_c]]
+    
+    # Compute target vector
+    target = vec_c + (vec_b - vec_a)
+    
+    # Find closest words
+    similarities = []
+    for i, vec in enumerate(embeddings):
+        if i > 1 and data_gen.id_to_word[i] not in [word_a, word_b, word_c]:
+            sim = np.dot(target, vec) / (np.linalg.norm(target) * np.linalg.norm(vec))
+            similarities.append((data_gen.id_to_word[i], sim))
+    
+    similarities.sort(key=lambda x: x[1], reverse=True)
+    
+    return similarities[:top_k]
+
+# Test analogies
+analogies = [
+    ('machine', 'learning', 'deep'),
+    ('fox', 'quick', 'dog')
+]
+
+print("\nWord Analogies:")
+for a, b, c in analogies:
+    result = word_analogy(a, b, c)
+    print(f"\n  {a} : {b} :: {c} : ?")
+    for word, score in result:
+        print(f"    {word}: {score:.4f}")
+
+
+# ============================================================
+# EXERCISES
+# ============================================================
+
+print("\n" + "=" * 60)
+print("EXERCISES")
+print("=" * 60)
+
+exercises = """
+Exercise 1: CBOW Implementation
+-------------------------------
+Implement the Continuous Bag of Words (CBOW) model:
+- Predict target word from context
+- Compare with Skip-gram performance
+- Analyze when each works better
+
+Exercise 2: Hierarchical Softmax
+--------------------------------
+Replace negative sampling with hierarchical softmax:
+- Build Huffman tree from word frequencies
+- Implement tree-based prediction
+- Compare training speed
+
+Exercise 3: Subword Embeddings
+------------------------------
+Extend Word2Vec to use subword information:
+- Character n-grams as features
+- FastText-style embeddings
+- Better handling of rare words
+"""
+
+print(exercises)
+```
+
+
+---

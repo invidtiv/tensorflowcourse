@@ -1,0 +1,707 @@
+---
+title: "Custom Data Augmentation Pipeline"
+module: 3
+labNumber: 15
+difficulty: "easy"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Custom Data Augmentation Pipeline
+
+## Objectives
+- Implement advanced augmentation techniques
+- Create custom augmentation layers
+- Combine multiple augmentation strategies
+
+## Prerequisites
+- Completion of Lab 3.13
+- Understanding of TensorFlow data pipeline
+
+```python
+"""
+Lab 3.14: Custom Data Augmentation Pipeline
+Advanced augmentation with custom layers and tf.data
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers, models
+from tensorflow.keras.datasets import cifar10
+from tensorflow.keras.utils import to_categorical
+import tensorflow_addons as tfa
+
+# =============================================================================
+# Section 1: Advanced Augmentation Techniques
+# =============================================================================
+
+print("=" * 60)
+print("CUSTOM DATA AUGMENTATION PIPELINE")
+print("=" * 60)
+
+print("""
+Advanced Augmentation Techniques:
+=================================
+
+1. Cutout/GridMask:
+   - Randomly mask out regions
+   - Forces network to learn from partial information
+
+2. Mixup:
+   - Blend two images and labels
+   - λ * x1 + (1-λ) * x2
+
+3. CutMix:
+   - Cut and paste regions between images
+   - More efficient than Mixup
+
+4. AutoAugment:
+   - Learned augmentation policy
+   - Best transformations for each dataset
+
+5. RandAugment:
+   - Simplified AutoAugment
+   - Random selection of transformations
+""")
+
+
+# =============================================================================
+# Section 2: Custom Augmentation Layers
+# =============================================================================
+
+class Cutout(layers.Layer):
+    """
+    Cutout augmentation layer.
+    Randomly masks out square regions.
+    """
+    
+    def __init__(self, mask_size=8, n_masks=1, **kwargs):
+        super().__init__(**kwargs)
+        self.mask_size = mask_size
+        self.n_masks = n_masks
+    
+    def call(self, inputs, training=None):
+        if not training:
+            return inputs
+        
+        batch_size = tf.shape(inputs)[0]
+        height = tf.shape(inputs)[1]
+        width = tf.shape(inputs)[2]
+        channels = tf.shape(inputs)[3]
+        
+        # Create mask
+        mask = tf.ones_like(inputs)
+        
+        for _ in range(self.n_masks):
+            # Random center position
+            y = tf.random.uniform([], 0, height, dtype=tf.int32)
+            x = tf.random.uniform([], 0, width, dtype=tf.int32)
+            
+            # Calculate mask boundaries
+            y1 = tf.maximum(0, y - self.mask_size // 2)
+            y2 = tf.minimum(height, y + self.mask_size // 2)
+            x1 = tf.maximum(0, x - self.mask_size // 2)
+            x2 = tf.minimum(width, x + self.mask_size // 2)
+            
+            # Create mask for this region
+            y_indices = tf.range(height)
+            x_indices = tf.range(width)
+            
+            y_mask = tf.logical_and(y_indices >= y1, y_indices < y2)
+            x_mask = tf.logical_and(x_indices >= x1, x_indices < x2)
+            
+            y_mask = tf.reshape(y_mask, [height, 1])
+            x_mask = tf.reshape(x_mask, [1, width])
+            
+            region_mask = tf.logical_and(y_mask, x_mask)
+            region_mask = tf.cast(region_mask, tf.float32)
+            region_mask = tf.expand_dims(region_mask, -1)
+            
+            mask = mask * (1 - region_mask)
+        
+        return inputs * mask
+    
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            'mask_size': self.mask_size,
+            'n_masks': self.n_masks
+        })
+        return config
+
+
+class RandomColorJitter(layers.Layer):
+    """Random color jittering layer."""
+    
+    def __init__(self, brightness=0.2, contrast=0.2, saturation=0.2, **kwargs):
+        super().__init__(**kwargs)
+        self.brightness = brightness
+        self.contrast = contrast
+        self.saturation = saturation
+    
+    def call(self, inputs, training=None):
+        if not training:
+            return inputs
+        
+        x = inputs
+        
+        # Random brightness
+        if self.brightness > 0:
+            delta = tf.random.uniform([], -self.brightness, self.brightness)
+            x = tf.image.adjust_brightness(x, delta)
+        
+        # Random contrast
+        if self.contrast > 0:
+            contrast_factor = tf.random.uniform([], 1 - self.contrast, 1 + self.contrast)
+            x = tf.image.adjust_contrast(x, contrast_factor)
+        
+        # Random saturation
+        if self.saturation > 0:
+            saturation_factor = tf.random.uniform([], 1 - self.saturation, 1 + self.saturation)
+            x = tf.image.adjust_saturation(x, saturation_factor)
+        
+        return tf.clip_by_value(x, 0, 1)
+
+
+class MixUp(layers.Layer):
+    """MixUp augmentation layer."""
+    
+    def __init__(self, alpha=0.2, **kwargs):
+        super().__init__(**kwargs)
+        self.alpha = alpha
+    
+    def call(self, inputs, training=None):
+        if not training:
+            return inputs
+        
+        batch_size = tf.shape(inputs)[0]
+        
+        # Sample lambda from Beta distribution
+        lam = tf.random.uniform([], 0, self.alpha)
+        
+        # Shuffle batch
+        indices = tf.random.shuffle(tf.range(batch_size))
+        shuffled = tf.gather(inputs, indices)
+        
+        # Mix
+        mixed = lam * inputs + (1 - lam) * shuffled
+        
+        return mixed
+
+
+# =============================================================================
+# Section 3: Build Augmentation Pipeline
+# =============================================================================
+
+def build_augmentation_pipeline():
+    """Build a comprehensive augmentation pipeline."""
+    
+    print("\n" + "=" * 60)
+    print("BUILDING AUGMENTATION PIPELINE")
+    print("=" * 60)
+    
+    augmentation = keras.Sequential([
+        # Geometric augmentations
+        layers.RandomFlip("horizontal"),
+        layers.RandomRotation(0.1),
+        layers.RandomZoom(0.1),
+        layers.RandomTranslation(0.1, 0.1),
+        
+        # Photometric augmentations
+        RandomColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
+        
+        # Advanced augmentations
+        Cutout(mask_size=8, n_masks=1),
+    ], name='augmentation')
+    
+    return augmentation
+
+
+augmentation_pipeline = build_augmentation_pipeline()
+
+
+# =============================================================================
+# Section 4: Visualize Custom Augmentations
+# =============================================================================
+
+def visualize_custom_augmentations():
+    """Visualize custom augmentation layers."""
+    
+    print("\n" + "=" * 60)
+    print("VISUALIZING CUSTOM AUGMENTATIONS")
+    print("=" * 60)
+    
+    # Load sample image
+    (X_train, _), (_, _) = cifar10.load_data()
+    sample = X_train[0].astype('float32') / 255.0
+    sample_batch = np.expand_dims(sample, axis=0)
+    
+    # Create figure
+    fig, axes = plt.subplots(3, 4, figsize=(14, 10))
+    
+    # Original
+    axes[0, 0].imshow(sample)
+    axes[0, 0].set_title('Original')
+    axes[0, 0].axis('off')
+    
+    # Individual augmentations
+    augmentations = [
+        ('Random Flip', layers.RandomFlip("horizontal")),
+        ('Random Rotation', layers.RandomRotation(0.2)),
+        ('Random Zoom', layers.RandomZoom(0.2)),
+        ('Color Jitter', RandomColorJitter(0.3, 0.3, 0.3)),
+        ('Cutout', Cutout(mask_size=12)),
+        ('Full Pipeline', augmentation_pipeline)
+    ]
+    
+    for idx, (name, aug) in enumerate(augmentations):
+        row = (idx + 1) // 4
+        col = (idx + 1) % 4
+        
+        aug_sample = aug(sample_batch, training=True)[0]
+        axes[row, col].imshow(np.clip(aug_sample, 0, 1))
+        axes[row, col].set_title(name)
+        axes[row, col].axis('off')
+    
+    # Hide extra subplots
+    for i in range(len(augmentations) + 1, 12):
+        row = i // 4
+        col = i % 4
+        axes[row, col].axis('off')
+    
+    plt.tight_layout()
+    plt.savefig('/mnt/okcomputer/output/lab314_custom_augmentations.png', dpi=150)
+    plt.show()
+    print("\nCustom augmentations saved to: /mnt/okcomputer/output/lab314_custom_augmentations.png")
+
+
+visualize_custom_augmentations()
+
+
+# =============================================================================
+# Section 5: tf.data Pipeline
+# =============================================================================
+
+def create_tfdata_pipeline(X, y, batch_size=64, augment=True, shuffle=True):
+    """
+    Create efficient tf.data pipeline with augmentation.
+    
+    Args:
+        X: Images
+        y: Labels
+        batch_size: Batch size
+        augment: Whether to apply augmentation
+        shuffle: Whether to shuffle data
+    
+    Returns:
+        tf.data.Dataset
+    """
+    
+    print("\n" + "=" * 60)
+    print("CREATING TF.DATA PIPELINE")
+    print("=" * 60)
+    
+    # Create dataset from tensors
+    dataset = tf.data.Dataset.from_tensor_slices((X, y))
+    
+    # Shuffle
+    if shuffle:
+        dataset = dataset.shuffle(buffer_size=1000)
+    
+    # Apply augmentation
+    if augment:
+        augmentation = build_augmentation_pipeline()
+        
+        def augment_fn(image, label):
+            image = augmentation(image, training=True)
+            return image, label
+        
+        dataset = dataset.map(augment_fn, num_parallel_calls=tf.data.AUTOTUNE)
+    
+    # Batch and prefetch
+    dataset = dataset.batch(batch_size)
+    dataset = dataset.prefetch(tf.data.AUTOTUNE)
+    
+    print(f"Pipeline created:")
+    print(f"  Batch size: {batch_size}")
+    print(f"  Augmentation: {augment}")
+    print(f"  Prefetch: AUTOTUNE")
+    
+    return dataset
+
+
+# Load data
+(X_train, y_train), (X_test, y_test) = cifar10.load_data()
+X_train = X_train.astype('float32') / 255.0
+X_test = X_test.astype('float32') / 255.0
+y_train = to_categorical(y_train, 10)
+y_test = to_categorical(y_test, 10)
+
+# Create pipelines
+train_dataset = create_tfdata_pipeline(X_train[:10000], y_train[:10000], 
+                                       augment=True, shuffle=True)
+test_dataset = create_tfdata_pipeline(X_test[:2000], y_test[:2000], 
+                                      augment=False, shuffle=False)
+
+
+# =============================================================================
+# Section 6: Train with tf.data Pipeline
+# =============================================================================
+
+def train_with_tfdataset(train_ds, test_ds, epochs=10):
+    """Train model using tf.data pipeline."""
+    
+    print("\n" + "=" * 60)
+    print("TRAINING WITH TF.DATA PIPELINE")
+    print("=" * 60)
+    
+    # Build model
+    model = models.Sequential([
+        layers.Conv2D(32, 3, activation='relu', input_shape=(32, 32, 3)),
+        layers.BatchNormalization(),
+        layers.MaxPooling2D(2),
+        
+        layers.Conv2D(64, 3, activation='relu'),
+        layers.BatchNormalization(),
+        layers.MaxPooling2D(2),
+        
+        layers.Conv2D(128, 3, activation='relu'),
+        layers.GlobalAveragePooling2D(),
+        
+        layers.Dense(128, activation='relu'),
+        layers.Dropout(0.5),
+        layers.Dense(10, activation='softmax')
+    ])
+    
+    model.compile(optimizer='adam',
+                  loss='categorical_crossentropy',
+                  metrics=['accuracy'])
+    
+    # Train
+    history = model.fit(train_ds,
+                       epochs=epochs,
+                       validation_data=test_ds,
+                       verbose=1)
+    
+    # Evaluate
+    test_loss, test_acc = model.evaluate(test_ds, verbose=0)
+    print(f"\nTest accuracy: {test_acc:.4f}")
+    
+    return history, test_acc
+
+
+history_tfdataset, acc_tfdataset = train_with_tfdataset(train_dataset, test_dataset, epochs=10)
+
+
+# =============================================================================
+# Section 7: Compare Augmentation Strategies
+# =============================================================================
+
+def compare_strategies():
+    """Compare different augmentation strategies."""
+    
+    print("\n" + "=" * 60)
+    print("COMPARING AUGMENTATION STRATEGIES")
+    print("=" * 60)
+    
+    strategies = {
+        'No Augmentation': None,
+        'Basic (Keras)': 'basic',
+        'Custom Pipeline': 'custom',
+        'With Cutout': 'cutout'
+    }
+    
+    results = {}
+    
+    for name, strategy in strategies.items():
+        print(f"\n--- Testing: {name} ---")
+        
+        # Load data
+        (X_train, y_train), (X_test, y_test) = cifar10.load_data()
+        X_train = X_train.astype('float32') / 255.0
+        X_test = X_test.astype('float32') / 255.0
+        y_train = to_categorical(y_train, 10)
+        y_test = to_categorical(y_test, 10)
+        
+        X_train = X_train[:5000]
+        y_train = y_train[:5000]
+        
+        # Build model
+        model = models.Sequential([
+            layers.Conv2D(32, 3, activation='relu', input_shape=(32, 32, 3)),
+            layers.MaxPooling2D(2),
+            layers.Conv2D(64, 3, activation='relu'),
+            layers.GlobalAveragePooling2D(),
+            layers.Dense(64, activation='relu'),
+            layers.Dense(10, activation='softmax')
+        ])
+        
+        model.compile(optimizer='adam', loss='categorical_crossentropy',
+                     metrics=['accuracy'])
+        
+        # Train based on strategy
+        if strategy is None:
+            history = model.fit(X_train, y_train, batch_size=64, epochs=5,
+                               validation_data=(X_test[:2000], y_test[:2000]),
+                               verbose=0)
+        elif strategy == 'basic':
+            datagen = keras.preprocessing.image.ImageDataGenerator(
+                rotation_range=15, width_shift_range=0.1,
+                height_shift_range=0.1, horizontal_flip=True
+            )
+            history = model.fit(datagen.flow(X_train, y_train, batch_size=64),
+                               steps_per_epoch=len(X_train)//64, epochs=5,
+                               validation_data=(X_test[:2000], y_test[:2000]),
+                               verbose=0)
+        elif strategy == 'custom':
+            aug = build_augmentation_pipeline()
+            def augment(image, label):
+                return aug(image, training=True), label
+            ds = tf.data.Dataset.from_tensor_slices((X_train, y_train))
+            ds = ds.map(augment).batch(64).prefetch(tf.data.AUTOTUNE)
+            history = model.fit(ds, epochs=5,
+                               validation_data=(X_test[:2000], y_test[:2000]),
+                               verbose=0)
+        elif strategy == 'cutout':
+            aug = keras.Sequential([
+                layers.RandomFlip("horizontal"),
+                layers.RandomRotation(0.1),
+                Cutout(mask_size=8)
+            ])
+            def augment(image, label):
+                return aug(image, training=True), label
+            ds = tf.data.Dataset.from_tensor_slices((X_train, y_train))
+            ds = ds.map(augment).batch(64).prefetch(tf.data.AUTOTUNE)
+            history = model.fit(ds, epochs=5,
+                               validation_data=(X_test[:2000], y_test[:2000]),
+                               verbose=0)
+        
+        final_acc = history.history['val_accuracy'][-1]
+        results[name] = final_acc
+        print(f"  Final accuracy: {final_acc:.4f}")
+    
+    return results
+
+
+strategy_results = compare_strategies()
+
+
+# =============================================================================
+# Section 8: Visualize Strategy Comparison
+# =============================================================================
+
+def plot_strategy_comparison(results):
+    """Plot augmentation strategy comparison."""
+    
+    fig, ax = plt.subplots(figsize=(12, 6))
+    
+    names = list(results.keys())
+    accs = list(results.values())
+    colors = ['#e74c3c', '#3498db', '#2ecc71', '#9b59b6']
+    
+    bars = ax.barh(names, accs, color=colors, edgecolor='black', linewidth=2)
+    
+    # Add value labels
+    for bar, acc in zip(bars, accs):
+        width = bar.get_width()
+        ax.text(width, bar.get_y() + bar.get_height()/2.,
+               f' {acc:.4f}', ha='left', va='center', fontsize=11, fontweight='bold')
+    
+    ax.set_xlim([0, 1])
+    ax.set_title('Augmentation Strategy Comparison', fontsize=14, fontweight='bold')
+    ax.set_xlabel('Validation Accuracy')
+    ax.grid(True, alpha=0.3, axis='x')
+    
+    plt.tight_layout()
+    plt.savefig('/mnt/okcomputer/output/lab314_strategy_comparison.png', dpi=150)
+    plt.show()
+    print("\nStrategy comparison saved to: /mnt/okcomputer/output/lab314_strategy_comparison.png")
+
+
+plot_strategy_comparison(strategy_results)
+
+
+# =============================================================================
+# Section 9: Performance Optimization
+# =============================================================================
+
+def optimize_pipeline():
+    """Demonstrate pipeline optimization techniques."""
+    
+    print("\n" + "=" * 60)
+    print("PIPELINE OPTIMIZATION")
+    print("=" * 60)
+    
+    # Load data
+    (X_train, y_train), (_, _) = cifar10.load_data()
+    X_train = X_train.astype('float32') / 255.0
+    y_train = to_categorical(y_train, 10)
+    
+    X_train = X_train[:5000]
+    y_train = y_train[:5000]
+    
+    # Unoptimized pipeline
+    print("\n--- Unoptimized Pipeline ---")
+    ds_slow = tf.data.Dataset.from_tensor_slices((X_train, y_train))
+    ds_slow = ds_slow.map(lambda x, y: (build_augmentation_pipeline()(x, training=True), y))
+    ds_slow = ds_slow.batch(64)
+    
+    # Optimized pipeline
+    print("\n--- Optimized Pipeline ---")
+    ds_fast = tf.data.Dataset.from_tensor_slices((X_train, y_train))
+    ds_fast = ds_fast.shuffle(1000)
+    ds_fast = ds_fast.map(
+        lambda x, y: (build_augmentation_pipeline()(x, training=True), y),
+        num_parallel_calls=tf.data.AUTOTUNE
+    )
+    ds_fast = ds_fast.batch(64)
+    ds_fast = ds_fast.prefetch(tf.data.AUTOTUNE)
+    ds_fast = ds_fast.cache()
+    
+    print("Optimizations applied:")
+    print("  1. shuffle() - before expensive operations")
+    print("  2. map() with num_parallel_calls=AUTOTUNE")
+    print("  3. prefetch(AUTOTUNE) - overlap preprocessing and training")
+    print("  4. cache() - cache preprocessed data in memory")
+
+
+optimize_pipeline()
+
+
+# =============================================================================
+# Section 10: Exercises
+# =============================================================================
+
+print("\n" + "=" * 60)
+print("EXERCISES")
+print("=" * 60)
+
+print("""
+Exercise 1: Implement Mixup/CutMix
+- Create Mixup or CutMix augmentation layer
+- Compare with standard augmentation
+
+Exercise 2: Learned Augmentation
+- Implement simple learned augmentation policy
+- Use validation accuracy to guide selection
+
+Exercise 3: Domain-Specific Augmentation
+- Create augmentation for specific domain (medical, satellite, etc.)
+- Justify your choices
+
+Exercise 4: Augmentation Benchmarking
+- Benchmark different pipelines for throughput
+- Measure images/second for each approach
+""")
+
+print("\n" + "=" * 60)
+print("Lab 3.14 Complete!")
+print("=" * 60)
+
+
+# =============================================================================
+# Module 3 Summary
+# =============================================================================
+
+print("\n" + "=" * 60)
+print("MODULE 3: CONVOLUTIONAL NEURAL NETWORKS - SUMMARY")
+print("=" * 60)
+
+print("""
+Congratulations on completing Module 3!
+
+Key Topics Covered:
+===================
+
+1. Convolution from Scratch (Labs 3.1-3.2):
+   - Implemented 2D convolution with NumPy
+   - Understood multi-channel convolution
+   - Learned about receptive fields and parameter counting
+
+2. Building CNNs (Labs 3.3-3.6):
+   - Implemented LeNet-5 architecture
+   - Built custom CNN for CIFAR-10
+   - Created ResNet blocks with skip connections
+   - Compared different architectures
+
+3. Feature Visualization (Labs 3.7-3.9):
+   - Visualized learned filters
+   - Extracted and visualized feature maps
+   - Implemented Grad-CAM for model interpretability
+
+4. Transfer Learning (Labs 3.10-3.12):
+   - Used VGG16 and ResNet50 for transfer learning
+   - Implemented feature extraction and fine-tuning
+   - Applied advanced fine-tuning strategies
+
+5. Data Augmentation (Labs 3.13-3.14):
+   - Implemented basic augmentation techniques
+   - Created custom augmentation layers
+   - Built efficient tf.data pipelines
+
+Skills Acquired:
+================
+- Implementing CNN architectures from scratch
+- Visualizing and interpreting CNN features
+- Applying transfer learning effectively
+- Building efficient data pipelines
+- Optimizing CNN performance
+
+Next Steps:
+===========
+- Module 4: Recurrent Neural Networks
+- Practice with real-world datasets
+- Implement research papers
+- Participate in Kaggle competitions
+""")
+
+print("\n" + "=" * 60)
+print("Module 3 Labs Complete!")
+print("=" * 60)
+```
+
+---
+
+## Appendix: Quick Reference
+
+### Common CNN Architectures
+
+| Architecture | Year | Depth | Parameters | Key Innovation |
+|--------------|------|-------|------------|----------------|
+| LeNet-5 | 1998 | 8 | 60K | First successful CNN |
+| AlexNet | 2012 | 8 | 60M | ReLU, Dropout, GPU |
+| VGG-16 | 2014 | 16 | 138M | Small filters (3x3) |
+| ResNet-50 | 2015 | 50 | 25.6M | Skip connections |
+| EfficientNet | 2019 | Variable | Variable | Compound scaling |
+
+### Convolution Formulas
+
+```
+Output Size = floor((Input + 2*Padding - Kernel) / Stride) + 1
+
+Receptive Field = RF_prev + (Kernel - 1) * Stride_product
+
+Parameters = (Kernel_H * Kernel_W * Channels_in + Bias) * Channels_out
+```
+
+### Transfer Learning Checklist
+
+1. [ ] Choose appropriate pretrained model
+2. [ ] Freeze base layers initially
+3. [ ] Add custom classifier
+4. [ ] Train classifier with moderate LR
+5. [ ] Unfreeze layers gradually
+6. [ ] Fine-tune with small LR
+7. [ ] Monitor for overfitting
+
+### Data Augmentation Guidelines
+
+- **Geometric**: Rotation, flip, zoom, shift
+- **Photometric**: Brightness, contrast, saturation
+- **Advanced**: Cutout, Mixup, CutMix
+- **Best Practice**: Don't augment validation/test data
+
+---
+
+*End of Module 3 Labs*

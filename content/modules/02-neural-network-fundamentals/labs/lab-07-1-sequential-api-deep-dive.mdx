@@ -1,0 +1,247 @@
+---
+title: "1: Sequential API Deep Dive"
+module: 2
+labNumber: 7
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-03-part3.md"
+---
+# 1: Sequential API Deep Dive
+
+```python
+"""
+Lab 2.2.1: Sequential API Deep Dive
+Comprehensive guide to building models with Keras Sequential API.
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+
+print("=" * 60)
+print("LAB 2.2.1: Sequential API Deep Dive")
+print("=" * 60)
+
+# ============================================================
+# STEP 1: Basic Sequential Model
+# ============================================================
+print("\n[STEP 1] Creating basic Sequential model...")
+
+# Method 1: List of layers
+model1 = tf.keras.Sequential([
+    tf.keras.layers.Dense(64, activation='relu', input_shape=(10,)),
+    tf.keras.layers.Dense(32, activation='relu'),
+    tf.keras.layers.Dense(1, activation='sigmoid')
+], name='basic_sequential')
+
+print("\nModel 1 (List method):")
+model1.summary()
+
+# Method 2: Adding layers incrementally
+model2 = tf.keras.Sequential(name='incremental_sequential')
+model2.add(tf.keras.layers.Dense(64, activation='relu', input_shape=(10,)))
+model2.add(tf.keras.layers.Dense(32, activation='relu'))
+model2.add(tf.keras.layers.Dense(1, activation='sigmoid'))
+
+print("\nModel 2 (Add method):")
+model2.summary()
+
+# ============================================================
+# STEP 2: Advanced Sequential Patterns
+# ============================================================
+print("\n[STEP 2] Advanced Sequential patterns...")
+
+# Pattern 1: With regularization
+def create_regularized_model(input_dim, num_classes):
+    """Create model with L1/L2 regularization."""
+    return tf.keras.Sequential([
+        tf.keras.layers.Dense(128, activation='relu', 
+                             input_shape=(input_dim,),
+                             kernel_regularizer=tf.keras.regularizers.l2(0.001),
+                             bias_regularizer=tf.keras.regularizers.l1(0.001)),
+        tf.keras.layers.Dropout(0.3),
+        tf.keras.layers.Dense(64, activation='relu',
+                             kernel_regularizer=tf.keras.regularizers.l2(0.001)),
+        tf.keras.layers.Dropout(0.3),
+        tf.keras.layers.Dense(num_classes, activation='softmax')
+    ], name='regularized_model')
+
+# Pattern 2: With batch normalization
+def create_bn_model(input_dim, num_classes):
+    """Create model with batch normalization."""
+    return tf.keras.Sequential([
+        tf.keras.layers.Dense(128, input_shape=(input_dim,)),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation('relu'),
+        tf.keras.layers.Dropout(0.3),
+        
+        tf.keras.layers.Dense(64),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation('relu'),
+        tf.keras.layers.Dropout(0.3),
+        
+        tf.keras.layers.Dense(num_classes, activation='softmax')
+    ], name='batch_norm_model')
+
+# Pattern 3: With different initialization
+def create_initialized_model(input_dim, num_classes):
+    """Create model with custom weight initialization."""
+    return tf.keras.Sequential([
+        tf.keras.layers.Dense(128, activation='relu', 
+                             input_shape=(input_dim,),
+                             kernel_initializer='he_normal'),
+        tf.keras.layers.Dense(64, activation='relu',
+                             kernel_initializer='he_normal'),
+        tf.keras.layers.Dense(num_classes, activation='softmax',
+                             kernel_initializer='glorot_uniform')
+    ], name='initialized_model')
+
+# Create and compare models
+regularized_model = create_regularized_model(20, 3)
+bn_model = create_bn_model(20, 3)
+initialized_model = create_initialized_model(20, 3)
+
+print("\nRegularized Model:")
+regularized_model.summary()
+
+print("\nBatch Normalization Model:")
+bn_model.summary()
+
+# ============================================================
+# STEP 3: Convolutional Sequential Model
+# ============================================================
+print("\n[STEP 3] Convolutional Sequential model...")
+
+def create_cnn_model(input_shape, num_classes):
+    """Create CNN using Sequential API."""
+    return tf.keras.Sequential([
+        # First conv block
+        tf.keras.layers.Conv2D(32, (3, 3), padding='same', input_shape=input_shape),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation('relu'),
+        tf.keras.layers.Conv2D(32, (3, 3), padding='same'),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation('relu'),
+        tf.keras.layers.MaxPooling2D((2, 2)),
+        tf.keras.layers.Dropout(0.25),
+        
+        # Second conv block
+        tf.keras.layers.Conv2D(64, (3, 3), padding='same'),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation('relu'),
+        tf.keras.layers.Conv2D(64, (3, 3), padding='same'),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation('relu'),
+        tf.keras.layers.MaxPooling2D((2, 2)),
+        tf.keras.layers.Dropout(0.25),
+        
+        # Classifier
+        tf.keras.layers.Flatten(),
+        tf.keras.layers.Dense(128),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation('relu'),
+        tf.keras.layers.Dropout(0.5),
+        tf.keras.layers.Dense(num_classes, activation='softmax')
+    ], name='cnn_sequential')
+
+cnn_model = create_cnn_model((28, 28, 1), 10)
+print("\nCNN Model:")
+cnn_model.summary()
+
+# ============================================================
+# STEP 4: Recurrent Sequential Model
+# ============================================================
+print("\n[STEP 4] Recurrent Sequential model...")
+
+def create_rnn_model(input_shape, num_classes):
+    """Create RNN using Sequential API."""
+    return tf.keras.Sequential([
+        # First LSTM layer
+        tf.keras.layers.LSTM(128, return_sequences=True, 
+                            input_shape=input_shape,
+                            dropout=0.2,
+                            recurrent_dropout=0.2),
+        
+        # Second LSTM layer
+        tf.keras.layers.LSTM(64, return_sequences=False,
+                            dropout=0.2,
+                            recurrent_dropout=0.2),
+        
+        # Classifier
+        tf.keras.layers.Dense(64, activation='relu'),
+        tf.keras.layers.Dropout(0.3),
+        tf.keras.layers.Dense(num_classes, activation='softmax')
+    ], name='rnn_sequential')
+
+rnn_model = create_rnn_model((100, 10), 5)
+print("\nRNN Model:")
+rnn_model.summary()
+
+# ============================================================
+# STEP 5: Training with Sequential Models
+# ============================================================
+print("\n[STEP 5] Training demonstration with Sequential model...")
+
+# Generate synthetic data
+np.random.seed(42)
+X_train = np.random.randn(1000, 20)
+y_train = np.random.randint(0, 3, 1000)
+
+X_test = np.random.randn(200, 20)
+y_test = np.random.randint(0, 3, 200)
+
+# One-hot encode labels
+y_train_cat = tf.keras.utils.to_categorical(y_train, 3)
+y_test_cat = tf.keras.utils.to_categorical(y_test, 3)
+
+# Create and compile model
+model = create_bn_model(20, 3)
+model.compile(
+    optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+    loss='categorical_crossentropy',
+    metrics=['accuracy']
+)
+
+# Train
+print("\nTraining model...")
+history = model.fit(
+    X_train, y_train_cat,
+    validation_split=0.2,
+    epochs=20,
+    batch_size=32,
+    verbose=1
+)
+
+# Evaluate
+test_loss, test_acc = model.evaluate(X_test, y_test_cat, verbose=0)
+print(f"\nTest accuracy: {test_acc:.4f}")
+
+# ============================================================
+# STEP 6: Model Saving and Loading
+# ============================================================
+print("\n[STEP 6] Saving and loading Sequential models...")
+
+# Save entire model
+model.save('/mnt/okcomputer/output/sequential_model.keras')
+print("Model saved to: /mnt/okcomputer/output/sequential_model.keras")
+
+# Load model
+loaded_model = tf.keras.models.load_model('/mnt/okcomputer/output/sequential_model.keras')
+print("Model loaded successfully!")
+
+# Verify
+loaded_loss, loaded_acc = loaded_model.evaluate(X_test, y_test_cat, verbose=0)
+print(f"Loaded model test accuracy: {loaded_acc:.4f}")
+
+print("\n" + "=" * 60)
+print("LAB 2.2.1 COMPLETED SUCCESSFULLY!")
+print("=" * 60)
+print("\nKEY TAKEAWAYS:")
+print("1. Sequential API is simple and intuitive for linear stacks")
+print("2. Two ways to create: list of layers or .add() method")
+print("3. Easy to add regularization, dropout, batch normalization")
+print("4. Works well for most common architectures")
+print("5. Limitations: single input/output, no shared layers, no branching")
+```
+
+---

@@ -1,0 +1,632 @@
+---
+title: "Data and Concept Drift Detection"
+module: 10
+labNumber: 13
+difficulty: "hard"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Data and Concept Drift Detection
+
+## Objectives
+- Understand data drift and concept drift
+- Implement statistical drift detection
+- Use TensorFlow Data Validation for drift
+- Create drift monitoring pipelines
+
+## Complete Implementation
+
+```python
+"""
+Lab 10.12: Data and Concept Drift Detection
+============================================
+Implement comprehensive drift detection for production ML models.
+"""
+
+import tensorflow as tf
+import tensorflow_data_validation as tfdv
+import numpy as np
+import pandas as pd
+from scipy import stats
+from scipy.spatial.distance import jensenshannon
+import matplotlib.pyplot as plt
+import warnings
+warnings.filterwarnings('ignore')
+
+print("=" * 60)
+print("Lab 10.12: Data and Concept Drift Detection")
+print("=" * 60)
+
+# ============================================================
+# PART 1: Generate Reference and Production Data
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 1: Generate Reference and Production Data")
+print("=" * 60)
+
+np.random.seed(42)
+
+# Reference data (training distribution)
+print("Creating reference (training) data...")
+n_ref = 5000
+reference_data = pd.DataFrame({
+    'feature_1': np.random.normal(50, 10, n_ref),
+    'feature_2': np.random.normal(100, 20, n_ref),
+    'feature_3': np.random.exponential(2, n_ref),
+    'category': np.random.choice(['A', 'B', 'C'], n_ref, p=[0.5, 0.3, 0.2]),
+    'target': np.random.binomial(1, 0.3, n_ref)
+})
+
+# Production data - different scenarios
+print("\nCreating production data scenarios...")
+n_prod = 2000
+
+# Scenario 1: No drift (similar distribution)
+production_no_drift = pd.DataFrame({
+    'feature_1': np.random.normal(50, 10, n_prod),
+    'feature_2': np.random.normal(100, 20, n_prod),
+    'feature_3': np.random.exponential(2, n_prod),
+    'category': np.random.choice(['A', 'B', 'C'], n_prod, p=[0.5, 0.3, 0.2]),
+    'target': np.random.binomial(1, 0.3, n_prod)
+})
+
+# Scenario 2: Data drift (shifted distribution)
+production_data_drift = pd.DataFrame({
+    'feature_1': np.random.normal(65, 15, n_prod),  # Shifted mean and variance
+    'feature_2': np.random.normal(120, 25, n_prod),  # Shifted
+    'feature_3': np.random.exponential(3, n_prod),  # Different rate
+    'category': np.random.choice(['A', 'B', 'C'], n_prod, p=[0.3, 0.4, 0.3]),  # Changed proportions
+    'target': np.random.binomial(1, 0.3, n_prod)
+})
+
+# Scenario 3: Concept drift (changed target relationship)
+production_concept_drift = pd.DataFrame({
+    'feature_1': np.random.normal(50, 10, n_prod),
+    'feature_2': np.random.normal(100, 20, n_prod),
+    'feature_3': np.random.exponential(2, n_prod),
+    'category': np.random.choice(['A', 'B', 'C'], n_prod, p=[0.5, 0.3, 0.2]),
+    'target': np.random.binomial(1, 0.6, n_prod)  # Changed target distribution
+})
+
+print(f"Reference data shape: {reference_data.shape}")
+print(f"Production data shape: {production_no_drift.shape}")
+
+# ============================================================
+# PART 2: Statistical Drift Detection Methods
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 2: Statistical Drift Detection Methods")
+print("=" * 60)
+
+class DriftDetector:
+    """Comprehensive drift detection class."""
+    
+    def __init__(self, reference_data, significance_level=0.05):
+        """
+        Initialize drift detector.
+        
+        Args:
+            reference_data: Baseline/reference data
+            significance_level: Threshold for statistical tests
+        """
+        self.reference = reference_data
+        self.alpha = significance_level
+        self.numeric_columns = reference_data.select_dtypes(include=[np.number]).columns
+        self.categorical_columns = reference_data.select_dtypes(include=['object']).columns
+    
+    def ks_test(self, production_data, column):
+        """
+        Kolmogorov-Smirnov test for numeric features.
+        Tests if two samples come from the same distribution.
+        """
+        statistic, p_value = stats.ks_2samp(
+            self.reference[column].dropna(),
+            production_data[column].dropna()
+        )
+        
+        return {
+            'test': 'Kolmogorov-Smirnov',
+            'column': column,
+            'statistic': statistic,
+            'p_value': p_value,
+            'drift_detected': p_value < self.alpha
+        }
+    
+    def chi_square_test(self, production_data, column):
+        """
+        Chi-square test for categorical features.
+        Tests if category distributions are different.
+        """
+        # Get value counts
+        ref_counts = self.reference[column].value_counts()
+        prod_counts = production_data[column].value_counts()
+        
+        # Align categories
+        all_categories = set(ref_counts.index) | set(prod_counts.index)
+        ref_aligned = [ref_counts.get(cat, 0) for cat in all_categories]
+        prod_aligned = [prod_counts.get(cat, 0) for cat in all_categories]
+        
+        # Perform chi-square test
+        statistic, p_value = stats.chisquare(prod_aligned, ref_aligned)
+        
+        return {
+            'test': 'Chi-Square',
+            'column': column,
+            'statistic': statistic,
+            'p_value': p_value,
+            'drift_detected': p_value < self.alpha
+        }
+    
+    def wasserstein_distance(self, production_data, column):
+        """
+        Wasserstein distance (Earth Mover's Distance).
+        Measures distance between distributions.
+        """
+        from scipy.stats import wasserstein_distance as wd
+        
+        distance = wd(
+            self.reference[column].dropna(),
+            production_data[column].dropna()
+        )
+        
+        # Normalize by reference std
+        normalized_distance = distance / (self.reference[column].std() + 1e-10)
+        
+        return {
+            'test': 'Wasserstein Distance',
+            'column': column,
+            'distance': distance,
+            'normalized_distance': normalized_distance,
+            'drift_detected': normalized_distance > 0.1  # Threshold
+        }
+    
+    def jensen_shannon_divergence(self, production_data, column):
+        """
+        Jensen-Shannon divergence for categorical features.
+        Symmetric and smoothed version of KL divergence.
+        """
+        # Get probability distributions
+        ref_dist = self.reference[column].value_counts(normalize=True).sort_index()
+        prod_dist = production_data[column].value_counts(normalize=True).sort_index()
+        
+        # Align indices
+        all_categories = sorted(set(ref_dist.index) | set(prod_dist.index))
+        ref_aligned = np.array([ref_dist.get(cat, 0) for cat in all_categories])
+        prod_aligned = np.array([prod_dist.get(cat, 0) for cat in all_categories])
+        
+        # Calculate JS divergence
+        js_div = jensenshannon(ref_aligned, prod_aligned)
+        
+        return {
+            'test': 'Jensen-Shannon Divergence',
+            'column': column,
+            'divergence': js_div,
+            'drift_detected': js_div > 0.1  # Threshold
+        }
+    
+    def population_stability_index(self, production_data, column, bins=10):
+        """
+        Population Stability Index (PSI).
+        Commonly used in credit risk modeling.
+        PSI < 0.1: No change
+        0.1 <= PSI < 0.25: Moderate change
+        PSI >= 0.25: Significant change
+        """
+        # Create bins based on reference data
+        ref_values = self.reference[column].dropna()
+        prod_values = production_data[column].dropna()
+        
+        bin_edges = np.percentile(ref_values, np.linspace(0, 100, bins + 1))
+        bin_edges[0] -= 0.001  # Adjust for edge cases
+        bin_edges[-1] += 0.001
+        
+        # Calculate percentages
+        ref_percents = np.histogram(ref_values, bins=bin_edges)[0] / len(ref_values)
+        prod_percents = np.histogram(prod_values, bins=bin_edges)[0] / len(prod_values)
+        
+        # Avoid division by zero
+        ref_percents = np.clip(ref_percents, 0.0001, 1)
+        prod_percents = np.clip(prod_percents, 0.0001, 1)
+        
+        # Calculate PSI
+        psi = np.sum((prod_percents - ref_percents) * np.log(prod_percents / ref_percents))
+        
+        return {
+            'test': 'Population Stability Index',
+            'column': column,
+            'psi': psi,
+            'drift_detected': psi > 0.25,
+            'severity': 'High' if psi > 0.25 else ('Medium' if psi > 0.1 else 'Low')
+        }
+    
+    def detect_all_drift(self, production_data):
+        """Run all drift detection methods."""
+        results = []
+        
+        # Numeric features
+        for col in self.numeric_columns:
+            if col == 'target':  # Skip target for data drift
+                continue
+            results.append(self.ks_test(production_data, col))
+            results.append(self.wasserstein_distance(production_data, col))
+            results.append(self.population_stability_index(production_data, col))
+        
+        # Categorical features
+        for col in self.categorical_columns:
+            results.append(self.chi_square_test(production_data, col))
+            results.append(self.jensen_shannon_divergence(production_data, col))
+        
+        return pd.DataFrame(results)
+
+# Initialize drift detector
+detector = DriftDetector(reference_data)
+
+# ============================================================
+# PART 3: Detect Drift in Different Scenarios
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 3: Detecting Drift in Different Scenarios")
+print("=" * 60)
+
+scenarios = [
+    ('No Drift', production_no_drift),
+    ('Data Drift', production_data_drift),
+    ('Concept Drift', production_concept_drift)
+]
+
+for scenario_name, prod_data in scenarios:
+    print(f"\n--- {scenario_name} Scenario ---")
+    
+    results = detector.detect_all_drift(prod_data)
+    
+    # Summary
+    drift_count = results['drift_detected'].sum()
+    total_tests = len(results)
+    
+    print(f"Drift detected in {drift_count}/{total_tests} tests")
+    
+    # Show drifted features
+    drifted = results[results['drift_detected'] == True]
+    if len(drifted) > 0:
+        print("\nDrifted features:")
+        for _, row in drifted.iterrows():
+            print(f"  - {row['column']} ({row['test']})")
+
+# ============================================================
+# PART 4: TensorFlow Data Validation for Drift
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 4: TensorFlow Data Validation for Drift")
+print("=" * 60)
+
+# Generate statistics for reference data
+print("\nGenerating reference statistics...")
+reference_stats = tfdv.generate_statistics_from_dataframe(reference_data)
+
+# Infer schema
+schema = tfdv.infer_schema(statistics=reference_stats)
+
+# Set drift comparator for numeric features
+for feature in schema.feature:
+    if feature.type == tf.proto.feature_pb2.FeatureType.FLOAT:
+        # Set Jensen-Shannon divergence threshold
+        feature.drift_comparator.jensen_shannon_divergence.threshold = 0.1
+
+print("Schema inferred with drift comparators")
+
+# Validate production data
+print("\nValidating production data with drift detection...")
+
+for scenario_name, prod_data in scenarios:
+    print(f"\n--- {scenario_name} ---")
+    
+    # Generate production statistics
+    prod_stats = tfdv.generate_statistics_from_dataframe(prod_data)
+    
+    # Validate
+    anomalies = tfdv.validate_statistics(
+        statistics=prod_stats,
+        schema=schema,
+        previous_statistics=reference_stats
+    )
+    
+    # Check for drift
+    if anomalies.anomaly_info:
+        print("Drift detected!")
+        for feature_name, anomaly in anomalies.anomaly_info.items():
+            print(f"  - {feature_name}: {anomaly.description}")
+    else:
+        print("No drift detected")
+
+# ============================================================
+# PART 5: Concept Drift Detection
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 5: Concept Drift Detection")
+print("=" * 60)
+
+"""
+Concept drift occurs when the relationship between inputs and outputs changes.
+This is detected by monitoring model performance and target distribution.
+"""
+
+def detect_concept_drift(reference_data, production_data, target_col='target'):
+    """
+    Detect concept drift by comparing target distributions and
+    relationships with features.
+    """
+    results = {}
+    
+    # 1. Target distribution drift
+    ref_target_dist = reference_data[target_col].value_counts(normalize=True)
+    prod_target_dist = production_data[target_col].value_counts(normalize=True)
+    
+    # Chi-square test on target
+    chi2, p_value = stats.chisquare(
+        prod_target_dist.values,
+        ref_target_dist.values
+    )
+    
+    results['target_distribution_drift'] = {
+        'p_value': p_value,
+        'drift_detected': p_value < 0.05,
+        'reference_distribution': ref_target_dist.to_dict(),
+        'production_distribution': prod_target_dist.to_dict()
+    }
+    
+    # 2. Feature-target correlation drift
+    numeric_cols = reference_data.select_dtypes(include=[np.number]).columns
+    numeric_cols = [c for c in numeric_cols if c != target_col]
+    
+    correlation_drift = {}
+    for col in numeric_cols:
+        ref_corr = reference_data[col].corr(reference_data[target_col])
+        prod_corr = production_data[col].corr(production_data[target_col])
+        
+        # Check if correlation changed significantly
+        correlation_diff = abs(ref_corr - prod_corr)
+        
+        correlation_drift[col] = {
+            'reference_correlation': ref_corr,
+            'production_correlation': prod_corr,
+            'difference': correlation_diff,
+            'drift_detected': correlation_diff > 0.1
+        }
+    
+    results['correlation_drift'] = correlation_drift
+    
+    return results
+
+# Detect concept drift
+print("\nAnalyzing concept drift...")
+for scenario_name, prod_data in scenarios:
+    print(f"\n--- {scenario_name} ---")
+    
+    concept_drift = detect_concept_drift(reference_data, prod_data)
+    
+    # Target distribution
+    target_drift = concept_drift['target_distribution_drift']
+    print(f"Target distribution drift: {target_drift['drift_detected']}")
+    print(f"  Reference: {target_drift['reference_distribution']}")
+    print(f"  Production: {target_drift['production_distribution']}")
+    
+    # Correlation drift
+    corr_drift = concept_drift['correlation_drift']
+    drifted_corrs = [k for k, v in corr_drift.items() if v['drift_detected']]
+    if drifted_corrs:
+        print(f"Correlation drift in: {drifted_corrs}")
+
+# ============================================================
+# PART 6: Drift Visualization
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 6: Drift Visualization")
+print("=" * 60)
+
+fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+
+# Plot distributions for each scenario
+feature_to_plot = 'feature_1'
+
+for idx, (scenario_name, prod_data) in enumerate(scenarios):
+    # Histogram
+    ax = axes[0, idx]
+    ax.hist(reference_data[feature_to_plot], bins=30, alpha=0.5, 
+            label='Reference', density=True, color='blue')
+    ax.hist(prod_data[feature_to_plot], bins=30, alpha=0.5, 
+            label='Production', density=True, color='red')
+    ax.set_title(f'{scenario_name}\n({feature_to_plot})')
+    ax.set_xlabel('Value')
+    ax.set_ylabel('Density')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    
+    # CDF
+    ax = axes[1, idx]
+    ref_sorted = np.sort(reference_data[feature_to_plot])
+    prod_sorted = np.sort(prod_data[feature_to_plot])
+    ref_cdf = np.arange(1, len(ref_sorted) + 1) / len(ref_sorted)
+    prod_cdf = np.arange(1, len(prod_sorted) + 1) / len(prod_sorted)
+    
+    ax.plot(ref_sorted, ref_cdf, label='Reference', color='blue')
+    ax.plot(prod_sorted, prod_cdf, label='Production', color='red')
+    ax.set_title(f'CDF Comparison\n({feature_to_plot})')
+    ax.set_xlabel('Value')
+    ax.set_ylabel('Cumulative Probability')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.savefig('drift_visualization.png', dpi=150, bbox_inches='tight')
+print("\nDrift visualization saved to: drift_visualization.png")
+plt.show()
+
+# ============================================================
+# PART 7: Drift Monitoring Pipeline
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 7: Drift Monitoring Pipeline")
+print("=" * 60)
+
+class DriftMonitoringPipeline:
+    """Production drift monitoring pipeline."""
+    
+    def __init__(self, reference_data, alert_threshold=0.25):
+        self.detector = DriftDetector(reference_data)
+        self.alert_threshold = alert_threshold
+        self.history = []
+    
+    def monitor(self, production_data, timestamp=None):
+        """
+        Monitor production data for drift.
+        
+        Returns:
+            dict with drift status and alerts
+        """
+        if timestamp is None:
+            timestamp = pd.Timestamp.now()
+        
+        # Run drift detection
+        results = self.detector.detect_all_drift(production_data)
+        
+        # Calculate overall drift score
+        drift_detected_count = results['drift_detected'].sum()
+        total_tests = len(results)
+        drift_score = drift_detected_count / total_tests
+        
+        # Determine alert level
+        if drift_score >= self.alert_threshold:
+            alert_level = 'CRITICAL'
+        elif drift_score >= self.alert_threshold / 2:
+            alert_level = 'WARNING'
+        else:
+            alert_level = 'OK'
+        
+        # Create report
+        report = {
+            'timestamp': timestamp,
+            'drift_score': drift_score,
+            'drift_detected_count': int(drift_detected_count),
+            'total_tests': total_tests,
+            'alert_level': alert_level,
+            'drifted_features': results[results['drift_detected']]['column'].unique().tolist()
+        }
+        
+        self.history.append(report)
+        
+        return report
+    
+    def get_history(self):
+        """Get monitoring history."""
+        return pd.DataFrame(self.history)
+    
+    def plot_drift_trend(self):
+        """Plot drift score over time."""
+        if not self.history:
+            print("No history to plot")
+            return
+        
+        history_df = self.get_history()
+        
+        plt.figure(figsize=(12, 6))
+        plt.plot(history_df['timestamp'], history_df['drift_score'], 
+                 marker='o', linewidth=2)
+        plt.axhline(y=self.alert_threshold, color='r', 
+                    linestyle='--', label='Critical Threshold')
+        plt.axhline(y=self.alert_threshold/2, color='orange', 
+                    linestyle='--', label='Warning Threshold')
+        plt.xlabel('Time')
+        plt.ylabel('Drift Score')
+        plt.title('Drift Score Trend')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        plt.savefig('drift_trend.png', dpi=150)
+        print("Drift trend saved to: drift_trend.png")
+        plt.show()
+
+# Create monitoring pipeline
+monitor = DriftMonitoringPipeline(reference_data, alert_threshold=0.3)
+
+# Simulate monitoring over time
+print("\nSimulating drift monitoring over time...")
+for i, (scenario_name, prod_data) in enumerate(scenarios):
+    report = monitor.monitor(prod_data, timestamp=pd.Timestamp.now() + pd.Timedelta(hours=i))
+    print(f"\n{scenario_name}:")
+    print(f"  Alert Level: {report['alert_level']}")
+    print(f"  Drift Score: {report['drift_score']:.2f}")
+    print(f"  Drifted Features: {report['drifted_features']}")
+
+# Plot trend
+monitor.plot_drift_trend()
+
+# ============================================================
+# PART 8: Summary
+# ============================================================
+
+print("\n" + "=" * 60)
+print("SUMMARY: Drift Detection")
+print("=" * 60)
+
+print("""
+Drift Detection Summary:
+========================
+
+Types of Drift:
+---------------
+1. Data Drift (Covariate Shift):
+   - Input feature distributions change
+   - P(X) changes, P(Y|X) stays same
+   - Detected with: KS test, PSI, Wasserstein distance
+
+2. Concept Drift:
+   - Relationship between X and Y changes
+   - P(Y|X) changes
+   - Detected with: Target distribution, correlation drift
+
+3. Label Drift:
+   - Output distribution changes
+   - P(Y) changes
+   - Detected with: Chi-square test on target
+
+Detection Methods:
+------------------
+1. Statistical Tests:
+   - KS test: For numeric features
+   - Chi-square: For categorical features
+   
+2. Distance Metrics:
+   - Wasserstein: Earth mover's distance
+   - Jensen-Shannon: Symmetric KL divergence
+   
+3. Domain-Specific:
+   - PSI: Popular in credit risk
+   - Population stability
+
+Best Practices:
+---------------
+1. Monitor continuously, not just periodically
+2. Use multiple detection methods
+3. Set appropriate thresholds
+4. Alert on drift, but investigate before acting
+5. Track drift history for trends
+6. Automate retraining when drift is detected
+""")
+
+# Cleanup
+import os
+for f in ['drift_visualization.png', 'drift_trend.png']:
+    if os.path.exists(f):
+        os.remove(f)
+print("\nCleanup completed!")
+```
+
+---

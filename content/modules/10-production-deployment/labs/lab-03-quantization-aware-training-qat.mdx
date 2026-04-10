@@ -1,0 +1,359 @@
+---
+title: "Quantization-Aware Training (QAT)"
+module: 10
+labNumber: 3
+difficulty: "hard"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Quantization-Aware Training (QAT)
+
+## Objectives
+- Understand QAT concepts and benefits
+- Implement QAT in a Keras model
+- Compare QAT vs post-training quantization
+- Fine-tune quantized models
+
+## Complete Implementation
+
+```python
+"""
+Lab 10.2: Quantization-Aware Training (QAT)
+============================================
+This lab demonstrates how to train models with quantization awareness
+to achieve better accuracy with quantized deployment.
+"""
+
+import tensorflow as tf
+import tensorflow_model_optimization as tfmot
+import numpy as np
+import time
+import os
+
+print("=" * 60)
+print("Lab 10.2: Quantization-Aware Training (QAT)")
+print("=" * 60)
+
+# ============================================================
+# PART 1: Data Preparation
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 1: Data Preparation")
+print("=" * 60)
+
+# Load MNIST dataset
+(x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
+
+# Preprocess data
+x_train = x_train.reshape(-1, 28, 28, 1).astype('float32') / 255.0
+x_test = x_test.reshape(-1, 28, 28, 1).astype('float32') / 255.0
+
+# Use subset for faster training
+x_train = x_train[:10000]
+y_train = y_train[:10000]
+x_test = x_test[:2000]
+y_test = y_test[:2000]
+
+# Convert labels to categorical
+y_train = tf.keras.utils.to_categorical(y_train, 10)
+y_test = tf.keras.utils.to_categorical(y_test, 10)
+
+print(f"Training samples: {len(x_train)}")
+print(f"Test samples: {len(x_test)}")
+
+# ============================================================
+# PART 2: Create Baseline Model
+# ============================================================
+
+def create_model():
+    """Create a simple CNN for MNIST."""
+    model = tf.keras.Sequential([
+        tf.keras.layers.Conv2D(32, (3, 3), activation='relu', 
+                               input_shape=(28, 28, 1)),
+        tf.keras.layers.MaxPooling2D((2, 2)),
+        tf.keras.layers.Conv2D(64, (3, 3), activation='relu'),
+        tf.keras.layers.MaxPooling2D((2, 2)),
+        tf.keras.layers.Flatten(),
+        tf.keras.layers.Dense(64, activation='relu'),
+        tf.keras.layers.Dense(10, activation='softmax')
+    ])
+    return model
+
+# Create and train baseline model
+print("\n" + "=" * 60)
+print("PART 2: Training Baseline Model")
+print("=" * 60)
+
+baseline_model = create_model()
+baseline_model.compile(
+    optimizer='adam',
+    loss='categorical_crossentropy',
+    metrics=['accuracy']
+)
+
+print("Training baseline model...")
+baseline_model.fit(
+    x_train, y_train,
+    batch_size=128,
+    epochs=5,
+    validation_split=0.1,
+    verbose=1
+)
+
+# Evaluate baseline
+baseline_loss, baseline_acc = baseline_model.evaluate(x_test, y_test, verbose=0)
+print(f"\nBaseline Accuracy: {baseline_acc:.4f}")
+
+# Save baseline
+baseline_model.save('baseline_mnist.h5')
+
+# ============================================================
+# PART 3: Apply Quantization-Aware Training
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 3: Quantization-Aware Training")
+print("=" * 60)
+
+"""
+QAT Process:
+1. Create a quantization-aware model from baseline
+2. Fine-tune with simulated quantization
+3. Convert to fully quantized model
+"""
+
+# Apply QAT to the model
+quantize_model = tfmot.quantization.keras.quantize_model
+
+# Create QAT model
+qat_model = quantize_model(baseline_model)
+
+# Compile QAT model
+qat_model.compile(
+    optimizer=tf.keras.optimizers.Adam(learning_rate=0.0001),
+    loss='categorical_crossentropy',
+    metrics=['accuracy']
+)
+
+print("\nQAT Model Summary:")
+qat_model.summary()
+
+# Fine-tune with QAT
+print("\nFine-tuning with QAT...")
+qat_model.fit(
+    x_train, y_train,
+    batch_size=128,
+    epochs=3,  # Fewer epochs for fine-tuning
+    validation_split=0.1,
+    verbose=1
+)
+
+# Evaluate QAT model (still in float during training)
+qat_loss, qat_acc = qat_model.evaluate(x_test, y_test, verbose=0)
+print(f"\nQAT Model Accuracy (float): {qat_acc:.4f}")
+
+# ============================================================
+# PART 4: Convert QAT Model to TFLite
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 4: Converting QAT Model to TFLite")
+print("=" * 60)
+
+# Convert QAT model to quantized TFLite
+converter = tf.lite.TFLiteConverter.from_keras_model(qat_model)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+
+tflite_qat_model = converter.convert()
+
+# Save QAT model
+qat_model_path = 'qat_quantized_model.tflite'
+with open(qat_model_path, 'wb') as f:
+    f.write(tflite_qat_model)
+
+qat_size = os.path.getsize(qat_model_path) / 1024
+print(f"QAT Model Size: {qat_size:.2f} KB")
+
+# ============================================================
+# PART 5: Post-Training Quantization for Comparison
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 5: Post-Training Quantization (for comparison)")
+print("=" * 60)
+
+# Convert baseline with post-training quantization
+converter = tf.lite.TFLiteConverter.from_keras_model(baseline_model)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+
+tflite_ptq_model = converter.convert()
+
+# Save PTQ model
+ptq_model_path = 'ptq_quantized_model.tflite'
+with open(ptq_model_path, 'wb') as f:
+    f.write(tflite_ptq_model)
+
+ptq_size = os.path.getsize(ptq_model_path) / 1024
+print(f"PTQ Model Size: {ptq_size:.2f} KB")
+
+# ============================================================
+# PART 6: Compare Results
+# ============================================================
+
+def evaluate_tflite(model_path, x_test, y_test):
+    """Evaluate TFLite model."""
+    interpreter = tf.lite.Interpreter(model_path=model_path)
+    interpreter.allocate_tensors()
+    
+    input_details = interpreter.get_input_details()
+    output_details = interpreter.get_output_details()
+    
+    correct = 0
+    for i in range(len(x_test)):
+        input_data = np.expand_dims(x_test[i], axis=0).astype(np.float32)
+        interpreter.set_tensor(input_details[0]['index'], input_data)
+        interpreter.invoke()
+        output = interpreter.get_tensor(output_details[0]['index'])
+        
+        if np.argmax(output[0]) == np.argmax(y_test[i]):
+            correct += 1
+    
+    return correct / len(x_test)
+
+print("\n" + "=" * 60)
+print("PART 6: Comparison Results")
+print("=" * 60)
+
+# Evaluate both quantized models
+ptq_accuracy = evaluate_tflite(ptq_model_path, x_test, y_test)
+qat_accuracy = evaluate_tflite(qat_model_path, x_test, y_test)
+
+print(f"\n{'Model':<30} {'Size (KB)':<12} {'Accuracy':<12} {'Accuracy Loss'}")
+print("-" * 70)
+print(f"{'Baseline (FP32)':<30} {'~400':<12} {baseline_acc:<12.4f} {'-'}")
+print(f"{'Post-Training Quantization':<30} {ptq_size:<12.2f} {ptq_accuracy:<12.4f} {baseline_acc - ptq_accuracy:.4f}")
+print(f"{'QAT Quantization':<30} {qat_size:<12.2f} {qat_accuracy:<12.4f} {baseline_acc - qat_accuracy:.4f}")
+
+# ============================================================
+# PART 7: Advanced QAT - Selective Quantization
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 7: Selective Quantization")
+print("=" * 60)
+
+"""
+Selective Quantization:
+- Quantize only specific layers
+- Keep sensitive layers in full precision
+- Balance between accuracy and performance
+"""
+
+# Define which layers to quantize
+def apply_quantization_to_dense_and_conv(layer):
+    """Apply quantization only to Dense and Conv2D layers."""
+    if isinstance(layer, (tf.keras.layers.Dense, tf.keras.layers.Conv2D)):
+        return tfmot.quantization.keras.quantize_annotate_layer(layer)
+    return layer
+
+# Create new model with selective quantization
+annotated_model = tf.keras.models.clone_model(
+    baseline_model,
+    clone_function=apply_quantization_to_dense_and_conv
+)
+
+# Build quantized model
+with_quantization = tfmot.quantization.keras.quantize_apply(annotated_model)
+
+with_quantization.compile(
+    optimizer=tf.keras.optimizers.Adam(learning_rate=0.0001),
+    loss='categorical_crossentropy',
+    metrics=['accuracy']
+)
+
+print("\nTraining selective QAT model...")
+with_quantization.fit(
+    x_train, y_train,
+    batch_size=128,
+    epochs=3,
+    validation_split=0.1,
+    verbose=0
+)
+
+# Convert and evaluate
+converter = tf.lite.TFLiteConverter.from_keras_model(with_quantization)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+tflite_selective = converter.convert()
+
+with open('selective_qat.tflite', 'wb') as f:
+    f.write(tflite_selective)
+
+selective_acc = evaluate_tflite('selective_qat.tflite', x_test, y_test)
+print(f"\nSelective QAT Accuracy: {selective_acc:.4f}")
+
+# ============================================================
+# PART 8: Summary
+# ============================================================
+
+print("\n" + "=" * 60)
+print("SUMMARY: Quantization-Aware Training")
+print("=" * 60)
+
+print("""
+QAT Benefits:
+=============
+1. Better accuracy than post-training quantization
+2. Model learns to compensate for quantization errors
+3. Minimal accuracy loss with significant size reduction
+
+Best Practices:
+===============
+1. Start with a well-trained baseline model
+2. Use lower learning rate for QAT fine-tuning
+3. Fine-tune for fewer epochs (2-5 typically sufficient)
+4. Consider selective quantization for sensitive layers
+5. Always validate on representative test data
+
+When to Use QAT:
+================
+- When post-training quantization causes significant accuracy loss
+- For production models where accuracy is critical
+- When you have time/resources for additional training
+""")
+
+# Cleanup
+for f in ['baseline_mnist.h5', 'qat_quantized_model.tflite', 
+          'ptq_quantized_model.tflite', 'selective_qat.tflite']:
+    if os.path.exists(f):
+        os.remove(f)
+print("\nCleanup completed!")
+```
+
+## Expected Output
+
+```
+============================================================
+Lab 10.2: Quantization-Aware Training (QAT)
+============================================================
+
+============================================================
+PART 2: Training Baseline Model
+============================================================
+Training baseline model...
+Epoch 5/5
+71/71 [==============================] - 2s 28ms/step
+Baseline Accuracy: 0.9825
+
+============================================================
+PART 6: Comparison Results
+============================================================
+
+Model                          Size (KB)    Accuracy     Accuracy Loss
+----------------------------------------------------------------------
+Baseline (FP32)                ~400         0.9825       -
+Post-Training Quantization     102.4        0.9780       0.0045
+QAT Quantization               102.4        0.9812       0.0013
+```
+
+---

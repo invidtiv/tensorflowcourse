@@ -1,0 +1,353 @@
+---
+title: "Building with Functional API"
+module: 2
+labNumber: 18
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-07-part7.md"
+---
+# Building with Functional API
+
+## Objectives
+- Master the Functional API
+- Build complex architectures
+- Implement skip connections
+- Create multi-modal models
+
+---
+
+```python
+"""
+Lab 2.11: Building with Functional API
+Advanced architectures using Keras Functional API.
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+
+print("=" * 60)
+print("LAB 2.11: Building with Functional API")
+print("=" * 60)
+
+# ============================================================
+# STEP 1: Basic Functional API Model
+# ============================================================
+print("\n[STEP 1] Creating basic Functional API model...")
+
+# Define inputs
+inputs = tf.keras.Input(shape=(784,), name='input')
+
+# Build model
+x = tf.keras.layers.Dense(256, activation='relu', name='dense1')(inputs)
+x = tf.keras.layers.Dropout(0.3, name='dropout1')(x)
+x = tf.keras.layers.Dense(128, activation='relu', name='dense2')(x)
+x = tf.keras.layers.Dropout(0.3, name='dropout2')(x)
+outputs = tf.keras.layers.Dense(10, activation='softmax', name='output')(x)
+
+# Create model
+model = tf.keras.Model(inputs=inputs, outputs=outputs, name='basic_functional')
+
+print("\nBasic Functional Model:")
+model.summary()
+
+# ============================================================
+# STEP 2: Multi-Input Model
+# ============================================================
+print("\n[STEP 2] Creating multi-input model...")
+
+# Input 1: Image features
+image_input = tf.keras.Input(shape=(784,), name='image_input')
+x1 = tf.keras.layers.Dense(256, activation='relu')(image_input)
+x1 = tf.keras.layers.Dropout(0.3)(x1)
+x1 = tf.keras.layers.Dense(128, activation='relu')(x1)
+
+# Input 2: Metadata features
+meta_input = tf.keras.Input(shape=(10,), name='meta_input')
+x2 = tf.keras.layers.Dense(32, activation='relu')(meta_input)
+x2 = tf.keras.layers.Dense(16, activation='relu')(x2)
+
+# Concatenate
+combined = tf.keras.layers.Concatenate(name='concat')([x1, x2])
+
+# Shared layers
+x = tf.keras.layers.Dense(128, activation='relu')(combined)
+x = tf.keras.layers.Dropout(0.3)(x)
+x = tf.keras.layers.Dense(64, activation='relu')(x)
+
+# Output
+output = tf.keras.layers.Dense(10, activation='softmax', name='prediction')(x)
+
+# Create multi-input model
+multi_input_model = tf.keras.Model(
+    inputs=[image_input, meta_input],
+    outputs=output,
+    name='multi_input_model'
+)
+
+print("\nMulti-Input Model:")
+multi_input_model.summary()
+
+# ============================================================
+# STEP 3: ResNet-style Skip Connections
+# ============================================================
+print("\n[STEP 3] Creating ResNet-style model with skip connections...")
+
+def residual_block(x, units, dropout_rate=0.3):
+    """Create a residual block with skip connection."""
+    shortcut = x
+    
+    # Main path
+    x = tf.keras.layers.Dense(units, activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Dropout(dropout_rate)(x)
+    x = tf.keras.layers.Dense(units)(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    
+    # Skip connection (with projection if needed)
+    if shortcut.shape[-1] != units:
+        shortcut = tf.keras.layers.Dense(units)(shortcut)
+    
+    # Add skip connection
+    x = tf.keras.layers.Add()([x, shortcut])
+    x = tf.keras.layers.Activation('relu')(x)
+    
+    return x
+
+# Build ResNet-style model
+inputs = tf.keras.Input(shape=(784,), name='input')
+x = tf.keras.layers.Dense(256, activation='relu')(inputs)
+
+# Stack residual blocks
+x = residual_block(x, 256)
+x = residual_block(x, 256)
+x = residual_block(x, 128)
+x = residual_block(x, 128)
+x = residual_block(x, 64)
+
+# Output
+outputs = tf.keras.layers.Dense(10, activation='softmax')(x)
+
+resnet_model = tf.keras.Model(inputs=inputs, outputs=outputs, name='resnet_model')
+
+print("\nResNet-style Model:")
+resnet_model.summary()
+
+# ============================================================
+# STEP 4: Multi-Output Model
+# ============================================================
+print("\n[STEP 4] Creating multi-output model...")
+
+# Shared base
+base_input = tf.keras.Input(shape=(784,), name='input')
+x = tf.keras.layers.Dense(256, activation='relu')(base_input)
+x = tf.keras.layers.Dropout(0.3)(x)
+x = tf.keras.layers.Dense(128, activation='relu')(x)
+shared = tf.keras.layers.Dense(64, activation='relu')(x)
+
+# Output 1: Classification
+class_output = tf.keras.layers.Dense(10, activation='softmax', name='class_output')(shared)
+
+# Output 2: Regression
+reg_output = tf.keras.layers.Dense(1, name='reg_output')(shared)
+
+# Output 3: Binary classification
+binary_output = tf.keras.layers.Dense(1, activation='sigmoid', name='binary_output')(shared)
+
+# Create multi-output model
+multi_output_model = tf.keras.Model(
+    inputs=base_input,
+    outputs=[class_output, reg_output, binary_output],
+    name='multi_output_model'
+)
+
+# Compile with different losses
+multi_output_model.compile(
+    optimizer='adam',
+    loss={
+        'class_output': 'categorical_crossentropy',
+        'reg_output': 'mse',
+        'binary_output': 'binary_crossentropy'
+    },
+    loss_weights={
+        'class_output': 1.0,
+        'reg_output': 0.5,
+        'binary_output': 0.3
+    },
+    metrics={
+        'class_output': 'accuracy',
+        'reg_output': 'mae',
+        'binary_output': 'accuracy'
+    }
+)
+
+print("\nMulti-Output Model:")
+multi_output_model.summary()
+
+# ============================================================
+# STEP 5: Shared Layers (Siamese Network)
+# ============================================================
+print("\n[STEP 5] Creating Siamese network with shared layers...")
+
+# Shared encoder
+shared_encoder = tf.keras.Sequential([
+    tf.keras.layers.Dense(128, activation='relu'),
+    tf.keras.layers.Dense(64, activation='relu'),
+    tf.keras.layers.Dense(32, activation='relu')
+], name='shared_encoder')
+
+# Two inputs
+input_a = tf.keras.Input(shape=(784,), name='input_a')
+input_b = tf.keras.Input(shape=(784,), name='input_b')
+
+# Encode both inputs with shared weights
+encoded_a = shared_encoder(input_a)
+encoded_b = shared_encoder(input_b)
+
+# Compute distance
+distance = tf.keras.layers.Lambda(
+    lambda x: tf.abs(x[0] - x[1]),
+    name='distance'
+)([encoded_a, encoded_b])
+
+# Output similarity
+output = tf.keras.layers.Dense(1, activation='sigmoid', name='similarity')(distance)
+
+# Create Siamese model
+siamese_model = tf.keras.Model(
+    inputs=[input_a, input_b],
+    outputs=output,
+    name='siamese_model'
+)
+
+print("\nSiamese Model:")
+siamese_model.summary()
+
+# ============================================================
+# STEP 6: Training Multi-Input Model
+# ============================================================
+print("\n[STEP 6] Training multi-input model...")
+
+# Generate synthetic data
+np.random.seed(42)
+X_image = np.random.randn(1000, 784)
+X_meta = np.random.randn(1000, 10)
+y = np.random.randint(0, 10, 1000)
+y_cat = tf.keras.utils.to_categorical(y, 10)
+
+# Compile and train
+multi_input_model.compile(
+    optimizer='adam',
+    loss='categorical_crossentropy',
+    metrics=['accuracy']
+)
+
+history = multi_input_model.fit(
+    [X_image, X_meta], y_cat,
+    validation_split=0.2,
+    epochs=10,
+    batch_size=32,
+    verbose=1
+)
+
+print("\nTraining completed!")
+
+# ============================================================
+# STEP 7: Model Visualization
+# ============================================================
+print("\n[STEP 7] Visualizing models...")
+
+# Plot model architectures
+tf.keras.utils.plot_model(
+    multi_input_model,
+    to_file='/mnt/okcomputer/output/multi_input_model.png',
+    show_shapes=True,
+    show_layer_names=True,
+    rankdir='TB'
+)
+
+tf.keras.utils.plot_model(
+    resnet_model,
+    to_file='/mnt/okcomputer/output/resnet_model.png',
+    show_shapes=True,
+    show_layer_names=True,
+    rankdir='TB'
+)
+
+tf.keras.utils.plot_model(
+    siamese_model,
+    to_file='/mnt/okcomputer/output/siamese_model.png',
+    show_shapes=True,
+    show_layer_names=True,
+    rankdir='TB'
+)
+
+print("\nModel diagrams saved!")
+
+# ============================================================
+# STEP 8: Summary
+# ============================================================
+print("\n" + "=" * 60)
+print("LAB 2.11 COMPLETED SUCCESSFULLY!")
+print("=" * 60)
+print("""
+KEY TAKEAWAYS:
+
+1. FUNCTIONAL API ADVANTAGES:
+   - Multiple inputs and outputs
+   - Shared layers (weight sharing)
+   - Complex topologies (skip connections, branching)
+   - Non-sequential data flow
+
+2. COMMON ARCHITECTURES:
+   - Multi-input: Combine different data types
+   - Multi-output: Multi-task learning
+   - ResNet: Skip connections for gradient flow
+   - Siamese: Shared encoders for similarity learning
+
+3. BEST PRACTICES:
+   - Name layers for clarity
+   - Use plot_model() to visualize
+   - Match input/output shapes carefully
+   - Use appropriate loss weights for multi-output
+
+4. WHEN TO USE:
+   - Sequential API: Simple linear stacks
+   - Functional API: Complex architectures
+   - Subclassing: Maximum flexibility
+""")
+```
+
+---
+
+# Summary: Module 2 Labs
+
+## Labs Completed:
+
+1. **Lab 2.1.1**: Comparing Normalization Techniques
+2. **Lab 2.1.2**: TensorFlow Preprocessing Layers
+3. **Lab 2.1.3**: Handling Missing Values and Outliers
+4. **Lab 2.1.4**: Feature Engineering with TensorFlow
+5. **Lab 2.2.1**: Sequential API Deep Dive
+6. **Lab 2.2.2**: Functional API Fundamentals
+7. **Lab 2.2.3**: Sequential vs Functional API Comparison
+8. **Lab 2.3**: Custom Loss Functions and Metrics
+9. **Lab 2.4**: Activation Function Experiments
+10. **Lab 2.5**: Backpropagation Visualization
+11. **Lab 2.6**: Multi-class Classification Projects
+12. **Lab 2.7**: Auto-MPG Regression with Preprocessing
+13. **Lab 2.8**: Fashion-MNIST with Different Architectures
+14. **Lab 2.9**: Custom Binary Classifier from Scratch
+15. **Lab 2.10**: Visualizing Gradients During Training
+16. **Lab 2.11**: Building with Functional API
+
+## Key Skills Learned:
+- Feature normalization and preprocessing
+- Building models with Sequential and Functional APIs
+- Creating custom loss functions and metrics
+- Understanding activation functions
+- Visualizing backpropagation and gradients
+- Building multi-class classification models
+- Working with real datasets (Auto-MPG, Fashion-MNIST)
+- Implementing custom training loops
+- Advanced architectures (ResNet, Siamese, Multi-modal)

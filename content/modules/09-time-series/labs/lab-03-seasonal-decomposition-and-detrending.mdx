@@ -1,0 +1,161 @@
+---
+title: "Seasonal Decomposition and Detrending"
+module: 9
+labNumber: 3
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Seasonal Decomposition and Detrending
+
+### Complete Implementation
+
+```python
+"""
+Lab 1.2: Seasonal Decomposition and Detrending
+Topic: Weather Data Preprocessing
+"""
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from statsmodels.tsa.seasonal import seasonal_decompose
+from statsmodels.tsa.stattools import adfuller
+from sklearn.linear_model import LinearRegression
+import tensorflow as tf
+
+np.random.seed(42)
+tf.random.set_seed(42)
+
+# Generate Synthetic Weather Data
+def generate_weather_data(n_days=365*3, base_temp=15, trend_rate=0.01):
+    dates = pd.date_range(start='2020-01-01', periods=n_days, freq='D')
+    day_of_year = np.arange(n_days) % 365
+    annual_seasonality = 10 * np.sin(2 * np.pi * day_of_year / 365 - np.pi/2)
+    day_of_week = np.arange(n_days) % 7
+    weekly_pattern = 1 * np.sin(2 * np.pi * day_of_week / 7)
+    trend = np.arange(n_days) * trend_rate
+    noise = np.random.normal(0, 3, n_days)
+    temperature = base_temp + annual_seasonality + weekly_pattern + trend + noise
+    df = pd.DataFrame({'Temperature': temperature}, index=dates)
+    return df
+
+print("=" * 60)
+print("STEP 1: Generating Synthetic Weather Data")
+print("=" * 60)
+weather_data = generate_weather_data(n_days=365*3)
+print(f"Generated {len(weather_data)} days of weather data")
+print(weather_data.head())
+
+# Seasonal Decomposition
+print("\n" + "=" * 60)
+print("STEP 2: Seasonal Decomposition")
+print("=" * 60)
+
+decomposition_add = seasonal_decompose(weather_data['Temperature'], 
+                                        model='additive', period=365)
+
+fig, axes = plt.subplots(4, 1, figsize=(15, 12))
+axes[0].plot(decomposition_add.observed, color='blue')
+axes[0].set_title('Original', fontsize=12, fontweight='bold')
+axes[0].set_ylabel('Temperature (C)')
+axes[0].grid(True, alpha=0.3)
+axes[1].plot(decomposition_add.trend, color='red')
+axes[1].set_title('Trend Component', fontsize=12, fontweight='bold')
+axes[1].set_ylabel('Trend')
+axes[1].grid(True, alpha=0.3)
+axes[2].plot(decomposition_add.seasonal, color='green')
+axes[2].set_title('Seasonal Component', fontsize=12, fontweight='bold')
+axes[2].set_ylabel('Seasonality')
+axes[2].grid(True, alpha=0.3)
+axes[3].plot(decomposition_add.resid, color='purple')
+axes[3].set_title('Residual Component', fontsize=12, fontweight='bold')
+axes[3].set_xlabel('Date')
+axes[3].set_ylabel('Residual')
+axes[3].grid(True, alpha=0.3)
+plt.tight_layout()
+plt.savefig('/mnt/okcomputer/output/lab1_2_decomposition.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+# Stationarity Testing (ADF Test)
+print("\n" + "=" * 60)
+print("STEP 3: Stationarity Testing (ADF Test)")
+print("=" * 60)
+
+def adf_test(series, title=''):
+    result = adfuller(series.dropna())
+    print(f'\n{title}')
+    print('-' * 40)
+    print(f'ADF Statistic: {result[0]:.6f}')
+    print(f'p-value: {result[1]:.6f}')
+    print(f'Critical Values:')
+    for key, value in result[4].items():
+        print(f'\t{key}: {value:.3f}')
+    if result[1] <= 0.05:
+        print("Result: Stationary (reject null hypothesis)")
+    else:
+        print("Result: Non-stationary (fail to reject null hypothesis)")
+    return result
+
+adf_original = adf_test(weather_data['Temperature'], 'Original Series')
+detrended = weather_data['Temperature'] - decomposition_add.trend
+adf_detrended = adf_test(detrended, 'Detrended Series')
+differenced = weather_data['Temperature'].diff().dropna()
+adf_differenced = adf_test(differenced, 'First Difference Series')
+
+# Different Detrending Methods
+print("\n" + "=" * 60)
+print("STEP 4: Different Detrending Methods")
+print("=" * 60)
+
+window = 30
+ma_trend = weather_data['Temperature'].rolling(window=window, center=True).mean()
+detrended_ma = weather_data['Temperature'] - ma_trend
+
+X = np.arange(len(weather_data)).reshape(-1, 1)
+y = weather_data['Temperature'].values
+model = LinearRegression().fit(X, y)
+linear_trend = model.predict(X)
+detrended_linear = weather_data['Temperature'].values - linear_trend
+
+poly_coefs = np.polyfit(X.flatten(), y, 2)
+poly_trend = np.polyval(poly_coefs, X.flatten())
+detrended_poly = y - poly_trend
+
+fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+axes[0, 0].plot(weather_data.index, weather_data['Temperature'], label='Original', alpha=0.7)
+axes[0, 0].plot(weather_data.index, ma_trend, label='MA Trend', linewidth=2)
+axes[0, 0].plot(weather_data.index, linear_trend, label='Linear Trend', linewidth=2)
+axes[0, 0].set_title('Original Data with Trend Estimates', fontsize=12, fontweight='bold')
+axes[0, 0].legend()
+axes[0, 0].grid(True, alpha=0.3)
+axes[0, 1].plot(weather_data.index, detrended_ma, label='MA Detrended', alpha=0.7)
+axes[0, 1].set_title('Moving Average Detrended', fontsize=12, fontweight='bold')
+axes[0, 1].axhline(y=0, color='red', linestyle='--', alpha=0.5)
+axes[0, 1].grid(True, alpha=0.3)
+axes[1, 0].plot(weather_data.index, detrended_linear, label='Linear Detrended', 
+                color='orange', alpha=0.7)
+axes[1, 0].set_title('Linear Regression Detrended', fontsize=12, fontweight='bold')
+axes[1, 0].axhline(y=0, color='red', linestyle='--', alpha=0.5)
+axes[1, 0].grid(True, alpha=0.3)
+axes[1, 1].plot(weather_data.index, detrended_poly, label='Polynomial Detrended', 
+                color='green', alpha=0.7)
+axes[1, 1].set_title('Polynomial Detrended (Degree 2)', fontsize=12, fontweight='bold')
+axes[1, 1].axhline(y=0, color='red', linestyle='--', alpha=0.5)
+axes[1, 1].grid(True, alpha=0.3)
+plt.tight_layout()
+plt.savefig('/mnt/okcomputer/output/lab1_2_detrending_methods.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+# Save preprocessed data
+residual = decomposition_add.resid.dropna()
+residual.to_csv('/mnt/okcomputer/output/lab1_2_weather_residual.csv')
+differenced.to_csv('/mnt/okcomputer/output/lab1_2_weather_differenced.csv')
+print("\nSaved preprocessed weather data")
+
+print("\n" + "=" * 60)
+print("Lab 1.2 Complete!")
+print("=" * 60)
+```
+
+---

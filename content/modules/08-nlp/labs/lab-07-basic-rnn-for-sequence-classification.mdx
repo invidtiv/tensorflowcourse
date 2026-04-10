@@ -1,0 +1,354 @@
+---
+title: "Basic RNN for Sequence Classification"
+module: 8
+labNumber: 7
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Basic RNN for Sequence Classification
+
+### Objectives
+- Build vanilla RNN from scratch
+- Understand RNN cell mechanics
+- Apply to text classification
+
+### Complete Implementation
+
+```python
+"""
+Lab 8.6: Basic RNN for Sequence Classification
+==============================================
+Implement and train a vanilla RNN for text classification.
+"""
+
+import tensorflow as tf
+import numpy as np
+
+# ============================================================
+# PART 1: RNN Cell from Scratch
+# ============================================================
+
+class SimpleRNNCell(tf.keras.layers.Layer):
+    """
+    Simple RNN cell implemented from scratch.
+    
+    h_t = tanh(W_x * x_t + W_h * h_{t-1} + b)
+    """
+    
+    def __init__(self, units, **kwargs):
+        super(SimpleRNNCell, self).__init__(**kwargs)
+        self.units = units
+        self.state_size = units
+        self.output_size = units
+    
+    def build(self, input_shape):
+        # Input weights
+        self.W_x = self.add_weight(
+            shape=(input_shape[-1], self.units),
+            initializer='glorot_uniform',
+            name='W_x'
+        )
+        
+        # Hidden state weights
+        self.W_h = self.add_weight(
+            shape=(self.units, self.units),
+            initializer='orthogonal',
+            name='W_h'
+        )
+        
+        # Bias
+        self.b = self.add_weight(
+            shape=(self.units,),
+            initializer='zeros',
+            name='b'
+        )
+        
+        super(SimpleRNNCell, self).build(input_shape)
+    
+    def call(self, inputs, states):
+        """
+        Single RNN step.
+        
+        Args:
+            inputs: (batch, input_dim)
+            states: [(batch, units)] - previous hidden state
+            
+        Returns:
+            output, new_states
+        """
+        prev_h = states[0]
+        
+        # Compute new hidden state
+        h = tf.matmul(inputs, self.W_x) + tf.matmul(prev_h, self.W_h) + self.b
+        h = tf.tanh(h)
+        
+        return h, [h]
+    
+    def get_initial_state(self, inputs=None, batch_size=None, dtype=None):
+        """Initialize hidden state to zeros."""
+        return [tf.zeros((batch_size, self.units), dtype=dtype)]
+
+
+# ============================================================
+# PART 2: RNN Model for Classification
+# ============================================================
+
+def create_rnn_classifier(vocab_size, embedding_dim=64, rnn_units=64, num_classes=2):
+    """
+    Create RNN-based text classifier.
+    
+    Args:
+        vocab_size: Size of vocabulary
+        embedding_dim: Embedding dimension
+        rnn_units: RNN hidden units
+        num_classes: Number of output classes
+        
+    Returns:
+        Compiled model
+    """
+    model = tf.keras.Sequential([
+        # Embedding layer
+        tf.keras.layers.Embedding(vocab_size, embedding_dim, mask_zero=True),
+        
+        # RNN layer (using our custom cell)
+        tf.keras.layers.RNN(
+            SimpleRNNCell(rnn_units),
+            return_sequences=False,
+            return_state=False
+        ),
+        
+        # Output layers
+        tf.keras.layers.Dense(64, activation='relu'),
+        tf.keras.layers.Dropout(0.5),
+        tf.keras.layers.Dense(num_classes, activation='softmax')
+    ])
+    
+    model.compile(
+        optimizer='adam',
+        loss='sparse_categorical_crossentropy',
+        metrics=['accuracy']
+    )
+    
+    return model
+
+
+# ============================================================
+# PART 3: Using Built-in SimpleRNN
+# ============================================================
+
+def create_builtin_rnn_classifier(vocab_size, embedding_dim=64, rnn_units=64, num_classes=2):
+    """
+    Create classifier using built-in SimpleRNN.
+    """
+    model = tf.keras.Sequential([
+        tf.keras.layers.Embedding(vocab_size, embedding_dim, mask_zero=True),
+        tf.keras.layers.SimpleRNN(rnn_units, dropout=0.2),
+        tf.keras.layers.Dense(64, activation='relu'),
+        tf.keras.layers.Dropout(0.5),
+        tf.keras.layers.Dense(num_classes, activation='softmax')
+    ])
+    
+    model.compile(
+        optimizer='adam',
+        loss='sparse_categorical_crossentropy',
+        metrics=['accuracy']
+    )
+    
+    return model
+
+
+# ============================================================
+# PART 4: Demonstration with Synthetic Data
+# ============================================================
+
+print("=" * 60)
+print("RNN FOR SEQUENCE CLASSIFICATION")
+print("=" * 60)
+
+# Create synthetic dataset
+def generate_synthetic_data(num_samples=1000, seq_length=20, vocab_size=100):
+    """
+    Generate synthetic sequence classification data.
+    
+    Class 0: Sequences with more low-index words
+    Class 1: Sequences with more high-index words
+    """
+    X = []
+    y = []
+    
+    for _ in range(num_samples):
+        label = np.random.randint(0, 2)
+        
+        if label == 0:
+            # More low-index words
+            seq = np.random.randint(0, vocab_size // 2, size=seq_length)
+        else:
+            # More high-index words
+            seq = np.random.randint(vocab_size // 2, vocab_size, size=seq_length)
+        
+        X.append(seq)
+        y.append(label)
+    
+    return np.array(X), np.array(y)
+
+# Generate data
+vocab_size = 100
+seq_length = 20
+X_train, y_train = generate_synthetic_data(1000, seq_length, vocab_size)
+X_test, y_test = generate_synthetic_data(200, seq_length, vocab_size)
+
+print(f"\nTraining data shape: {X_train.shape}")
+print(f"Test data shape: {X_test.shape}")
+
+# Create and train model
+model = create_builtin_rnn_classifier(vocab_size, embedding_dim=32, rnn_units=64)
+
+print("\nModel Architecture:")
+model.summary()
+
+# Train
+print("\nTraining...")
+history = model.fit(
+    X_train, y_train,
+    validation_split=0.2,
+    epochs=10,
+    batch_size=32,
+    verbose=1
+)
+
+# Evaluate
+test_loss, test_acc = model.evaluate(X_test, y_test, verbose=0)
+print(f"\nTest accuracy: {test_acc:.4f}")
+
+
+# ============================================================
+# PART 5: Understanding RNN Internals
+# ============================================================
+
+print("\n" + "=" * 60)
+print("RNN INTERNALS")
+print("=" * 60)
+
+# Manual RNN forward pass demonstration
+def manual_rnn_step(x_t, h_prev, W_x, W_h, b):
+    """
+    Single RNN step computation.
+    
+    Args:
+        x_t: Input at time t (batch, input_dim)
+        h_prev: Hidden state at t-1 (batch, units)
+        W_x, W_h, b: RNN parameters
+        
+    Returns:
+        h_t: New hidden state
+    """
+    # Linear transformation
+    linear = tf.matmul(x_t, W_x) + tf.matmul(h_prev, W_h) + b
+    
+    # Non-linearity
+    h_t = tf.tanh(linear)
+    
+    return h_t
+
+# Demonstrate with random data
+batch_size = 2
+input_dim = 10
+units = 5
+
+# Initialize parameters
+W_x = tf.random.normal((input_dim, units))
+W_h = tf.random.normal((units, units))
+b = tf.zeros(units)
+
+# Initial hidden state
+h = tf.zeros((batch_size, units))
+
+# Process a sequence
+seq_length = 5
+sequence = tf.random.normal((batch_size, seq_length, input_dim))
+
+print(f"\nProcessing sequence of shape: {sequence.shape}")
+print(f"Initial hidden state: {h.shape}")
+
+hidden_states = []
+for t in range(seq_length):
+    x_t = sequence[:, t, :]
+    h = manual_rnn_step(x_t, h, W_x, W_h, b)
+    hidden_states.append(h)
+    print(f"  Step {t+1}: h_t shape = {h.shape}")
+
+print(f"\nFinal hidden state: {h.shape}")
+
+
+# ============================================================
+# PART 6: RNN Limitations
+# ============================================================
+
+print("\n" + "=" * 60)
+print("RNN LIMITATIONS")
+print("=" * 60)
+
+limitations = """
+Vanilla RNN Issues:
+
+1. Vanishing Gradients:
+   - Gradients become very small in long sequences
+   - Early time steps receive little gradient signal
+   - Hard to learn long-term dependencies
+
+2. Exploding Gradients:
+   - Gradients can become very large
+   - Causes unstable training
+   - Usually addressed with gradient clipping
+
+3. Short-term Memory:
+   - Hidden state gets overwritten at each step
+   - Difficult to remember information from long ago
+
+Solutions:
+- LSTM (Long Short-Term Memory)
+- GRU (Gated Recurrent Unit)
+- Gradient clipping
+- Attention mechanisms
+"""
+
+print(limitations)
+
+
+# ============================================================
+# EXERCISES
+# ============================================================
+
+print("\n" + "=" * 60)
+print("EXERCISES")
+print("=" * 60)
+
+exercises = """
+Exercise 1: Bidirectional RNN
+-----------------------------
+Implement a bidirectional RNN:
+- Process sequence forward and backward
+- Concatenate final hidden states
+- Compare with unidirectional
+
+Exercise 2: Multi-layer RNN
+---------------------------
+Stack multiple RNN layers:
+- Output of layer i is input to layer i+1
+- Experiment with 2-3 layers
+- Analyze performance vs depth
+
+Exercise 3: Gradient Analysis
+-----------------------------
+Visualize gradient flow:
+- Track gradient magnitudes at each time step
+- Compare early vs late time steps
+- Implement gradient clipping
+"""
+
+print(exercises)
+```
+
+
+---

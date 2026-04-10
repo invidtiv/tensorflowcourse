@@ -1,0 +1,145 @@
+---
+title: "Multivariate Windowing"
+module: 9
+labNumber: 6
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Multivariate Windowing
+
+### Complete Implementation
+
+```python
+"""
+Lab 2.2: Multivariate Windowing
+Topic: Windowing Multiple Related Time Series
+"""
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import tensorflow as tf
+from sklearn.preprocessing import MinMaxScaler
+
+np.random.seed(42)
+tf.random.set_seed(42)
+
+# Generate Multivariate Time Series
+def generate_multivariate_series(n_points=1000):
+    t = np.arange(n_points)
+    base = np.sin(2 * np.pi * 0.02 * t)
+    var1 = base + np.random.normal(0, 0.1, n_points)
+    var2 = np.roll(base, 5) + np.random.normal(0, 0.15, n_points)
+    var3 = -0.5 * base + np.random.normal(0, 0.2, n_points)
+    trend = 0.001 * t
+    var4 = trend + 0.5 * base + np.random.normal(0, 0.1, n_points)
+    return np.column_stack([var1, var2, var3, var4])
+
+print("=" * 60)
+print("STEP 1: Generating Multivariate Time Series")
+print("=" * 60)
+data = generate_multivariate_series(n_points=1000)
+var_names = ['Signal_A', 'Signal_B', 'Signal_C', 'Signal_D']
+print(f"Generated data shape: {data.shape}")
+
+# Basic Multivariate Windowing
+print("\n" + "=" * 60)
+print("STEP 2: Basic Multivariate Windowing")
+print("=" * 60)
+
+def create_multivariate_windows(data, window_size, target_col=0, horizon=1):
+    X, y = [], []
+    for i in range(len(data) - window_size - horizon + 1):
+        X.append(data[i:(i + window_size)])
+        y.append(data[i + window_size:i + window_size + horizon, target_col])
+    return np.array(X), np.array(y)
+
+window_size = 20
+X_multi, y_multi = create_multivariate_windows(data, window_size, target_col=0, horizon=1)
+print(f"X shape: {X_multi.shape} (samples, timesteps, features)")
+print(f"y shape: {y_multi.shape}")
+
+# TensorFlow Dataset for Multivariate Data
+print("\n" + "=" * 60)
+print("STEP 3: TensorFlow Dataset for Multivariate Data")
+print("=" * 60)
+
+def create_multivariate_tf_dataset(data, window_size, target_col=0, horizon=1, 
+                                    batch_size=32, shuffle=True):
+    data_tensor = tf.constant(data, dtype=tf.float32)
+    dataset = tf.data.Dataset.from_tensor_slices(data_tensor)
+    dataset = dataset.window(window_size + horizon, shift=1, drop_remainder=True)
+    dataset = dataset.flat_map(lambda x: x.batch(window_size + horizon))
+    def split_window(window):
+        inputs = window[:window_size]
+        labels = window[window_size:, target_col]
+        return inputs, labels
+    dataset = dataset.map(split_window)
+    if shuffle:
+        dataset = dataset.shuffle(buffer_size=1000)
+    dataset = dataset.batch(batch_size).prefetch(tf.data.AUTOTUNE)
+    return dataset
+
+tf_dataset_multi = create_multivariate_tf_dataset(data, window_size=20, target_col=0, horizon=1)
+print("TensorFlow Dataset structure:")
+for batch_x, batch_y in tf_dataset_multi.take(1):
+    print(f"Batch X shape: {batch_x.shape}")
+    print(f"Batch y shape: {batch_y.shape}")
+
+# Different Target Configurations
+print("\n" + "=" * 60)
+print("STEP 4: Different Target Configurations")
+print("=" * 60)
+
+X_single, y_single = create_multivariate_windows(data, window_size=20, target_col=0, horizon=1)
+print(f"Single target: X{X_single.shape}, y{y_single.shape}")
+X_multi_h, y_multi_h = create_multivariate_windows(data, window_size=20, target_col=0, horizon=5)
+print(f"Multi-horizon single target: X{X_multi_h.shape}, y{y_multi_h.shape}")
+
+def create_multi_target_windows(data, window_size, target_cols=None, horizon=1):
+    if target_cols is None:
+        target_cols = list(range(data.shape[1]))
+    X, y = [], []
+    for i in range(len(data) - window_size - horizon + 1):
+        X.append(data[i:(i + window_size)])
+        y.append(data[i + window_size:i + window_size + horizon, target_cols])
+    return np.array(X), np.array(y)
+
+X_all_targets, y_all_targets = create_multi_target_windows(data, window_size=20, horizon=1)
+print(f"All targets: X{X_all_targets.shape}, y{y_all_targets.shape}")
+
+# Scale and Save Data
+print("\n" + "=" * 60)
+print("STEP 5: Scaling and Saving Multivariate Data")
+print("=" * 60)
+
+scaler_multi = MinMaxScaler()
+data_scaled = scaler_multi.fit_transform(data)
+X_final, y_final = create_multivariate_windows(data_scaled, window_size=20, target_col=0, horizon=1)
+
+train_size = int(0.7 * len(X_final))
+val_size = int(0.15 * len(X_final))
+X_train = X_final[:train_size]
+y_train = y_final[:train_size]
+X_val = X_final[train_size:train_size + val_size]
+y_val = y_final[train_size:train_size + val_size]
+X_test = X_final[train_size + val_size:]
+y_test = y_final[train_size + val_size:]
+
+np.save('/mnt/okcomputer/output/lab2_2_X_train.npy', X_train)
+np.save('/mnt/okcomputer/output/lab2_2_y_train.npy', y_train)
+np.save('/mnt/okcomputer/output/lab2_2_X_val.npy', X_val)
+np.save('/mnt/okcomputer/output/lab2_2_y_val.npy', y_val)
+np.save('/mnt/okcomputer/output/lab2_2_X_test.npy', X_test)
+np.save('/mnt/okcomputer/output/lab2_2_y_test.npy', y_test)
+import joblib
+joblib.dump(scaler_multi, '/mnt/okcomputer/output/lab2_2_scaler.pkl')
+print(f"Saved multivariate windowed data")
+
+print("\n" + "=" * 60)
+print("Lab 2.2 Complete!")
+print("=" * 60)
+```
+
+---

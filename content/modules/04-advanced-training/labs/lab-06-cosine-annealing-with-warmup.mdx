@@ -1,0 +1,158 @@
+---
+title: "Cosine Annealing with Warmup"
+module: 4
+labNumber: 6
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Cosine Annealing with Warmup
+
+```python
+"""
+Lab 2.1: Cosine Annealing with Warmup
+======================================
+Implement and compare cosine annealing learning rate schedules.
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+
+tf.random.set_seed(42)
+
+class CosineAnnealingWithWarmup(tf.keras.optimizers.schedules.LearningRateSchedule):
+    """
+    Cosine annealing learning rate schedule with linear warmup.
+    
+    Schedule:
+    1. Linear warmup from initial_lr to max_lr over warmup_steps
+    2. Cosine annealing from max_lr to min_lr over remaining steps
+    """
+    
+    def __init__(self, max_lr=0.1, min_lr=0.0, warmup_steps=1000, total_steps=10000, initial_lr=0.0):
+        super().__init__()
+        self.max_lr = max_lr
+        self.min_lr = min_lr
+        self.warmup_steps = warmup_steps
+        self.total_steps = total_steps
+        self.initial_lr = initial_lr
+        
+    def __call__(self, step):
+        step = tf.cast(step, tf.float32)
+        warmup_steps = tf.cast(self.warmup_steps, tf.float32)
+        total_steps = tf.cast(self.total_steps, tf.float32)
+        
+        warmup_lr = self.initial_lr + (self.max_lr - self.initial_lr) * (step / warmup_steps)
+        
+        progress = (step - warmup_steps) / (total_steps - warmup_steps)
+        cosine_lr = self.min_lr + 0.5 * (self.max_lr - self.min_lr) * \
+                    (1 + tf.cos(np.pi * tf.clip_by_value(progress, 0.0, 1.0)))
+        
+        return tf.cond(step < warmup_steps, lambda: warmup_lr, lambda: cosine_lr)
+    
+    def get_config(self):
+        return {'max_lr': self.max_lr, 'min_lr': self.min_lr,
+                'warmup_steps': self.warmup_steps, 'total_steps': self.total_steps,
+                'initial_lr': self.initial_lr}
+
+def visualize_lr_schedules():
+    total_steps = 10000
+    warmup_steps = 1000
+    
+    schedules = {
+        'Cosine Annealing + Warmup': CosineAnnealingWithWarmup(
+            max_lr=0.1, min_lr=0.001, warmup_steps=warmup_steps, total_steps=total_steps),
+        'Step Decay': tf.keras.optimizers.schedules.ExponentialDecay(
+            initial_learning_rate=0.1, decay_steps=2000, decay_rate=0.5),
+        'Constant': 0.1
+    }
+    
+    steps = np.arange(total_steps)
+    
+    plt.figure(figsize=(12, 6))
+    for name, schedule in schedules.items():
+        if isinstance(schedule, (int, float)):
+            lrs = [schedule] * total_steps
+        else:
+            lrs = [schedule(s).numpy() for s in steps]
+        plt.plot(steps, lrs, label=name, linewidth=2)
+    
+    plt.xlabel('Training Steps', fontsize=12)
+    plt.ylabel('Learning Rate', fontsize=12)
+    plt.title('Learning Rate Schedule Comparison', fontsize=14, fontweight='bold')
+    plt.legend(); plt.grid(True, alpha=0.3); plt.yscale('log')
+    plt.savefig('lr_schedules.png', dpi=150)
+    plt.show()
+
+def compare_lr_schedules_training():
+    (x_train, y_train), (x_test, y_test) = tf.keras.datasets.cifar10.load_data()
+    x_train, x_test = x_train / 255.0, x_test / 255.0
+    y_train = tf.keras.utils.to_categorical(y_train, 10)
+    y_test = tf.keras.utils.to_categorical(y_test, 10)
+    
+    def create_model():
+        return tf.keras.Sequential([
+            tf.keras.layers.Conv2D(32, 3, activation='relu', input_shape=(32, 32, 3)),
+            tf.keras.layers.MaxPooling2D(),
+            tf.keras.layers.Conv2D(64, 3, activation='relu'),
+            tf.keras.layers.MaxPooling2D(),
+            tf.keras.layers.Flatten(),
+            tf.keras.layers.Dense(128, activation='relu'),
+            tf.keras.layers.Dense(10, activation='softmax')
+        ])
+    
+    batch_size = 128
+    steps_per_epoch = len(x_train) // batch_size
+    total_steps = steps_per_epoch * 50
+    warmup_steps = steps_per_epoch * 5
+    
+    schedules = {
+        'Cosine + Warmup': CosineAnnealingWithWarmup(
+            max_lr=0.01, min_lr=0.0001, warmup_steps=warmup_steps, total_steps=total_steps),
+        'Exponential Decay': tf.keras.optimizers.schedules.ExponentialDecay(
+            initial_learning_rate=0.01, decay_steps=steps_per_epoch*10, decay_rate=0.9),
+        'Constant LR': 0.01
+    }
+    
+    results = {}
+    
+    for name, lr_schedule in schedules.items():
+        print(f"\nTraining with: {name}")
+        
+        model = create_model()
+        model.compile(optimizer=tf.keras.optimizers.SGD(learning_rate=lr_schedule, momentum=0.9),
+                      loss='categorical_crossentropy', metrics=['accuracy'])
+        
+        history = model.fit(x_train, y_train, batch_size=batch_size, epochs=50,
+                           validation_data=(x_test, y_test), verbose=0)
+        
+        test_loss, test_acc = model.evaluate(x_test, y_test, verbose=0)
+        results[name] = {'history': history.history, 'test_accuracy': test_acc}
+        print(f"  Test Accuracy: {test_acc:.4f}")
+    
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    
+    for name, data in results.items():
+        axes[0].plot(data['history']['accuracy'], label=name, linewidth=2)
+    axes[0].set_title('Training Accuracy', fontweight='bold')
+    axes[0].set_xlabel('Epoch'); axes[0].set_ylabel('Accuracy')
+    axes[0].legend(); axes[0].grid(True, alpha=0.3)
+    
+    for name, data in results.items():
+        axes[1].plot(data['history']['val_accuracy'], label=name, linewidth=2)
+    axes[1].set_title('Validation Accuracy', fontweight='bold')
+    axes[1].set_xlabel('Epoch'); axes[1].set_ylabel('Accuracy')
+    axes[1].legend(); axes[1].grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig('lr_schedule_training_comparison.png', dpi=150)
+    plt.show()
+    
+    return results
+
+visualize_lr_schedules()
+results = compare_lr_schedules_training()
+```
+
+---

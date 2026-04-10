@@ -1,0 +1,1803 @@
+---
+title: "Object Detection Systems"
+module: 6
+moduleId: "06-object-detection"
+description: "Anchors, IoU, Feature Pyramid Networks, YOLO evolution, and Transformer-based detection with the TF Object Detection API."
+shortTitle: "Object Detection"
+duration: "1 week"
+difficulty: "intermediate"
+icon: "target"
+color: "#ef4444"
+prerequisites:
+  - "3"
+objectives:
+  - "Understand anchor-based detection"
+  - "Implement IoU and Non-Max Suppression"
+  - "Master YOLO family architectures"
+  - "Use TF Object Detection API"
+  - "Apply Feature Pyramid Networks"
+source: "content/modules/06-object-detection/theory.md"
+generatedBy: "scripts/convert-theory.mjs"
+lastConverted: "2026-04-10T18:28:37.008Z"
+---
+## Table of Contents
+1. [Introduction to Object Detection](#1-introduction-to-object-detection)
+2. [Sliding Window Approach and Limitations](#2-sliding-window-approach-and-limitations)
+3. [Region Proposal Theory](#3-region-proposal-theory)
+4. [Anchor Box Design Principles](#4-anchor-box-design-principles)
+5. [IoU and Its Variants](#5-iou-and-its-variants)
+6. [Feature Pyramid Networks](#6-feature-pyramid-networks)
+7. [Focal Loss and Class Imbalance](#7-focal-loss-and-class-imbalance)
+8. [Non-Maximum Suppression Variants](#8-non-maximum-suppression-variants)
+9. [YOLO Architecture Evolution](#9-yolo-architecture-evolution)
+10. [Transformer-Based Detectors](#10-transformer-based-detectors)
+11. [Evaluation Metrics](#11-evaluation-metrics)
+12. [TensorFlow Object Detection API](#12-tensorflow-object-detection-api)
+
+---
+
+## 1. Introduction to Object Detection
+
+### 1.1 The Object Detection Problem
+
+Object detection is one of the most fundamental and challenging problems in computer vision. Unlike image classification, which assigns a single label to an entire image, object detection requires:
+
+- **Localization**: Determining the spatial extent of objects via bounding boxes
+- **Classification**: Assigning semantic labels to detected objects
+- **Multi-object Handling**: Detecting multiple objects of different classes simultaneously
+
+Mathematically, given an input image $I \in \mathbb{R}^{H \times W \times 3}$, an object detector produces a set of detections:
+
+$$\mathcal{D} = \{(b_i, c_i, s_i)\}_{i=1}^{N}$$
+
+Where:
+- $b_i = (x_i, y_i, w_i, h_i)$ represents the bounding box (center coordinates, width, height)
+- $c_i \in \{1, 2, ..., C\}$ is the class label
+- $s_i \in [0, 1]$ is the confidence score
+
+### 1.2 Historical Evolution
+
+| Era | Representative Methods | Key Characteristics |
+|-----|----------------------|---------------------|
+| Pre-2012 | Viola-Jones, HOG+SVM | Hand-crafted features, sliding windows |
+| 2012-2014 | R-CNN | CNN features, region proposals |
+| 2014-2016 | Fast R-CNN, Faster R-CNN | End-to-end training, RPN |
+| 2016-2018 | YOLO, SSD, RetinaNet | Real-time detection, single-stage |
+| 2018-2020 | YOLOv3, EfficientDet | Multi-scale, efficient architecture |
+| 2020-Present | DETR, YOLOv8, DINO | Transformers, anchor-free |
+
+### 1.3 Two-Stage vs. Single-Stage Paradigms
+
+**Two-Stage Detectors** (e.g., R-CNN family):
+- Stage 1: Generate region proposals (coarse localization)
+- Stage 2: Classify and refine proposals
+- Higher accuracy but slower
+
+**Single-Stage Detectors** (e.g., YOLO, SSD):
+- Directly predict bounding boxes and classes
+- Faster but historically less accurate
+- Gap narrowed with modern architectures
+
+---
+
+## 2. Sliding Window Approach and Limitations
+
+### 2.1 The Classical Sliding Window Paradigm
+
+Before deep learning, object detection primarily relied on the sliding window approach combined with hand-crafted features.
+
+#### 2.1.1 Algorithm Description
+
+The sliding window approach operates as follows:
+
+1. **Window Definition**: Define a set of windows with varying:
+   - Sizes: $\{s_1, s_2, ..., s_m\}$
+   - Aspect ratios: $\{r_1, r_2, ..., r_n\}$
+   - Positions: Sliding with stride $\delta$
+
+2. **Feature Extraction**: Extract features from each window:
+   - Haar features (Viola-Jones)
+   - HOG (Histogram of Oriented Gradients)
+   - SIFT, SURF descriptors
+
+3. **Classification**: Apply a classifier (typically SVM or AdaBoost) to each window
+
+#### 2.1.2 Mathematical Formulation
+
+For an image of size $W \times H$, with window sizes ranging from $w_{min} \times h_{min}$ to $w_{max} \times h_{max}$, with stride $\delta$ and scale factor $\alpha$:
+
+Number of windows at scale $s$:
+$$N_s = \left\lfloor\frac{W - w_s}{\delta}\right\rfloor \times \left\lfloor\frac{H - h_s}{\delta}\right\rfloor$$
+
+Total number of windows across all scales:
+$$N_{total} = \sum_{s=1}^{S} N_s \times A$$
+
+Where $A$ is the number of aspect ratios.
+
+**Example Calculation**:
+- Image: $640 \times 480$
+- Window sizes: $40 \times 40$ to $320 \times 240$
+- Scale factor: $\alpha = 1.2$
+- Stride: $\delta = 8$
+- Aspect ratios: $1:1, 1:2, 2:1$
+
+Number of scales: $\log_{1.2}(8) \approx 11$
+Windows per scale: $\approx 3000$
+Total windows: $\approx 99,000$
+
+### 2.2 Fundamental Limitations
+
+#### 2.2.1 Computational Inefficiency
+
+| Factor | Impact |
+|--------|--------|
+| Scale search | Exponential growth with scale resolution |
+| Aspect ratios | Linear multiplier for each additional ratio |
+| Dense sampling | $O(n^2)$ complexity in image dimensions |
+| Feature extraction | Repeated computation for overlapping regions |
+
+For a typical detection scenario:
+- ~100,000 windows per image
+- ~100ms per window (HOG + SVM)
+- **Total: ~2.8 hours per image!**
+
+#### 2.2.2 The Redundancy Problem
+
+Adjacent windows share significant overlap:
+- Two windows with stride 4 pixels and size $100 \times 100$ share 96% of their area
+- Feature extraction is repeated unnecessarily
+
+#### 2.2.3 Fixed Aspect Ratio Limitations
+
+Real objects have variable aspect ratios:
+- Person standing: ~1:3
+- Person sitting: ~1:1.5
+- Car: ~1:2 to 1:3
+- Building: ~1:5 to 5:1
+
+Fixed aspect ratios miss objects or generate excessive false positives.
+
+#### 2.2.4 Context Ignorance
+
+Sliding windows process local patches in isolation:
+- No global scene understanding
+- Difficult to leverage contextual relationships
+- Prone to background confusion
+
+### 2.3 Early Optimizations
+
+#### 2.3.1 Cascade Architecture (Viola-Jones)
+
+The cascade classifier addresses computational cost by:
+
+1. Early rejection of negative windows using simple features
+2. Progressive application of more complex classifiers
+3. Most windows rejected in early stages
+
+Cascade structure:
+$$F(x) = \begin{cases}
+f_1(x) & \text{if } f_1(x) < \theta_1 \\
+f_2(x) & \text{else if } f_2(x) < \theta_2 \\
+... \\
+f_K(x) & \text{final decision}
+\end{cases}$$
+
+**Key Insight**: 90% of windows are negative; reject them quickly with cheap classifiers.
+
+#### 2.3.2 Branch-and-Bound Methods
+
+Efficient subwindow search using upper bounds:
+- Compute upper bound on classification score for window sets
+- Prune entire branches if bound is below threshold
+- Guarantees finding optimal solution without exhaustive search
+
+### 2.4 Lessons Learned
+
+The limitations of sliding window approaches motivated key innovations:
+
+1. **Region Proposals**: Generate candidate regions selectively rather than exhaustively
+2. **Shared Computation**: Use CNN feature maps computed once for the entire image
+3. **Multi-scale Features**: Build feature hierarchies instead of image pyramids
+4. **End-to-End Learning**: Learn features jointly with detection
+
+**Key Insight**: The transition from sliding windows to region-based methods reduced computation from hours to seconds while improving accuracy.
+
+---
+
+## 3. Region Proposal Theory
+
+### 3.1 The Region Proposal Revolution
+
+Region proposal methods address the computational inefficiency of sliding windows by generating a small set of candidate regions (typically 1,000-2,000) that are likely to contain objects.
+
+### 3.2 Selective Search
+
+#### 3.2.1 Algorithm Overview
+
+Selective Search, introduced by Uijlings et al. (2013), uses hierarchical grouping based on image segmentation.
+
+**Algorithm Steps**:
+
+1. **Initial Segmentation**: Apply Felzenszwalb-Huttenlocher algorithm to create initial regions
+2. **Similarity Computation**: Calculate similarity between adjacent regions
+3. **Hierarchical Grouping**: Iteratively merge most similar regions
+4. **Proposal Generation**: Extract bounding boxes from all hierarchy levels
+
+#### 3.2.2 Similarity Measures
+
+Selective Search combines multiple complementary similarity measures:
+
+**Color Similarity**:
+$$s_{color}(r_i, r_j) = \sum_{k=1}^{n} \min(c_i^k, c_j^k)$$
+
+Where $c_i^k$ is the $k$-th bin of the color histogram for region $r_i$.
+
+**Texture Similarity**:
+$$s_{texture}(r_i, r_j) = \sum_{k=1}^{n} \min(t_i^k, t_j^k)$$
+
+Using Gaussian derivative filters at 8 orientations.
+
+**Size Similarity**:
+$$s_{size}(r_i, r_j) = 1 - \frac{|r_i| + |r_j|}{|image|}$$
+
+Encourages merging smaller regions first.
+
+**Fill Similarity**:
+$$s_{fill}(r_i, r_j) = 1 - \frac{|BB_{ij}| - |r_i| - |r_j|}{|image|}$$
+
+Where $BB_{ij}$ is the bounding box enclosing both regions.
+
+**Combined Similarity**:
+$$s(r_i, r_j) = a_1 s_{color} + a_2 s_{texture} + a_3 s_{size} + a_4 s_{fill}$$
+
+#### 3.2.3 Properties and Limitations
+
+| Property | Value | Implication |
+|----------|-------|-------------|
+| Proposals per image | ~2,000 | Manageable for CNN processing |
+| Recall at IoU=0.5 | ~99% | Excellent coverage |
+| Processing time | ~2s (CPU) | Bottleneck for real-time |
+| Diversity | High | Various scales and aspect ratios |
+
+**Limitations**:
+- Slow (CPU-based)
+- Not differentiable (cannot be trained end-to-end)
+- Fixed algorithm (no learning)
+- Poor recall for small objects
+
+### 3.3 EdgeBoxes
+
+EdgeBoxes (Zitnick & Dollár, 2014) proposes regions based on edge density:
+
+**Core Idea**: Objects tend to have closed contours; count edges within candidate box.
+
+**Objectness Score**:
+$$score(b) = \frac{\sum_{e \in b} w(e)}{2(w_b + h_b)^\kappa}$$
+
+Where:
+- $w(e)$ is edge strength
+- $\kappa$ controls bias toward larger boxes (typically 1.5)
+- Denominator normalizes by perimeter
+
+**Advantages**:
+- Faster than Selective Search (~0.3s)
+- Better edge localization
+- Still CPU-based and non-learnable
+
+### 3.4 Region Proposal Networks (RPN)
+
+#### 3.4.1 The Breakthrough
+
+Faster R-CNN (Ren et al., 2015) introduced the Region Proposal Network, a fully convolutional network that generates proposals from feature maps.
+
+**Key Innovation**: Make region proposal learning-based and GPU-accelerated.
+
+#### 3.4.2 RPN Architecture
+
+```python
+Input Image → CNN Backbone → Feature Map (C×H×W)
+                                    ↓
+                            3×3 Conv (512 channels)
+                                    ↓
+                    ┌───────────────┴───────────────┐
+                    ↓                               ↓
+              1×1 Conv (2k)                  1×1 Conv (4k)
+              (Classification)               (Regression)
+                    ↓                               ↓
+            Objectness Score              Box Coordinates
+            (k anchors × 2)               (k anchors × 4)
+```
+
+Where $k$ is the number of anchors per location (typically 9).
+
+#### 3.4.3 Anchor Mechanism
+
+At each spatial location $(i, j)$ in the feature map, RPN evaluates $k$ anchor boxes:
+
+**Anchor Definition**:
+- Base sizes: $\{128^2, 256^2, 512^2\}$ pixels
+- Aspect ratios: $\{1:1, 1:2, 2:1\}$
+- Total: 9 anchors per location
+
+**Anchor Center Mapping**:
+For feature map location $(i, j)$ with stride $s$:
+$$x = (i + 0.5) \times s, \quad y = (j + 0.5) \times s$$
+
+#### 3.4.4 RPN Training
+
+**Positive/Negative Labeling**:
+- Positive: IoU > 0.7 with any ground truth OR highest IoU for a GT box
+- Negative: IoU < 0.3 with all ground truth
+- Ignored: 0.3 ≤ IoU ≤ 0.7
+
+**Multi-task Loss**:
+$$L(\{p_i\}, \{t_i\}) = \frac{1}{N_{cls}} \sum_i L_{cls}(p_i, p_i^*) + \lambda \frac{1}{N_{reg}} \sum_i p_i^* L_{reg}(t_i, t_i^*)$$
+
+Where:
+- $p_i$: predicted objectness probability
+- $p_i^*$: ground truth label (1 for positive, 0 for negative)
+- $t_i$: predicted box coordinates
+- $t_i^*$: ground truth box coordinates
+- $L_{cls}$: Binary cross-entropy loss
+- $L_{reg}$: Smooth L1 loss
+
+**Box Parameterization**:
+$$t_x = (x - x_a) / w_a, \quad t_y = (y - y_a) / h_a$$
+$$t_w = \log(w / w_a), \quad t_h = \log(h / h_a)$$
+
+Where $(x_a, y_a, w_a, h_a)$ are anchor box parameters.
+
+#### 3.4.5 RPN Performance
+
+| Metric | Selective Search | RPN | Improvement |
+|--------|-----------------|-----|-------------|
+| Proposals | ~2,000 | ~300 | 6.7× fewer |
+| Time (GPU) | ~2s | ~10ms | 200× faster |
+| Recall@0.5 | 99% | 95% | Comparable |
+| mAP (Faster R-CNN) | 66.9% | 69.9% | +3.0% |
+
+**Key Insight**: RPN learns to generate better proposals than hand-crafted methods while being 200× faster.
+
+### 3.5 Advanced Proposal Methods
+
+#### 3.5.1 Guided Anchoring
+
+Instead of using fixed anchors, predict anchor shapes conditioned on image content:
+
+$$w = \sigma \cdot s \cdot e^{\delta_w}, \quad h = \sigma \cdot s \cdot e^{\delta_h}$$
+
+Where $\delta_w, \delta_h$ are predicted by a location-aware module.
+
+#### 3.5.2 Learning Proposals with Reinforcement Learning
+
+Some approaches frame proposal generation as a sequential decision process:
+- Agent selects actions (move, scale, aspect ratio change)
+- Reward based on IoU improvement
+- Policy gradient for training
+
+### 3.6 The Shift to Anchor-Free Detection
+
+Modern detectors increasingly avoid explicit region proposals:
+
+| Approach | Method | Key Idea |
+|----------|--------|----------|
+| Anchor-free | FCOS, CenterNet | Direct center point prediction |
+| Query-based | DETR | Learn object queries |
+| Keypoint-based | CornerNet | Detect and group corners |
+
+---
+
+## 4. Anchor Box Design Principles
+
+### 4.1 The Role of Anchors
+
+Anchor boxes (also called priors or default boxes) serve as reference templates that detectors refine to produce final predictions.
+
+**Mathematical Role**:
+$$b = f_{reg}(a, \delta)$$
+
+Where:
+- $a$ is anchor box parameters
+- $\delta$ is predicted offsets
+- $f_{reg}$ is the regression transformation
+
+### 4.2 Anchor Design Dimensions
+
+#### 4.2.1 Scale Design
+
+**Linear Scaling**:
+$$s_k = s_{min} + \frac{s_{max} - s_{min}}{m - 1}(k - 1), \quad k = 1, ..., m$$
+
+**Exponential Scaling** (used in SSD):
+$$s_k = s_{min} \cdot \left(\frac{s_{max}}{s_{min}}\right)^{\frac{k-1}{m-1}}$$
+
+**Common Configurations**:
+
+| Detector | Scales (relative to image) | Number |
+|----------|---------------------------|--------|
+| Faster R-CNN | {128², 256², 512²} | 3 |
+| SSD300 | {0.2, 0.34, 0.48, 0.62, 0.76, 0.9} | 6 |
+| YOLOv3 | {116, 156, 373} / 416 | 3 per level |
+| RetinaNet | {2⁰, 2^(1/3), 2^(2/3)} × base | 3 per level |
+
+#### 4.2.2 Aspect Ratio Design
+
+Common aspect ratio sets:
+- **Square-focused**: {1:1, 1:2, 2:1}
+- **Comprehensive**: {1:1, 1:2, 2:1, 1:3, 3:1}
+- **Extreme**: {1:1, 1:2, 2:1, 1:3, 3:1, 1:5, 5:1}
+
+**Data-Driven Design**:
+
+Optimal aspect ratios can be learned via k-means clustering on ground truth boxes:
+
+$$d(box, centroid) = 1 - IoU(box, centroid)$$
+
+YOLOv2 applied this to COCO:
+- k=5 clusters: {(0.5727, 0.6774), (1.8745, 2.0625), (3.3384, 5.4743), (7.8828, 3.5278), (9.7705, 9.1683)}
+
+### 4.3 Multi-Level Anchor Assignment
+
+#### 4.3.1 Feature Pyramid Assignment
+
+Different feature levels handle different scales:
+
+| Pyramid Level | Scale Range | Anchor Sizes | Target Objects |
+|--------------|-------------|--------------|----------------|
+| P2 | 0-64px | 32² | Small objects |
+| P3 | 64-128px | 64² | Small-medium |
+| P4 | 128-256px | 128² | Medium |
+| P5 | 256-512px | 256² | Medium-large |
+| P6 | 512-∞px | 512² | Large objects |
+
+#### 4.3.2 Assignment Strategy
+
+**IoU-based Assignment**:
+- Assign ground truth to anchor with highest IoU
+- Or assign to all anchors with IoU > threshold (typically 0.5)
+
+**Scale-based Assignment** (FCOS):
+$$level^* = \lfloor log_2(\sqrt{w \times h} / s_0) + level_0 \rfloor$$
+
+Where $s_0$ is a reference scale (typically 224).
+
+### 4.4 Anchor Density and Coverage
+
+#### 4.4.1 Coverage Analysis
+
+The probability that an object is covered by at least one anchor:
+
+$$P(coverage) = 1 - \prod_{i}(1 - P(object \in anchor_i))$$
+
+For dense anchor placement with sufficient scales/aspect ratios, coverage approaches 100%.
+
+#### 4.4.2 Density Trade-offs
+
+| Density | Pros | Cons |
+|---------|------|------|
+| High (~100k anchors) | Better recall | More negatives, slower training |
+| Medium (~20k anchors) | Balanced | May miss unusual aspect ratios |
+| Low (~5k anchors) | Fast training | Lower recall for small objects |
+
+### 4.5 Modern Anchor-Free Approaches
+
+#### 4.5.1 Center-Based Methods
+
+**FCOS**: Predict distances to box boundaries from center point
+
+$$l^*, t^*, r^*, b^* = x - x_0, y - y_0, x_1 - x, y_1 - y$$
+
+**CenterNet**: Predict width and height directly from center heatmap
+
+#### 4.5.2 Keypoint-Based Methods
+
+**CornerNet**: Detect top-left and bottom-right corners, group with associative embedding
+
+**ExtremeNet**: Detect four extreme points (top, bottom, left, right) and center
+
+### 4.6 Key Insights for Anchor Design
+
+1. **Match Dataset Statistics**: Anchor scales/ratios should match object distribution
+2. **Sufficient Coverage**: Ensure high recall for all object sizes
+3. **Avoid Excessive Overlap**: Too many similar anchors increase computation
+4. **Multi-Level Strategy**: Different levels for different scales is essential
+5. **Consider Going Anchor-Free**: Modern anchor-free methods achieve comparable performance
+
+---
+
+## 5. IoU and Its Variants
+
+### 5.1 Intersection over Union (IoU)
+
+#### 5.1.1 Definition
+
+IoU measures the overlap between two bounding boxes:
+
+$$IoU = \frac{|A \cap B|}{|A \cup B|} = \frac{Intersection}{Union}$$
+
+#### 5.1.2 Properties
+
+- **Scale Invariant**: IoU(a·A, a·B) = IoU(A, B)
+- **Range**: [0, 1]
+- **Identity**: IoU(A, A) = 1
+- **Symmetry**: IoU(A, B) = IoU(B, A)
+
+#### 5.1.3 Limitations
+
+| Scenario | IoU Value | Issue |
+|----------|-----------|-------|
+| No overlap | 0 | Gradient vanishes |
+| Partial overlap | (0, 1) | Non-linear with distance |
+| Complete containment | < 1 | Doesn't distinguish containment vs. overlap |
+
+**Critical Issue**: When boxes don't overlap, IoU = 0 regardless of distance, providing no gradient for optimization.
+
+### 5.2 Generalized IoU (GIoU)
+
+#### 5.2.1 Motivation
+
+GIoU (Rezatofighi et al., 2019) addresses the non-overlapping case by incorporating the smallest enclosing box.
+
+#### 5.2.2 Definition
+
+$$GIoU = IoU - \frac{|C - (A \cup B)|}{|C|}$$
+
+Where $C$ is the smallest convex box enclosing both $A$ and $B$.
+
+#### 5.2.3 Properties
+
+- **Range**: [-1, 1]
+- When boxes don't overlap: GIoU $\in$ [-1, 0)
+- When boxes perfectly overlap: GIoU = 1
+- When boxes are infinitely far apart: GIoU → -1
+
+#### 5.2.4 Loss Formulation
+
+$$L_{GIoU} = 1 - GIoU$$
+
+**Behavior**:
+- Overlapping: Minimizes non-overlapping area
+- Non-overlapping: Minimizes enclosing box area, brings boxes closer
+
+### 5.3 Distance IoU (DIoU)
+
+#### 5.3.1 Motivation
+
+DIoU (Zheng et al., 2020a) explicitly considers the distance between box centers.
+
+#### 5.3.2 Definition
+
+$$DIoU = IoU - \frac{\rho^2(b, b^{gt})}{c^2}$$
+
+Where:
+- $\rho(b, b^{gt})$: Euclidean distance between box centers
+- $c$: Diagonal length of the smallest enclosing box
+
+#### 5.3.3 Properties
+
+- **Range**: [-1, 1]
+- Penalizes based on center point distance
+- Faster convergence than GIoU for overlapping cases
+
+#### 5.3.4 Comparison with GIoU
+
+| Aspect | GIoU | DIoU |
+|--------|------|------|
+| Non-overlap handling | Yes | Yes |
+| Center distance | Implicit | Explicit |
+| Aspect ratio | Ignored | Ignored |
+| Convergence speed | Moderate | Fast |
+
+### 5.4 Complete IoU (CIoU)
+
+#### 5.4.1 Motivation
+
+CIoU (Zheng et al., 2020a) adds aspect ratio consistency to DIoU.
+
+#### 5.4.2 Definition
+
+$$CIoU = IoU - \frac{\rho^2(b, b^{gt})}{c^2} - \alpha v$$
+
+Where:
+$$v = \frac{4}{\pi^2}\left(\arctan\frac{w^{gt}}{h^{gt}} - \arctan\frac{w}{h}\right)^2$$
+
+$$\alpha = \frac{v}{(1 - IoU) + v}$$
+
+#### 5.4.3 Components
+
+| Term | Measures | Purpose |
+|------|----------|---------|
+| IoU | Overlap area | Primary similarity |
+| $\rho^2/c^2$ | Center distance | Alignment |
+| $\alpha v$ | Aspect ratio difference | Shape consistency |
+
+### 5.5 Efficient IoU (EIoU)
+
+#### 5.5.1 Definition
+
+EIoU (Focal and Efficient IoU Loss, 2021) decomposes the penalty:
+
+$$EIoU = IoU - \frac{\rho^2(b, b^{gt})}{c^2} - \frac{\rho^2(w, w^{gt})}{C_w^2} - \frac{\rho^2(h, h^{gt})}{C_h^2}$$
+
+Where $C_w, C_h$ are width and height of enclosing box.
+
+#### 5.5.2 Advantages
+
+- Directly optimizes width and height separately
+- Faster convergence than CIoU
+- Better for extreme aspect ratios
+
+### 5.6 Comparison and Recommendations
+
+| Loss | Overlap | Distance | Aspect Ratio | Use Case |
+|------|---------|----------|--------------|----------|
+| L1/L2 | ✗ | ✗ | ✗ | Baseline only |
+| IoU | ✓ | ✗ | ✗ | When overlap guaranteed |
+| GIoU | ✓ | Implicit | ✗ | General case |
+| DIoU | ✓ | ✓ | ✗ | Fast convergence needed |
+| CIoU | ✓ | ✓ | ✓ | Balanced performance |
+| EIoU | ✓ | ✓ | ✓ | Extreme aspect ratios |
+
+### 5.7 Implementation Considerations
+
+```python
+# Conceptual implementation
+def compute_iou(box1, box2):
+    # box format: [x1, y1, x2, y2]
+    x1 = max(box1[0], box2[0])
+    y1 = max(box1[1], box2[1])
+    x2 = min(box1[2], box2[2])
+    y2 = min(box1[3], box2[3])
+
+    intersection = max(0, x2 - x1) * max(0, y2 - y1)
+    area1 = (box1[2] - box1[0]) * (box1[3] - box1[1])
+    area2 = (box2[2] - box2[0]) * (box2[3] - box2[1])
+    union = area1 + area2 - intersection
+
+    return intersection / (union + epsilon)
+
+def compute_giou(box1, box2):
+    iou = compute_iou(box1, box2)
+
+    # Enclosing box
+    c_x1 = min(box1[0], box2[0])
+    c_y1 = min(box1[1], box2[1])
+    c_x2 = max(box1[2], box2[2])
+    c_y2 = max(box1[3], box2[3])
+
+    c_area = (c_x2 - c_x1) * (c_y2 - c_y1)
+
+    giou = iou - (c_area - union) / c_area
+    return giou
+```
+
+---
+
+## 6. Feature Pyramid Networks
+
+### 6.1 The Multi-Scale Challenge
+
+Objects in natural images appear at vastly different scales:
+- A person in the foreground: 500+ pixels tall
+- A person in the background: 30 pixels tall
+- Same object, 15× size difference
+
+**Problem**: Deep networks have limited receptive fields and fixed feature resolutions.
+
+### 6.2 Image Pyramids vs. Feature Pyramids
+
+#### 6.2.1 Image Pyramid Approach
+
+Process multiple resized versions of the input:
+
+$$I_s = \text{resize}(I, \text{scale}=s), \quad s \in \{0.5, 1.0, 2.0\}$$
+
+**Limitations**:
+- $O(n^2)$ memory and computation increase
+- Cannot share features across scales
+- Inference time scales with number of scales
+
+#### 6.2.2 Feature Pyramid Approach
+
+Build multi-scale feature representation from single input:
+
+**Advantages**:
+- Single forward pass
+- Shared computation
+- Rich semantic information at all levels
+
+### 6.3 Feature Pyramid Network (FPN) Architecture
+
+#### 6.3.1 Bottom-Up Pathway
+
+Standard feed-forward CNN producing feature maps at multiple scales:
+
+$$C_1, C_2, C_3, C_4, C_5$$
+
+Where $C_l$ has stride $2^l$ relative to input.
+
+#### 6.3.2 Top-Down Pathway
+
+Upsample higher-level features and merge with lower-level features:
+
+$$P_l = \text{Conv}(C_l + \text{Upsample}(P_{l+1}))$$
+
+**Lateral Connection**:
+- 1×1 conv on $C_l$ to match channels
+- Element-wise addition with upsampled $P_{l+1}$
+- 3×3 conv to reduce aliasing
+
+#### 6.3.3 Output Pyramid
+
+$$P_2, P_3, P_4, P_5, P_6$$
+
+Where $P_6$ is typically obtained via stride-2 conv on $C_5$ or max pooling on $P_5$.
+
+### 6.4 FPN Properties
+
+| Property | Benefit |
+|----------|---------|
+| Semantically Strong | High-level features propagate to all levels |
+| Localization Precise | Low-level features preserved through lateral connections |
+| Scale-Invariant | Different levels handle different scales |
+| Computationally Efficient | Single forward pass, shared backbone |
+
+### 6.5 Advanced FPN Variants
+
+#### 6.5.1 PANet (Path Aggregation Network)
+
+Adds bottom-up path augmentation:
+
+$$N_l = \text{Conv}(P_l + \text{Downsample}(N_{l-1}))$$
+
+**Benefit**: Better gradient flow for lower layers, improved small object detection.
+
+#### 6.5.2 NAS-FPN
+
+Uses Neural Architecture Search to find optimal feature fusion:
+- Discovers non-sequential connections
+- Learned merge operations
+- Better performance but less interpretable
+
+#### 6.5.3 BiFPN (Bidirectional FPN)
+
+EfficientDet's feature network:
+
+**Key Innovations**:
+1. Remove single-input nodes
+2. Add skip connections within same level
+3. Learnable weights for feature fusion
+
+**Weighted Fusion**:
+$$O = \sum_i \frac{w_i}{\sum_j w_j + \epsilon} \cdot I_i$$
+
+#### 6.5.4 ASFF (Adaptively Spatial Feature Fusion)
+
+Learn spatial attention for cross-level fusion:
+
+$$y_{ij}^l = \sum_{k=1}^{3} \alpha_{ij}^k \cdot x_{ij}^{k \rightarrow l}$$
+
+Where $\alpha_{ij}^k$ is learned attention weight at position $(i,j)$.
+
+### 6.6 FPN in Detection Architectures
+
+| Architecture | FPN Variant | Key Modification |
+|--------------|-------------|------------------|
+| Faster R-CNN + FPN | Standard | Add FPN to RPN and Fast R-CNN |
+| RetinaNet | Standard | Single-shot with FPN |
+| Mask R-CNN | Standard | FPN for both detection and segmentation |
+| EfficientDet | BiFPN | Learnable weighted fusion |
+| YOLOv4 | PANet | SPP + PANet + CSP |
+
+### 6.7 Design Principles
+
+1. **Level Assignment**: Assign objects to appropriate pyramid levels based on scale
+2. **Channel Consistency**: Use 1×1 conv to match channel dimensions
+3. **Smoothing**: Apply 3×3 conv after fusion to reduce aliasing
+4. **Extra Level**: Add P6 (and P7) for large object detection
+5. **Weight Sharing**: Share detection heads across pyramid levels
+
+---
+
+## 7. Focal Loss and Class Imbalance
+
+### 7.1 The Class Imbalance Problem
+
+In object detection, extreme class imbalance exists:
+- **Foreground**: ~10-100 objects per image
+- **Background**: ~100,000 anchor boxes per image
+- **Imbalance ratio**: 1:1000 to 1:10000
+
+**Consequences**:
+- Loss dominated by easy negatives
+- Model focuses on background classification
+- Poor detection of actual objects
+
+### 7.2 Standard Solutions
+
+#### 7.2.1 Hard Negative Mining
+
+Select most difficult negatives for training:
+- Sort negatives by loss
+- Keep top $k$ (e.g., $k = 3 \times$ number of positives)
+
+**Limitation**: Heuristic, may discard useful information.
+
+#### 7.2.2 Online Hard Example Mining (OHEM)
+
+Select high-loss examples within each batch:
+- Compute loss for all examples
+- Select top $k$ for backpropagation
+
+### 7.3 Focal Loss
+
+#### 7.3.1 Motivation
+
+Focal Loss (Lin et al., 2017) down-weights easy examples automatically.
+
+#### 7.3.2 Definition
+
+For binary classification with predicted probability $p \in [0, 1]$:
+
+$$FL(p_t) = -\alpha_t (1 - p_t)^\gamma \log(p_t)$$
+
+Where:
+$$p_t = \begin{cases} p & \text{if } y = 1 \\ 1 - p & \text{if } y = 0 \end{cases}$$
+
+#### 7.3.3 Components
+
+| Component | Purpose | Typical Value |
+|-----------|---------|---------------|
+| $\alpha_t$ | Balance positive/negative | 0.25 (positive weight) |
+| $\gamma$ | Focus parameter | 2.0 |
+| $(1 - p_t)^\gamma$ | Down-weight easy examples | Dynamic |
+
+#### 7.3.4 Behavior Analysis
+
+For well-classified examples ($p_t > 0.9$):
+- With $\gamma = 2$: $(1 - 0.9)^2 = 0.01$
+- Loss reduced by 100× compared to CE
+
+For hard examples ($p_t < 0.5$):
+- $(1 - 0.5)^2 = 0.25$
+- Loss reduced by only 4×
+
+**Effect**: Easy examples contribute less to gradient; hard examples dominate training.
+
+#### 7.3.5 Comparison with Cross-Entropy
+
+| Scenario | CE Loss | Focal Loss ($\gamma=2$) | Reduction |
+|----------|---------|------------------------|-----------|
+| Easy positive ($p=0.9$) | 0.105 | 0.001 | 100× |
+| Easy negative ($p=0.1$) | 0.105 | 0.001 | 100× |
+| Hard positive ($p=0.5$) | 0.693 | 0.173 | 4× |
+| Hard negative ($p=0.5$) | 0.693 | 0.173 | 4× |
+
+### 7.4 Variants of Focal Loss
+
+#### 7.4.1 Quality Focal Loss (QFL)
+
+For joint classification and IoU estimation:
+
+$$QFL(\sigma) = |y - \sigma|^\beta ((1-y)\log(1-\sigma) + y\log(\sigma))$$
+
+Where $y \in [0, 1]$ is IoU score.
+
+#### 7.4.2 Distribution Focal Loss (DFL)
+
+For modeling bounding box distribution:
+
+$$DFL(S_i, S_{i+1}) = -((y_{i+1} - y)\log(S_i) + (y - y_i)\log(S_{i+1}))$$
+
+#### 7.4.3 Poly Loss
+
+Generalized form with multiple polynomial terms:
+
+$$L_{poly} = \sum_{j=1}^{N} \alpha_j (1 - p_t)^j \log(p_t)$$
+
+### 7.5 Other Imbalance Solutions
+
+#### 7.5.1 Gradient Harmonizing Mechanism (GHM)
+
+Histogram-based gradient weighting:
+
+$$w_i = \frac{N}{G_{bin}(g_i) \times M}$$
+
+Where $G_{bin}(g_i)$ is the number of examples in the gradient bin of example $i$.
+
+#### 7.5.2 AP Loss
+
+Directly optimize Average Precision:
+- Formulate as ranking problem
+- Use error-driven update
+- Directly optimizes evaluation metric
+
+### 7.6 Implementation Best Practices
+
+```python
+# Focal Loss implementation
+def focal_loss(pred, target, alpha=0.25, gamma=2.0):
+    """
+    pred: [N, C] - predicted probabilities
+    target: [N] - ground truth labels
+    """
+    ce_loss = F.cross_entropy(pred, target, reduction='none')
+    pt = torch.exp(-ce_loss)  # Get probability of correct class
+
+    # Apply focal weighting
+    focal_weight = alpha * (1 - pt) ** gamma
+    loss = focal_weight * ce_loss
+
+    return loss.mean()
+```
+
+**Key Hyperparameters**:
+- $\alpha$: Balance positive/negative (0.25 for detection)
+- $\gamma$: Focusing strength (1.0-3.0, typically 2.0)
+- Start with $\gamma=0$ (CE), gradually increase
+
+---
+
+## 8. Non-Maximum Suppression Variants
+
+### 8.1 The Need for NMS
+
+Object detectors produce multiple overlapping detections for the same object:
+- Dense anchor sampling
+- Multiple scales/aspect ratios
+- Nearby spatial locations
+
+**Goal**: Select single best detection per object.
+
+### 8.2 Standard Greedy NMS
+
+#### 8.2.1 Algorithm
+
+```python
+Input: Detections D = {(b_i, s_i)}, IoU threshold N_t
+Output: Filtered detections D'
+
+1. Sort D by confidence scores in descending order
+2. While D is not empty:
+   a. Pick detection d with highest score
+   b. Add d to D'
+   c. Remove d from D
+   d. For each remaining detection d' in D:
+      If IoU(d, d') > N_t:
+         Remove d' from D
+3. Return D'
+```
+
+#### 8.2.2 Limitations
+
+| Issue | Description | Example |
+|-------|-------------|---------|
+| Threshold sensitivity | Too high: many duplicates; Too low: miss objects | Crowded scenes |
+| Score ordering | Lower-scoring but better-localized boxes suppressed | Occlusion |
+| Per-class only | Cannot handle same-class adjacent objects | Person next to person |
+| No context | Makes decisions locally | False positives |
+
+### 8.3 Soft-NMS
+
+#### 8.3.1 Motivation
+
+Instead of hard removal, decay scores of overlapping detections.
+
+#### 8.3.2 Score Update Functions
+
+**Linear**:
+$$s_i = \begin{cases} s_i & \text{if } IoU(M, b_i) < N_t \\ s_i(1 - IoU(M, b_i)) & \text{otherwise} \end{cases}$$
+
+**Gaussian** (preferred):
+$$s_i = s_i \cdot e^{-\frac{IoU(M, b_i)^2}{\sigma}}$$
+
+Where $M$ is the current maximum score box.
+
+#### 8.3.3 Advantages
+
+- No additional hyperparameters to tune
+- Continuous score decay
+- Better handling of crowded scenes
+- Simple drop-in replacement
+
+#### 8.3.4 Performance
+
+| Method | mAP (COCO) | Improvement |
+|--------|-----------|-------------|
+| Greedy NMS | 39.3% | - |
+| Soft-NMS (Linear) | 40.8% | +1.5% |
+| Soft-NMS (Gaussian) | 41.2% | +1.9% |
+
+### 8.4 Learnable NMS
+
+#### 8.4.1 Relation Network
+
+Learn to perform NMS:
+- Input: Set of detections
+- Process: Self-attention across detections
+- Output: Refined scores
+
+#### 8.4.2 Learnable NMS (LNMS)
+
+$$s_i^{new} = f(s_i, \{IoU(b_i, b_j)\}_{j \neq i})$$
+
+Where $f$ is a learned function (typically MLP).
+
+### 8.5 Matrix NMS
+
+#### 8.5.1 Motivation
+
+Parallel NMS for faster inference (important for real-time detection).
+
+#### 8.5.2 Algorithm
+
+1. Compute IoU matrix: $M_{ij} = IoU(b_i, b_j)$
+2. Compute decay matrix: $D_{ij} = f(M_{ij})$
+3. Update scores: $s_i^{new} = s_i \cdot \min_j (1 - D_{ij} \cdot \mathbb{1}_{s_j > s_i})$
+
+**Advantage**: Fully parallelizable on GPU.
+
+### 8.6 DIoU-NMS
+
+#### 8.6.1 Incorporating Center Distance
+
+Replace IoU with DIoU in NMS decision:
+
+$$DIoU = IoU - \frac{\rho^2(b, b^{gt})}{c^2}$$
+
+**Benefit**: Better preservation when boxes have high overlap but different centers.
+
+### 8.7 Cluster-NMS
+
+#### 8.7.1 Graph-Based Approach
+
+1. Build graph: Nodes = detections, Edges = IoU > threshold
+2. Find connected components
+3. Select highest score from each component
+
+**Benefit**: Handles cases where multiple objects should be kept despite mutual overlap.
+
+### 8.8 Comparison Summary
+
+| Method | Speed | Accuracy | Implementation |
+|--------|-------|----------|----------------|
+| Greedy NMS | Slow (sequential) | Baseline | Simple |
+| Soft-NMS | Slow | +1-2% mAP | Simple |
+| Matrix NMS | Fast (parallel) | Similar to Soft-NMS | Moderate |
+| DIoU-NMS | Slow | Better for crowded | Simple |
+| Learnable NMS | Slow | +1-3% mAP | Complex |
+
+### 8.9 Modern Alternatives
+
+#### 8.9.1 End-to-End NMS (DETR)
+
+Transformer-based detectors use set prediction:
+- Fixed number of predictions
+- Bipartite matching to ground truth
+- No explicit NMS needed
+
+#### 8.9.2 NMS-Free Training
+
+Some detectors train to produce non-overlapping predictions:
+- One-to-one label assignment
+- Implicit NMS through training
+
+---
+
+## 9. YOLO Architecture Evolution
+
+### 9.1 YOLOv1 (2016)
+
+#### 9.1.1 Core Innovation
+
+"You Only Look Once" - First real-time object detector with reasonable accuracy.
+
+#### 9.1.2 Architecture
+
+```python
+Input (448×448×3)
+    ↓
+Conv Layers (24 layers, ImageNet pretrain)
+    ↓
+FC Layers
+    ↓
+Output: S×S×(B×5 + C)
+```
+
+Where:
+- $S = 7$ (grid size)
+- $B = 2$ (boxes per cell)
+- $C = 20$ (PASCAL VOC classes)
+- 5 = (x, y, w, h, confidence)
+
+#### 9.1.3 Loss Function
+
+$$L = \lambda_{coord} \sum_{i=0}^{S^2} \sum_{j=0}^{B} \mathbb{1}_{ij}^{obj} [(x_i - \hat{x}_i)^2 + (y_i - \hat{y}_i)^2 + (\sqrt{w_i} - \sqrt{\hat{w}_i})^2 + (\sqrt{h_i} - \sqrt{\hat{h}_i})^2]$$
+$$+ \lambda_{noobj} \sum_{i=0}^{S^2} \sum_{j=0}^{B} \mathbb{1}_{ij}^{noobj} (C_i - \hat{C}_i)^2$$
+$$+ \sum_{i=0}^{S^2} \mathbb{1}_{i}^{obj} \sum_{c \in classes} (p_i(c) - \hat{p}_i(c))^2$$
+
+#### 9.1.4 Limitations
+
+- Struggles with small objects
+- Limited to 2 boxes per grid cell
+- Coarse localization (7×7 grid)
+- High localization error
+
+### 9.2 YOLOv2 / YOLO9000 (2017)
+
+#### 9.2.1 Improvements
+
+| Improvement | Description | Impact |
+|-------------|-------------|--------|
+| Batch Normalization | Add BN to all conv layers | +2% mAP |
+| High Resolution | 448×448 pretraining | +4% mAP |
+| Anchor Boxes | k-means clustering for priors | Better recall |
+| Dimension Clusters | Data-driven anchor shapes | +5% recall |
+| Fine-Grained Features | Pass-through layer | Better small objects |
+| Multi-Scale Training | Random input sizes | Better generalization |
+
+#### 9.2.2 Anchor Clustering
+
+K-means on COCO bounding boxes:
+
+$$d(box, centroid) = 1 - IoU(box, centroid)$$
+
+Optimal k=5 clusters for COCO.
+
+#### 9.2.3 Darknet-19 Backbone
+
+```python
+19 convolutional layers
+5 max pooling layers
+No fully connected layers (fully convolutional)
+```
+
+### 9.3 YOLOv3 (2018)
+
+#### 9.3.1 Key Improvements
+
+1. **Darknet-53 Backbone**: Residual connections, deeper network
+2. **Multi-Scale Predictions**: Three detection heads at different scales
+3. **Independent Logistic Classifiers**: Multi-label support
+4. **Better Anchor Assignment**: Three anchors per scale
+
+#### 9.3.2 Feature Pyramid
+
+```python
+Input (416×416)
+    ↓
+C1 (stride 2)
+    ↓
+C2 (stride 4)
+    ↓
+C3 (stride 8) ────────→ Upsample ──┐
+    ↓                              ↓
+C4 (stride 16) ───────→ Upsample ──┼→ Concat → Detect (small)
+    ↓                              ↓
+C5 (stride 32) ────────────────────┼→ Concat → Detect (medium)
+                                   └──→ Detect (large)
+```
+
+#### 9.3.3 Detection at Three Scales
+
+| Scale | Feature Map | Anchor Sizes | Target Objects |
+|-------|-------------|--------------|----------------|
+| Small | 13×13 | (116×90), (156×198), (373×326) | Large |
+| Medium | 26×26 | (30×61), (62×45), (59×119) | Medium |
+| Large | 52×52 | (10×13), (16×30), (33×23) | Small |
+
+### 9.4 YOLOv4 (2020)
+
+#### 9.4.1 Bag of Freebies (Training Improvements)
+
+| Technique | Description | Gain |
+|-----------|-------------|------|
+| Mosaic Augmentation | 4-image mosaic | +2% mAP |
+| Self-Adversarial Training | Modify input to fool network | +1.5% mAP |
+| CIoU Loss | Better box regression | +1% mAP |
+| DropBlock | Structured dropout | +0.5% mAP |
+| Label Smoothing | Regularization | +0.5% mAP |
+
+#### 9.4.2 Bag of Specials (Architecture Improvements)
+
+| Technique | Description | Gain |
+|-----------|-------------|------|
+| Mish Activation | Smooth non-monotonic | +1% mAP |
+| SPP Block | Spatial pyramid pooling | +1.5% mAP |
+| PANet | Path aggregation | +1% mAP |
+| SAM | Spatial attention | +0.5% mAP |
+| CSPDarknet53 | Cross-stage partial connections | Speed + Accuracy |
+
+#### 9.4.3 Architecture Summary
+
+```python
+CSPDarknet53 (backbone)
+    ↓
+SPP Block
+    ↓
+PANet (neck)
+    ↓
+YOLO Head (detection)
+```
+
+### 9.5 YOLOv5 (2020)
+
+#### 9.5.1 PyTorch Implementation
+
+- First official PyTorch YOLO
+- Ultralytics implementation
+- Focus on ease of use
+
+#### 9.5.2 AutoAnchor
+
+Automatic anchor optimization:
+```python
+# Genetic algorithm for anchor evolution
+# Evolve anchors to match dataset distribution
+```
+
+#### 9.5.3 Model Scaling
+
+| Model | Width | Depth | Params | mAP@0.5 | Speed (ms) |
+|-------|-------|-------|--------|---------|-----------|
+| YOLOv5n | 0.25 | 0.33 | 1.9M | 45.7% | 6.3 |
+| YOLOv5s | 0.50 | 0.33 | 7.2M | 56.8% | 6.4 |
+| YOLOv5m | 0.75 | 0.67 | 21.2M | 64.1% | 8.2 |
+| YOLOv5l | 1.0 | 1.0 | 46.5M | 67.3% | 10.1 |
+| YOLOv5x | 1.25 | 1.33 | 86.7M | 68.9% | 12.1 |
+
+### 9.6 YOLOv6 (2022)
+
+#### 9.6.1 Industrial Focus
+
+- Designed for industrial applications
+- Hardware-friendly efficient backbone
+- Reparameterization for inference speed
+
+#### 9.6.2 Key Features
+
+| Feature | Description |
+|---------|-------------|
+| EfficientRep Backbone | Hardware-efficient structure |
+| Rep-PAN Neck | Reparameterized PAN |
+| Efficient Decoupled Head | Separate classification/regression |
+| Anchor-Free | Point-based detection |
+| SimOTA Label Assignment | Dynamic label assignment |
+
+### 9.7 YOLOv7 (2022)
+
+#### 9.7.1 Trainable Bag-of-Freebies
+
+| Technique | Description |
+|-----------|-------------|
+| Planned Reparameterization | Strategic reparameterization |
+| Coarse-to-Fine Lead Head | Auxiliary head for training |
+| Dynamic Label Assignment | Progressive label assignment |
+
+#### 9.7.2 Model Scaling
+
+Extended scaling for different compute budgets:
+- YOLOv7 (base)
+- YOLOv7-X (extended)
+- YOLOv7-W6 (wider)
+- YOLOv7-E6 (deeper)
+- YOLOv7-D6 (widest)
+- YOLOv7-E6E (ensemble)
+
+### 9.8 YOLOv8 (2023)
+
+#### 9.8.1 Architectural Changes
+
+| Change | Description |
+|--------|-------------|
+| Anchor-Free Detection | Center point prediction |
+| C2f Module | CSP bottleneck with 2 convolutions |
+| Decoupled Head | Separate cls/reg branches |
+| Distribution Focal Loss | Model box distribution |
+| Task Aligned Assigner | IoU-aware label assignment |
+
+#### 9.8.2 C2f Module
+
+```python
+Input
+  ↓
+Split ──┬──→ Conv ──┐
+        │           ↓
+        └──→ Conv ──┼→ Concat → Conv → Output
+                    ↓
+              (repeat n times)
+```
+
+#### 9.8.3 Multi-Task Support
+
+YOLOv8 supports:
+- Object detection
+- Instance segmentation
+- Pose estimation
+- Classification
+
+### 9.9 Evolution Summary
+
+| Version | Year | Key Innovation | mAP (COCO) | Speed (FPS) |
+|---------|------|---------------|-----------|-------------|
+| YOLOv1 | 2016 | Unified detection | 63.4% | 45 |
+| YOLOv2 | 2017 | Anchor boxes | 78.6% | 40 |
+| YOLOv3 | 2018 | Multi-scale | 81.2% | 30 |
+| YOLOv4 | 2020 | BoF + BoS | 87.3% | 65 |
+| YOLOv5 | 2020 | PyTorch, AutoAnchor | 88.0% | 140 |
+| YOLOv6 | 2022 | Industrial focus | 88.9% | 98 |
+| YOLOv7 | 2022 | Trainable BoF | 91.2% | 161 |
+| YOLOv8 | 2023 | Anchor-free, multi-task | 92.0% | 150 |
+
+---
+
+## 10. Transformer-Based Detectors
+
+### 10.1 Motivation for Transformers in Detection
+
+#### 10.1.1 Limitations of CNN-Based Detectors
+
+| Limitation | Description |
+|------------|-------------|
+| Local receptive field | Limited context understanding |
+| Hand-crafted components | Anchors, NMS, dense predictions |
+| Post-processing | NMS required, not differentiable |
+| Scale handling | Complex multi-scale architectures |
+
+#### 10.1.2 Why Transformers?
+
+- **Global attention**: See entire image at once
+- **Set prediction**: Output variable-length sets
+- **End-to-end**: No hand-crafted components
+- **Unified architecture**: Same design for all tasks
+
+### 10.2 DETR (Detection Transformer)
+
+#### 10.2.1 Architecture
+
+```python
+Input Image
+    ↓
+CNN Backbone (ResNet-50)
+    ↓
+1×1 Conv (d=256)
+    ↓
+Flatten + Positional Encoding
+    ↓
+Transformer Encoder (6 layers)
+    ↓
+Transformer Decoder (6 layers)
+    ← Object Queries (N=100, learned)
+    ↓
+FFN Heads (class + box)
+```
+
+#### 10.2.2 Object Queries
+
+Learned embeddings that represent "what to look for":
+- $N = 100$ queries (sufficient for COCO)
+- Each query attends to image features
+- Produces one detection per query
+
+**Interpretation**: Queries learn to specialize for different:
+- Object sizes
+- Object positions
+- Object classes
+
+#### 10.2.3 Bipartite Matching
+
+Since outputs and targets are unordered sets, use Hungarian matching:
+
+$$\hat{\sigma} = \arg\min_{\sigma} \sum_{i}^{N} \mathcal{L}_{match}(y_i, \hat{y}_{\sigma(i)})$$
+
+Where matching cost:
+$$\mathcal{L}_{match} = -\mathbb{1}_{c_i \neq \emptyset} \hat{p}_{\sigma(i)}(c_i) + \mathbb{1}_{c_i \neq \emptyset} \mathcal{L}_{box}(b_i, \hat{b}_{\sigma(i)})$$
+
+#### 10.2.4 Loss Function
+
+$$\mathcal{L}_{Hungarian}(y, \hat{y}) = \sum_{i=1}^{N} [-\log \hat{p}_{\hat{\sigma}(i)}(c_i) + \mathbb{1}_{c_i \neq \emptyset} \mathcal{L}_{box}(b_i, \hat{b}_{\hat{\sigma}(i)})]$$
+
+Where:
+- Classification: Negative log-likelihood
+- Box: Linear combination of L1 and GIoU losses
+
+#### 10.2.5 Performance
+
+| Metric | Faster R-CNN + FPN | DETR | Notes |
+|--------|-------------------|------|-------|
+| mAP (COCO) | 42.0% | 42.0% | Comparable |
+| mAP@0.5 | 62.1% | 62.4% | Similar |
+| mAP@0.75 | 45.5% | 44.2% | Slightly lower |
+| AP_small | 26.6% | 20.5% | Worse on small |
+| AP_large | 53.9% | 61.1% | Better on large |
+| Training epochs | ~12 | ~500 | Much longer |
+
+### 10.3 Deformable DETR
+
+#### 10.3.1 Addressing DETR's Limitations
+
+| Issue | Solution |
+|-------|----------|
+| Slow convergence | Deformable attention (sparse sampling) |
+| Small object detection | Multi-scale deformable attention |
+| High memory | Sparse attention pattern |
+
+#### 10.3.2 Deformable Attention
+
+Instead of attending to all spatial locations:
+
+$$\text{DeformAttn}(z_q, p_q, x) = \sum_{m=1}^{M} W_m \left[\sum_{k=1}^{K} A_{mqk} \cdot W_m' x(p_q + \Delta p_{mqk})\right]$$
+
+Where:
+- $K$ = number of sampling points (small, e.g., 4)
+- $\Delta p_{mqk}$ = learned offset
+- $A_{mqk}$ = learned attention weight
+
+#### 10.3.3 Performance Improvement
+
+| Metric | DETR | Deformable DETR | Improvement |
+|--------|------|-----------------|-------------|
+| mAP | 42.0% | 46.2% | +4.2% |
+| Training epochs | 500 | 50 | 10× faster |
+| AP_small | 20.5% | 28.0% | +7.5% |
+
+### 10.4 Conditional DETR
+
+#### 10.4.1 Faster Training Through Conditional Spatial Queries
+
+Improve cross-attention by conditioning on reference points:
+
+$$\text{CA}(q, k, v) = \text{softmax}\left(\frac{(W_q' q + p_q)(W_k k + p_k)^T}{\sqrt{d_k}}\right)W_v v$$
+
+Where spatial query $p_q$ is derived from predicted reference point.
+
+**Result**: Converges in 25 epochs (vs. 50 for Deformable DETR, 500 for DETR).
+
+### 10.5 DINO and DAB-DETR
+
+#### 10.5.1 DAB-DETR (Dynamic Anchor Boxes)
+
+Replace learned queries with explicit 4D anchor boxes:
+
+$$q = (x, y, w, h) \rightarrow \text{PE}(x, y, w, h)$$
+
+**Benefits**:
+- More interpretable queries
+- Better inductive bias
+- Faster convergence
+
+#### 10.5.2 DINO (DETR with Improved DeNoising)
+
+Key innovations:
+- Contrastive denoising training
+- Mixed query selection
+- Look-forward-twice label assignment
+
+**Performance**: 63.3% mAP on COCO (state-of-the-art for DETR-style detectors).
+
+### 10.6 Comparison of Transformer Detectors
+
+| Model | Key Feature | mAP | Epochs |
+|-------|-------------|-----|--------|
+| DETR | First transformer detector | 42.0% | 500 |
+| Deformable DETR | Sparse attention | 46.2% | 50 |
+| Conditional DETR | Conditional queries | 45.0% | 25 |
+| Anchor DETR | Anchor-based queries | 44.2% | 25 |
+| DAB-DETR | Dynamic anchor boxes | 44.5% | 25 |
+| DINO | Denoising training | 63.3% | 12 |
+
+### 10.7 Hybrid Approaches
+
+#### 10.7.1 ViTDet
+
+Combine ViT backbone with standard detection heads:
+- ViT backbone for feature extraction
+- Windowed attention for efficiency
+- Standard FPN + RPN/Mask R-CNN heads
+
+#### 10.7.2 Co-DETR
+
+Collaborative hybrid assignment:
+- Multiple auxiliary heads (ATSS, FCOS, RepPoints)
+- One-to-many assignment for training
+- One-to-one assignment for inference
+
+---
+
+## 11. Evaluation Metrics
+
+### 11.1 Intersection over Union (IoU) for Evaluation
+
+#### 11.1.1 Definition
+
+$$IoU = \frac{Area_{intersection}}{Area_{union}} = \frac{|GT \cap Pred|}{|GT \cup Pred|}$$
+
+#### 11.1.2 Threshold-Based Matching
+
+A detection is considered correct if:
+- IoU with ground truth ≥ threshold (typically 0.5)
+- Class prediction matches
+
+### 11.2 Precision and Recall
+
+#### 11.2.1 Definitions
+
+$$Precision = \frac{TP}{TP + FP} = \frac{\text{correct detections}}{\text{all detections}}$$
+
+$$Recall = \frac{TP}{TP + FN} = \frac{\text{correct detections}}{\text{all ground truths}}$$
+
+#### 11.2.2 Confusion Matrix
+
+| | Predicted Positive | Predicted Negative |
+|---|-------------------|-------------------|
+| **Actual Positive** | True Positive (TP) | False Negative (FN) |
+| **Actual Negative** | False Positive (FP) | True Negative (TN) |
+
+### 11.3 Average Precision (AP)
+
+#### 11.3.1 Precision-Recall Curve
+
+Vary confidence threshold to generate PR curve:
+- High threshold: High precision, low recall
+- Low threshold: Low precision, high recall
+
+#### 11.3.2 AP Calculation
+
+**11-point interpolation** (PASCAL VOC):
+$$AP = \frac{1}{11} \sum_{r \in \{0, 0.1, ..., 1\}} p_{interp}(r)$$
+
+Where $p_{interp}(r) = \max_{\tilde{r} \geq r} p(\tilde{r})$
+
+**All-point interpolation** (COCO):
+$$AP = \sum_n (r_{n+1} - r_n) p_{interp}(r_{n+1})$$
+
+### 11.4 Mean Average Precision (mAP)
+
+#### 11.4.1 Definition
+
+$$mAP = \frac{1}{C} \sum_{c=1}^{C} AP_c$$
+
+Where $C$ is the number of classes.
+
+#### 11.4.2 AP at Different IoU Thresholds
+
+| Metric | IoU Threshold | Purpose |
+|--------|---------------|---------|
+| AP50 | 0.50 | Lenient localization |
+| AP75 | 0.75 | Strict localization |
+| AP@[.50:.05:.95] | 0.50 to 0.95 | Average across thresholds |
+
+### 11.5 COCO Evaluation Metrics
+
+#### 11.5.1 Primary Metrics
+
+| Metric | Description |
+|--------|-------------|
+| AP | AP@IoU=0.50:0.05:0.95 (primary challenge metric) |
+| AP50 | AP@IoU=0.50 |
+| AP75 | AP@IoU=0.75 |
+| AP_small | AP for small objects (area < 32²) |
+| AP_medium | AP for medium objects (32² < area < 96²) |
+| AP_large | AP for large objects (area > 96²) |
+
+#### 11.5.2 Object Size Definitions
+
+| Size | Pixel Area | Example |
+|------|-----------|---------|
+| Small | < 32² | ~30×30 pixels |
+| Medium | 32² - 96² | ~64×64 pixels |
+| Large | > 96² | ~100×100+ pixels |
+
+### 11.6 PASCAL VOC vs. COCO Metrics
+
+| Aspect | PASCAL VOC | COCO |
+|--------|-----------|------|
+| Classes | 20 | 80 |
+| IoU threshold | 0.5 only | 0.5:0.95 |
+| AP calculation | 11-point | All-point |
+| Primary metric | mAP@0.5 | AP (averaged) |
+| Small objects | Less emphasis | Dedicated metrics |
+
+### 11.7 Additional Metrics
+
+#### 11.7.1 F1 Score
+
+$$F1 = 2 \cdot \frac{Precision \cdot Recall}{Precision + Recall}$$
+
+Useful when precision-recall tradeoff needs balance.
+
+#### 11.7.2 Average Recall (AR)
+
+Maximum recall achievable at different detection counts:
+
+$$AR = 2 \int_0^{1} Recall(FPPI) d(FPPI)$$
+
+Where FPPI = False Positives Per Image.
+
+#### 11.7.3 Inference Speed Metrics
+
+| Metric | Description |
+|--------|-------------|
+| FPS | Frames Per Second |
+| Latency | Time per image (ms) |
+| FLOPs | Floating point operations |
+| Parameters | Model size |
+
+### 11.8 Metric Comparison Table
+
+| Detector | AP | AP50 | AP75 | AP_small | AP_medium | AP_large | FPS |
+|----------|-----|------|------|----------|-----------|----------|-----|
+| Faster R-CNN | 37.4% | 58.1% | 40.4% | 21.2% | 41.3% | 49.1% | 15 |
+| RetinaNet | 39.1% | 59.1% | 42.3% | 21.8% | 42.7% | 50.2% | 12 |
+| YOLOv3 | 33.0% | 57.9% | 34.4% | 18.3% | 35.4% | 41.9% | 30 |
+| YOLOv4 | 43.5% | 65.7% | 47.3% | 26.7% | 46.7% | 58.1% | 65 |
+| YOLOv5x | 50.7% | 68.9% | 55.4% | 33.3% | 54.8% | 64.0% | 140 |
+| DETR | 42.0% | 62.4% | 44.2% | 20.5% | 45.8% | 61.1% | 28 |
+| Deformable DETR | 46.2% | 66.0% | 50.4% | 28.0% | 49.7% | 61.9% | 27 |
+
+---
+
+## 12. TensorFlow Object Detection API
+
+### 12.1 Overview
+
+The TensorFlow Object Detection API is an open-source framework for training and deploying object detection models.
+
+### 12.2 Supported Model Architectures
+
+| Architecture | Type | Speed | Accuracy | Use Case |
+|-------------|------|-------|----------|----------|
+| SSD MobileNet v2 | Single-stage | Fast | Moderate | Mobile/Edge |
+| SSD ResNet50 v1 | Single-stage | Medium | Good | Balanced |
+| Faster R-CNN ResNet50 | Two-stage | Slow | High | Accuracy-critical |
+| Faster R-CNN ResNet101 | Two-stage | Slower | Higher | Maximum accuracy |
+| Mask R-CNN Inception | Two-stage | Slow | High | Detection + Segmentation |
+| EfficientDet D0-D7 | Single-stage | Variable | Variable | Scalable |
+
+### 12.3 Model Zoo
+
+TensorFlow provides pre-trained models on COCO:
+
+| Model | Input Size | mAP | Latency (ms) |
+|-------|-----------|-----|-------------|
+| SSD MobileNet v2 | 320×320 | 20.2% | 19 |
+| SSD ResNet50 v1 | 640×640 | 34.3% | 53 |
+| Faster R-CNN ResNet50 | 640×640 | 37.4% | 53 |
+| EfficientDet D0 | 512×512 | 33.6% | 39 |
+| EfficientDet D4 | 1024×1024 | 48.5% | 133 |
+
+### 12.4 Configuration System
+
+Models are configured via protobuf files:
+
+```protobuf
+model {
+  ssd {
+    num_classes: 90
+    image_resizer {
+      fixed_shape_resizer {
+        height: 300
+        width: 300
+      }
+    }
+    feature_extractor {
+      type: "ssd_mobilenet_v2"
+    }
+    box_coder {
+      faster_rcnn_box_coder {
+        y_scale: 10.0
+        x_scale: 10.0
+        height_scale: 5.0
+        width_scale: 5.0
+      }
+    }
+    matcher {
+      argmax_matcher {
+        matched_threshold: 0.5
+        unmatched_threshold: 0.5
+      }
+    }
+  }
+}
+```
+
+### 12.5 Training Pipeline
+
+```python
+# High-level training workflow
+# 1. Prepare data in TFRecord format
+# 2. Create label map
+# 3. Configure model pipeline
+# 4. Run training
+# 5. Export inference graph
+```
+
+### 12.6 Export and Deployment
+
+| Format | Use Case | Command |
+|--------|----------|---------|
+| SavedModel | TensorFlow Serving | exporter_main_v2.py |
+| TFLite | Mobile/Edge | convert_to_tflite |
+| TF-TRT | NVIDIA GPUs | TensorRT optimization |
+| Coral Edge TPU | Edge TPU | Edge TPU compiler |
+
+---
+
+## Key Insights Summary
+
+### Architecture Design
+1. **Multi-scale handling is essential** - Use FPN or similar for objects at different scales
+2. **Anchor design matters** - Match dataset statistics for optimal performance
+3. **Feature sharing reduces computation** - FPN shares backbone across scales
+
+### Training
+1. **Focal loss addresses imbalance** - Critical for single-stage detectors
+2. **Data augmentation is crucial** - Mosaic, mixup, random crops significantly improve results
+3. **Label assignment strategy affects convergence** - Dynamic assignment often outperforms static
+
+### Loss Functions
+1. **IoU-based losses > L1/L2** - Better correlation with evaluation metric
+2. **CIoU/EIoU for challenging cases** - Explicit center distance and aspect ratio help
+3. **Consider task-specific losses** - Distribution loss for precise localization
+
+### Inference
+1. **NMS remains important** - Even modern detectors benefit from post-processing
+2. **Soft-NMS is a simple upgrade** - Often 1-2% improvement with minimal cost
+3. **Batch inference for throughput** - Process multiple images together
+
+### Modern Trends
+1. **Anchor-free is competitive** - Simpler design, similar performance
+2. **Transformers are promising** - End-to-end, but need more compute
+3. **Efficiency matters** - Mobile and edge deployment increasingly important
+
+---
+
+## Common Pitfalls
+
+### 1. Ignoring Class Imbalance
+- **Problem**: Model predicts mostly background
+- **Solution**: Use focal loss or hard negative mining
+
+### 2. Poor Anchor Design
+- **Problem**: Low recall for certain object sizes/aspect ratios
+- **Solution**: Analyze dataset, use k-means clustering
+
+### 3. Incorrect IoU Thresholds
+- **Problem**: Too strict = missed detections; Too lenient = many duplicates
+- **Solution**: Match training threshold to evaluation, use validation set
+
+### 4. Insufficient Multi-Scale Training
+- **Problem**: Poor generalization to different object sizes
+- **Solution**: Train with multi-scale images, use FPN
+
+### 5. Overlooking NMS Tuning
+- **Problem**: Many duplicate detections or missed objects
+- **Solution**: Tune NMS threshold on validation set, consider Soft-NMS
+
+### 6. Mismatched Preprocessing
+- **Problem**: Different preprocessing between training and inference
+- **Solution**: Verify normalization, resizing, padding are identical
+
+### 7. Ignoring Small Objects
+- **Problem**: Poor performance on small objects
+- **Problem**: Poor performance on small objects
+- **Solution**: Use higher resolution, FPN with P2, data augmentation
+
+---
+
+## References
+
+1. Girshick, R., et al. (2014). Rich feature hierarchies for accurate object detection and semantic segmentation. CVPR.
+2. Ren, S., et al. (2015). Faster R-CNN: Towards real-time object detection with region proposal networks. NeurIPS.
+3. Redmon, J., et al. (2016). You only look once: Unified, real-time object detection. CVPR.
+4. Liu, W., et al. (2016). SSD: Single shot multibox detector. ECCV.
+5. Lin, T.Y., et al. (2017). Feature pyramid networks for object detection. CVPR.
+6. Lin, T.Y., et al. (2017). Focal loss for dense object detection. ICCV.
+7. Carion, N., et al. (2020). End-to-end object detection with transformers. ECCV.
+8. Rezatofighi, H., et al. (2019). Generalized intersection over union. CVPR.
+9. Zheng, Z., et al. (2020). Distance-IoU loss: Faster and better learning for bounding box regression. AAAI.
+10. Bodla, N., et al. (2017). Soft-NMS--improving object detection with one line of code. ICCV.
+
+---
+
+*This theoretical content is designed for a semester-long deep learning course. Each section provides sufficient depth for 2-3 weeks of lecture material, including mathematical foundations, historical context, and practical considerations.*

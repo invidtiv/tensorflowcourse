@@ -1,0 +1,243 @@
+---
+title: "3: Sequential vs Functional API Comparison"
+module: 2
+labNumber: 9
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-03-part3.md"
+---
+# 3: Sequential vs Functional API Comparison
+
+```python
+"""
+Lab 2.2.3: Sequential vs Functional API Comparison
+Direct comparison of both APIs on the same task.
+"""
+
+import tensorflow as tf
+import numpy as np
+import time
+
+print("=" * 60)
+print("LAB 2.2.3: Sequential vs Functional API Comparison")
+print("=" * 60)
+
+# ============================================================
+# STEP 1: Define Common Architectures
+# ============================================================
+print("\n[STEP 1] Defining equivalent architectures...")
+
+# Architecture parameters
+INPUT_DIM = 100
+HIDDEN_UNITS = [128, 64, 32]
+NUM_CLASSES = 10
+DROPOUT_RATE = 0.3
+
+# Sequential Version
+def create_sequential_model():
+    """Create model using Sequential API."""
+    model = tf.keras.Sequential(name='sequential_version')
+    
+    # Input layer
+    model.add(tf.keras.layers.Dense(HIDDEN_UNITS[0], activation='relu', 
+                                    input_shape=(INPUT_DIM,)))
+    model.add(tf.keras.layers.Dropout(DROPOUT_RATE))
+    model.add(tf.keras.layers.BatchNormalization())
+    
+    # Hidden layers
+    for units in HIDDEN_UNITS[1:]:
+        model.add(tf.keras.layers.Dense(units, activation='relu'))
+        model.add(tf.keras.layers.Dropout(DROPOUT_RATE))
+        model.add(tf.keras.layers.BatchNormalization())
+    
+    # Output layer
+    model.add(tf.keras.layers.Dense(NUM_CLASSES, activation='softmax'))
+    
+    return model
+
+# Functional Version
+def create_functional_model():
+    """Create equivalent model using Functional API."""
+    inputs = tf.keras.Input(shape=(INPUT_DIM,), name='input')
+    
+    x = tf.keras.layers.Dense(HIDDEN_UNITS[0], activation='relu')(inputs)
+    x = tf.keras.layers.Dropout(DROPOUT_RATE)(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    
+    for units in HIDDEN_UNITS[1:]:
+        x = tf.keras.layers.Dense(units, activation='relu')(x)
+        x = tf.keras.layers.Dropout(DROPOUT_RATE)(x)
+        x = tf.keras.layers.BatchNormalization()(x)
+    
+    outputs = tf.keras.layers.Dense(NUM_CLASSES, activation='softmax')(x)
+    
+    return tf.keras.Model(inputs=inputs, outputs=outputs, name='functional_version')
+
+# Create both models
+seq_model = create_sequential_model()
+func_model = create_functional_model()
+
+print("\nSequential Model:")
+seq_model.summary()
+
+print("\nFunctional Model:")
+func_model.summary()
+
+# ============================================================
+# STEP 2: Compare Model Properties
+# ============================================================
+print("\n[STEP 2] Comparing model properties...")
+
+# Count parameters
+seq_params = seq_model.count_params()
+func_params = func_model.count_params()
+
+print(f"\nParameter count:")
+print(f"  Sequential: {seq_params:,}")
+print(f"  Functional: {func_params:,}")
+print(f"  Match: {seq_params == func_params}")
+
+# Compare layer structure
+print(f"\nLayer structure:")
+print(f"  Sequential layers: {len(seq_model.layers)}")
+print(f"  Functional layers: {len(func_model.layers)}")
+
+# ============================================================
+# STEP 3: Training Performance Comparison
+# ============================================================
+print("\n[STEP 3] Comparing training performance...")
+
+# Generate data
+np.random.seed(42)
+X = np.random.randn(5000, INPUT_DIM)
+y = np.random.randint(0, NUM_CLASSES, 5000)
+y_cat = tf.keras.utils.to_categorical(y, NUM_CLASSES)
+
+# Compile both models
+seq_model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+func_model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+
+# Train Sequential
+print("\nTraining Sequential model...")
+start_time = time.time()
+seq_history = seq_model.fit(
+    X, y_cat,
+    validation_split=0.2,
+    epochs=10,
+    batch_size=64,
+    verbose=0
+)
+seq_time = time.time() - start_time
+
+# Train Functional
+print("Training Functional model...")
+start_time = time.time()
+func_history = func_model.fit(
+    X, y_cat,
+    validation_split=0.2,
+    epochs=10,
+    batch_size=64,
+    verbose=0
+)
+func_time = time.time() - start_time
+
+print(f"\nTraining time:")
+print(f"  Sequential: {seq_time:.2f}s")
+print(f"  Functional: {func_time:.2f}s")
+print(f"  Difference: {abs(seq_time - func_time):.2f}s")
+
+print(f"\nFinal validation accuracy:")
+print(f"  Sequential: {seq_history.history['val_accuracy'][-1]:.4f}")
+print(f"  Functional: {func_history.history['val_accuracy'][-1]:.4f}")
+
+# ============================================================
+# STEP 4: When to Use Each API
+# ============================================================
+print("\n[STEP 4] When to use each API...")
+
+print("""
+SEQUENTIAL API - Use when:
+- Simple stack of layers (input -> layer1 -> layer2 -> output)
+- Single input, single output
+- No layer sharing or branching
+- Quick prototyping
+- Beginners learning Keras
+
+Advantages:
+- Simpler syntax
+- Less code to write
+- Easier to read for simple models
+
+FUNCTIONAL API - Use when:
+- Multiple inputs or outputs
+- Shared layers (same layer called multiple times)
+- Non-linear topology (residual connections, multi-branch)
+- Need to inspect/manipulate intermediate layers
+- Converting models to other formats
+
+Advantages:
+- More flexible
+- Handles complex architectures
+- Better for production code
+- Easier model visualization
+""")
+
+# ============================================================
+# STEP 5: Complex Architecture Example
+# ============================================================
+print("\n[STEP 5] Complex architecture - Only possible with Functional API...")
+
+# Multi-modal model (image + text + metadata)
+# This cannot be done with Sequential API
+
+# Image input branch
+image_input = tf.keras.Input(shape=(224, 224, 3), name='image')
+x1 = tf.keras.layers.Conv2D(32, 3, activation='relu')(image_input)
+x1 = tf.keras.layers.MaxPooling2D()(x1)
+x1 = tf.keras.layers.Conv2D(64, 3, activation='relu')(x1)
+x1 = tf.keras.layers.MaxPooling2D()(x1)
+x1 = tf.keras.layers.Flatten()(x1)
+x1 = tf.keras.layers.Dense(128, activation='relu')(x1)
+
+# Text input branch
+text_input = tf.keras.Input(shape=(100,), name='text')
+x2 = tf.keras.layers.Embedding(10000, 128)(text_input)
+x2 = tf.keras.layers.LSTM(64)(x2)
+
+# Metadata input branch
+meta_input = tf.keras.Input(shape=(20,), name='metadata')
+x3 = tf.keras.layers.Dense(32, activation='relu')(meta_input)
+
+# Merge all branches
+merged = tf.keras.layers.Concatenate(name='merge')([x1, x2, x3])
+
+# Shared processing
+x = tf.keras.layers.Dense(256, activation='relu')(merged)
+x = tf.keras.layers.Dropout(0.5)(x)
+
+# Multiple outputs
+class_output = tf.keras.layers.Dense(10, activation='softmax', name='class')(x)
+reg_output = tf.keras.layers.Dense(1, name='regression')(x)
+
+multi_modal_model = tf.keras.Model(
+    inputs=[image_input, text_input, meta_input],
+    outputs=[class_output, reg_output],
+    name='multi_modal'
+)
+
+print("\nMulti-modal Model (only possible with Functional API):")
+multi_modal_model.summary()
+
+# Visualize
+tf.keras.utils.plot_model(
+    multi_modal_model,
+    to_file='/mnt/okcomputer/output/multi_modal_model.png',
+    show_shapes=True,
+    show_layer_names=True
+)
+print("\nModel diagram saved!")
+
+print("\n" + "=" * 60)
+print("LAB 2.2.3 COMPLETED SUCCESSFULLY!")
+print("=" * 60)
+```

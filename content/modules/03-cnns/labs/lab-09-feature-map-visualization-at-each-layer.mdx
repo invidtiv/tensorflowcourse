@@ -1,0 +1,392 @@
+---
+title: "Feature Map Visualization at Each Layer"
+module: 3
+labNumber: 9
+difficulty: "easy"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Feature Map Visualization at Each Layer
+
+## Objectives
+- Extract feature maps from all layers of a CNN
+- Visualize how features evolve through the network
+- Understand hierarchical feature learning
+
+## Prerequisites
+- Completion of Lab 3.7
+- Understanding of CNN layer operations
+
+```python
+"""
+Lab 3.8: Feature Map Visualization at Each Layer
+Deep dive into hierarchical feature learning
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import models
+from tensorflow.keras.datasets import cifar10
+from tensorflow.keras.utils import to_categorical
+from tensorflow.keras.applications import VGG16
+
+# =============================================================================
+# Section 1: Load Pretrained Model
+# =============================================================================
+
+print("=" * 60)
+print("FEATURE MAP EXTRACTION AT EACH LAYER")
+print("=" * 60)
+
+# Load pretrained VGG16
+vgg = VGG16(weights='imagenet', include_top=False, input_shape=(32, 32, 3))
+
+print("\nVGG16 Architecture:")
+for i, layer in enumerate(vgg.layers):
+    print(f"  {i}: {layer.name:20s} - {layer.output_shape}")
+
+
+# =============================================================================
+# Section 2: Feature Extraction Model
+# =============================================================================
+
+def create_feature_extractor(model, layer_names):
+    """
+    Create a model that outputs features from specified layers.
+    
+    Args:
+        model: Base model
+        layer_names: List of layer names to extract features from
+    
+    Returns:
+        Feature extraction model
+    """
+    
+    outputs = [model.get_layer(name).output for name in layer_names]
+    feature_model = models.Model(inputs=model.input, outputs=outputs)
+    
+    return feature_model
+
+
+# Select layers for visualization
+layer_names = ['block1_conv1', 'block1_conv2', 
+               'block2_conv1', 'block2_conv2',
+               'block3_conv1', 'block3_conv3',
+               'block4_conv1', 'block4_conv3',
+               'block5_conv1', 'block5_conv3']
+
+feature_model = create_feature_extractor(vgg, layer_names)
+print(f"\nFeature extractor created with {len(layer_names)} output layers")
+
+
+# =============================================================================
+# Section 3: Prepare Sample Images
+# =============================================================================
+
+def prepare_sample_images():
+    """Prepare sample images for visualization."""
+    
+    # Load CIFAR-10
+    (X_train, y_train), (_, _) = cifar10.load_data()
+    
+    # Select one image per class
+    class_names = ['airplane', 'car', 'bird', 'cat', 'deer',
+                   'dog', 'frog', 'horse', 'ship', 'truck']
+    
+    sample_images = []
+    for class_idx in range(10):
+        idx = np.where(y_train == class_idx)[0][0]
+        img = X_train[idx].astype('float32')
+        
+        # Resize to 32x32 (already is) and preprocess for VGG
+        img = keras.applications.vgg16.preprocess_input(img)
+        sample_images.append(img)
+    
+    return np.array(sample_images), class_names
+
+
+sample_images, class_names = prepare_sample_images()
+print(f"\nPrepared {len(sample_images)} sample images")
+
+
+# =============================================================================
+# Section 4: Extract and Visualize Features
+# =============================================================================
+
+def visualize_layer_features(feature_model, image, layer_names, max_features=64):
+    """
+    Visualize features from all layers for a single image.
+    
+    Args:
+        feature_model: Feature extraction model
+        image: Input image
+        layer_names: Names of layers to visualize
+        max_features: Maximum number of features to show per layer
+    """
+    
+    # Extract features
+    features = feature_model.predict(np.expand_dims(image, axis=0))
+    
+    # Create figure with subplots for each layer
+    n_layers = len(layer_names)
+    fig, axes = plt.subplots(n_layers, 1, figsize=(20, 4*n_layers))
+    
+    if n_layers == 1:
+        axes = [axes]
+    
+    for idx, (layer_name, feature) in enumerate(zip(layer_names, features)):
+        feature = feature[0]  # Remove batch dimension
+        n_features = min(max_features, feature.shape[-1])
+        
+        # Create grid of feature maps
+        size = feature.shape[0]
+        n_cols = int(np.ceil(np.sqrt(n_features)))
+        n_rows = int(np.ceil(n_features / n_cols))
+        
+        display_grid = np.zeros((n_rows * size, n_cols * size))
+        
+        for i in range(n_features):
+            row = i // n_cols
+            col = i % n_cols
+            
+            feature_map = feature[:, :, i]
+            # Normalize
+            feature_map = (feature_map - feature_map.min()) / (feature_map.max() - feature_map.min() + 1e-8)
+            
+            display_grid[row*size:(row+1)*size, col*size:(col+1)*size] = feature_map
+        
+        axes[idx].imshow(display_grid, aspect='auto', cmap='viridis')
+        axes[idx].set_title(f'{layer_name} - Shape: {feature.shape}', fontsize=12)
+        axes[idx].axis('off')
+    
+    plt.tight_layout()
+    plt.savefig('/mnt/okcomputer/output/lab38_all_layers_features.png', dpi=150)
+    plt.show()
+    print("\nAll layers features saved to: /mnt/okcomputer/output/lab38_all_layers_features.png")
+
+
+# Visualize features for first sample
+visualize_layer_features(feature_model, sample_images[0], layer_names)
+
+
+# =============================================================================
+# Section 5: Progressive Feature Evolution
+# =============================================================================
+
+def visualize_feature_evolution(feature_model, image, selected_layers):
+    """
+    Show how features evolve through selected layers.
+    """
+    
+    features = feature_model.predict(np.expand_dims(image, axis=0))
+    
+    fig, axes = plt.subplots(2, len(selected_layers), figsize=(4*len(selected_layers), 8))
+    
+    for idx, (layer_name, feature) in enumerate(zip(selected_layers, features)):
+        feature = feature[0]
+        
+        # Show average activation
+        avg_activation = np.mean(feature, axis=-1)
+        axes[0, idx].imshow(avg_activation, cmap='hot')
+        axes[0, idx].set_title(f'{layer_name}\n(Avg)', fontsize=10)
+        axes[0, idx].axis('off')
+        
+        # Show max activation
+        max_activation = np.max(feature, axis=-1)
+        axes[1, idx].imshow(max_activation, cmap='hot')
+        axes[1, idx].set_title(f'{layer_name}\n(Max)', fontsize=10)
+        axes[1, idx].axis('off')
+    
+    plt.tight_layout()
+    plt.savefig('/mnt/okcomputer/output/lab38_feature_evolution.png', dpi=150)
+    plt.show()
+    print("\nFeature evolution saved to: /mnt/okcomputer/output/lab38_feature_evolution.png")
+
+
+selected_layers = ['block1_conv1', 'block2_conv1', 'block3_conv1', 'block4_conv1', 'block5_conv1']
+visualize_feature_evolution(feature_model, sample_images[0], selected_layers)
+
+
+# =============================================================================
+# Section 6: Feature Statistics Analysis
+# =============================================================================
+
+def analyze_feature_statistics(feature_model, images, layer_names):
+    """
+    Analyze statistics of features across layers.
+    """
+    
+    print("\n" + "=" * 60)
+    print("FEATURE STATISTICS ANALYSIS")
+    print("=" * 60)
+    
+    features_list = feature_model.predict(images)
+    
+    stats_data = []
+    
+    for layer_name, features in zip(layer_names, features_list):
+        # Calculate statistics
+        mean_activation = np.mean(features)
+        std_activation = np.std(features)
+        sparsity = np.mean(features < 0.01)  # Percentage of near-zero activations
+        max_activation = np.max(features)
+        
+        stats_data.append({
+            'layer': layer_name,
+            'mean': mean_activation,
+            'std': std_activation,
+            'sparsity': sparsity,
+            'max': max_activation
+        })
+        
+        print(f"\n{layer_name}:")
+        print(f"  Mean activation: {mean_activation:.4f}")
+        print(f"  Std activation: {std_activation:.4f}")
+        print(f"  Sparsity (% near-zero): {sparsity*100:.2f}%")
+        print(f"  Max activation: {max_activation:.4f}")
+    
+    return stats_data
+
+
+stats = analyze_feature_statistics(feature_model, sample_images[:5], layer_names)
+
+
+# =============================================================================
+# Section 7: Visualize Statistics
+# =============================================================================
+
+def plot_feature_statistics(stats_data):
+    """Plot feature statistics across layers."""
+    
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    
+    layers = [s['layer'] for s in stats_data]
+    x_pos = range(len(layers))
+    
+    # Mean activation
+    axes[0, 0].bar(x_pos, [s['mean'] for s in stats_data], color='steelblue')
+    axes[0, 0].set_title('Mean Activation by Layer')
+    axes[0, 0].set_xlabel('Layer')
+    axes[0, 0].set_ylabel('Mean Activation')
+    axes[0, 0].set_xticks(x_pos)
+    axes[0, 0].set_xticklabels(layers, rotation=45, ha='right')
+    axes[0, 0].grid(True, alpha=0.3)
+    
+    # Std activation
+    axes[0, 1].bar(x_pos, [s['std'] for s in stats_data], color='coral')
+    axes[0, 1].set_title('Std Dev of Activation by Layer')
+    axes[0, 1].set_xlabel('Layer')
+    axes[0, 1].set_ylabel('Std Dev')
+    axes[0, 1].set_xticks(x_pos)
+    axes[0, 1].set_xticklabels(layers, rotation=45, ha='right')
+    axes[0, 1].grid(True, alpha=0.3)
+    
+    # Sparsity
+    axes[1, 0].bar(x_pos, [s['sparsity']*100 for s in stats_data], color='green')
+    axes[1, 0].set_title('Sparsity by Layer (% Near-Zero)')
+    axes[1, 0].set_xlabel('Layer')
+    axes[1, 0].set_ylabel('Sparsity (%)')
+    axes[1, 0].set_xticks(x_pos)
+    axes[1, 0].set_xticklabels(layers, rotation=45, ha='right')
+    axes[1, 0].grid(True, alpha=0.3)
+    
+    # Max activation
+    axes[1, 1].bar(x_pos, [s['max'] for s in stats_data], color='purple')
+    axes[1, 1].set_title('Max Activation by Layer')
+    axes[1, 1].set_xlabel('Layer')
+    axes[1, 1].set_ylabel('Max Activation')
+    axes[1, 1].set_xticks(x_pos)
+    axes[1, 1].set_xticklabels(layers, rotation=45, ha='right')
+    axes[1, 1].grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig('/mnt/okcomputer/output/lab38_feature_statistics.png', dpi=150)
+    plt.show()
+    print("\nStatistics plot saved to: /mnt/okcomputer/output/lab38_feature_statistics.png")
+
+
+plot_feature_statistics(stats)
+
+
+# =============================================================================
+# Section 8: Class-Specific Feature Analysis
+# =============================================================================
+
+def analyze_class_specific_features(feature_model, images, labels, layer_name):
+    """
+    Analyze how features differ across classes.
+    """
+    
+    print("\n" + "=" * 60)
+    print(f"CLASS-SPECIFIC FEATURE ANALYSIS: {layer_name}")
+    print("=" * 60)
+    
+    # Get features for specified layer
+    layer_idx = layer_names.index(layer_name)
+    all_features = feature_model.predict(images)
+    features = all_features[layer_idx]
+    
+    # Calculate mean feature vector for each class
+    class_means = {}
+    for class_idx in range(10):
+        class_features = features[labels == class_idx]
+        class_means[class_idx] = np.mean(class_features, axis=0)
+    
+    # Visualize class-specific activations
+    fig, axes = plt.subplots(2, 5, figsize=(20, 8))
+    axes = axes.flatten()
+    
+    for class_idx in range(10):
+        mean_feature = class_means[class_idx]
+        avg_activation = np.mean(mean_feature, axis=-1)
+        
+        axes[class_idx].imshow(avg_activation, cmap='hot')
+        axes[class_idx].set_title(f'{class_names[class_idx]}')
+        axes[class_idx].axis('off')
+    
+    plt.suptitle(f'Class-Specific Features: {layer_name}', fontsize=16)
+    plt.tight_layout()
+    plt.savefig(f'/mnt/okcomputer/output/lab38_class_features_{layer_name}.png', dpi=150)
+    plt.show()
+    print(f"\nClass features saved to: /mnt/okcomputer/output/lab38_class_features_{layer_name}.png")
+
+
+analyze_class_specific_features(feature_model, sample_images, np.arange(10), 'block3_conv1')
+
+
+# =============================================================================
+# Section 9: Exercises
+# =============================================================================
+
+print("\n" + "=" * 60)
+print("EXERCISES")
+print("=" * 60)
+
+print("""
+Exercise 1: Feature Dimensionality Reduction
+- Apply PCA or t-SNE to features
+- Visualize feature space
+
+Exercise 2: Feature Importance
+- Calculate which features activate most for each class
+- Visualize most discriminative features
+
+Exercise 3: Layer Ablation Study
+- Remove layers and observe feature changes
+- Analyze which layers are most important
+
+Exercise 4: Compare Architectures
+- Extract features from ResNet, VGG, and custom CNN
+- Compare feature quality
+""")
+
+print("\n" + "=" * 60)
+print("Lab 3.8 Complete!")
+print("=" * 60)
+```
+
+---
+
+<a name="lab-39"></a>

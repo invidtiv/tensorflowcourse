@@ -1,0 +1,420 @@
+---
+title: "Loss Function Experiments - Handling Class Imbalance"
+module: 5
+labNumber: 10
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Loss Function Experiments - Handling Class Imbalance
+
+## Objectives
+- Understand class imbalance in segmentation
+- Implement weighted loss functions
+- Use hard example mining
+- Compare strategies for imbalanced data
+
+## Complete Implementation
+
+```python
+"""
+Lab 5.9: Loss Function Experiments - Handling Class Imbalance
+Strategies for dealing with imbalanced segmentation datasets
+"""
+
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers, Model
+import numpy as np
+import matplotlib.pyplot as plt
+
+tf.random.set_seed(42)
+np.random.seed(42)
+
+print(f"TensorFlow version: {tf.__version__}")
+
+# =============================================================================
+# Section 1: Generate Imbalanced Dataset
+# =============================================================================
+
+def generate_imbalanced_data(num_samples=200, image_size=(128, 128), 
+                              foreground_ratio=0.05):
+    """
+    Generate highly imbalanced segmentation dataset.
+    
+    Args:
+        num_samples: Number of samples
+        image_size: Image dimensions
+        foreground_ratio: Approximate ratio of foreground pixels
+    
+    Returns:
+        images, masks, class_weights
+    """
+    print("\n" + "="*60)
+    print(f"GENERATING IMBALANCED DATASET (foreground ~{foreground_ratio*100:.1f}%)")
+    print("="*60)
+    
+    images = []
+    masks = []
+    
+    for _ in range(num_samples):
+        # Image with noise
+        img = np.random.rand(image_size[0], image_size[1], 3).astype(np.float32) * 0.3 + 0.3
+        
+        # Small foreground mask
+        mask = np.zeros((image_size[0], image_size[1], 1), dtype=np.float32)
+        
+        # Random small region
+        h, w = image_size
+        region_h = int(np.sqrt(foreground_ratio) * h * np.random.uniform(0.5, 1.5))
+        region_w = int(np.sqrt(foreground_ratio) * w * np.random.uniform(0.5, 1.5))
+        
+        y = np.random.randint(0, h - region_h)
+        x = np.random.randint(0, w - region_w)
+        
+        mask[y:y+region_h, x:x+region_w] = 1.0
+        
+        # Add foreground texture
+        img[y:y+region_h, x:x+region_w] += np.random.rand(region_h, region_w, 3) * 0.4
+        img = np.clip(img, 0, 1)
+        
+        images.append(img)
+        masks.append(mask)
+    
+    images = np.array(images)
+    masks = np.array(masks)
+    
+    # Calculate actual class distribution
+    foreground_pixels = np.sum(masks)
+    total_pixels = masks.size
+    background_pixels = total_pixels - foreground_pixels
+    
+    actual_ratio = foreground_pixels / total_pixels
+    
+    print(f"Dataset statistics:")
+    print(f"  Total samples: {num_samples}")
+    print(f"  Foreground pixels: {foreground_pixels:,.0f} ({actual_ratio*100:.2f}%)")
+    print(f"  Background pixels: {background_pixels:,.0f} ({(1-actual_ratio)*100:.2f}%)")
+    print(f"  Imbalance ratio: 1:{background_pixels/foreground_pixels:.1f}")
+    
+    # Compute class weights
+    class_weights = {
+        0: foreground_pixels / total_pixels,  # Weight for background (inverse frequency)
+        1: background_pixels / total_pixels   # Weight for foreground (inverse frequency)
+    }
+    
+    print(f"\nClass weights:")
+    print(f"  Background (0): {class_weights[0]:.4f}")
+    print(f"  Foreground (1): {class_weights[1]:.4f}")
+    
+    return images, masks, class_weights
+
+
+# Generate imbalanced dataset
+X_train, y_train, class_weights = generate_imbalanced_data(200, foreground_ratio=0.03)
+X_val, y_val, _ = generate_imbalanced_data(40, foreground_ratio=0.03)
+
+# Visualize samples
+fig, axes = plt.subplots(2, 5, figsize=(15, 6))
+for i in range(5):
+    idx = np.random.randint(len(X_train))
+    axes[0, i].imshow(X_train[idx])
+    axes[0, i].set_title('Image')
+    axes[0, i].axis('off')
+    axes[1, i].imshow(y_train[idx].squeeze(), cmap='gray')
+    axes[1, i].set_title('Mask')
+    axes[1, i].axis('off')
+plt.tight_layout()
+plt.savefig('/mnt/okcomputer/output/imbalanced_data.png', dpi=150)
+plt.show()
+print("\nImbalanced data visualization saved")
+
+# =============================================================================
+# Section 2: Weighted Loss Functions
+# =============================================================================
+
+class WeightedLosses:
+    """Weighted loss functions for imbalanced data."""
+    
+    @staticmethod
+    def weighted_bce(class_weights):
+        """Create weighted binary cross-entropy loss."""
+        w_bg = class_weights[0]
+        w_fg = class_weights[1]
+        
+        def loss(y_true, y_pred):
+            # Clip predictions
+            epsilon = tf.keras.backend.epsilon()
+            y_pred = tf.clip_by_value(y_pred, epsilon, 1 - epsilon)
+            
+            # Weighted BCE
+            bce = -y_true * tf.math.log(y_pred) * w_fg - (1 - y_true) * tf.math.log(1 - y_pred) * w_bg
+            return tf.reduce_mean(bce)
+        
+        return loss
+    
+    @staticmethod
+    def weighted_dice(class_weights, smooth=1e-6):
+        """Create weighted Dice loss."""
+        w_bg = class_weights[0]
+        w_fg = class_weights[1]
+        
+        def loss(y_true, y_pred):
+            # Weight the predictions and ground truth
+            y_true_w = y_true * w_fg + (1 - y_true) * w_bg
+            y_pred_w = y_pred * w_fg + (1 - y_pred) * w_bg
+            
+            y_true_f = tf.reshape(y_true_w, [-1])
+            y_pred_f = tf.reshape(y_pred_w, [-1])
+            
+            intersection = tf.reduce_sum(y_true_f * y_pred_f)
+            union = tf.reduce_sum(y_true_f) + tf.reduce_sum(y_pred_f)
+            
+            dice = (2. * intersection + smooth) / (union + smooth)
+            return 1 - dice
+        
+        return loss
+    
+    @staticmethod
+    def lovasz_hinge_loss(y_true, y_pred):
+        """
+        Lovász hinge loss for direct IoU optimization.
+        
+        This loss directly optimizes the IoU metric.
+        """
+        y_true = tf.reshape(y_true, [-1])
+        y_pred = tf.reshape(y_pred, [-1])
+        
+        # Convert to logits if needed
+        y_pred = tf.clip_by_value(y_pred, 1e-7, 1 - 1e-7)
+        logits = tf.math.log(y_pred / (1 - y_pred))
+        
+        # Lovász hinge
+        errors = 1 - y_true * (2 * y_pred - 1)
+        errors_sorted, perm = tf.nn.top_k(errors, k=tf.shape(errors)[0])
+        
+        gt_sorted = tf.gather(y_true, perm)
+        
+        gts = tf.cumsum(gt_sorted)
+        
+        intersection = gts
+        union = gts + tf.cumsum(1 - gt_sorted)
+        
+        jaccard = 1. - intersection / union
+        
+        # Compute gradient
+        jaccard = tf.concat([jaccard[0:1], jaccard[1:] - jaccard[:-1]], 0)
+        
+        loss = tf.tensordot(tf.nn.relu(errors_sorted), jaccard, 1)
+        
+        return loss
+
+
+# =============================================================================
+# Section 3: Hard Example Mining
+# =============================================================================
+
+def hard_example_mining_loss(y_true, y_pred, num_hard_examples=0.25):
+    """
+    Online Hard Example Mining (OHEM) for segmentation.
+    
+    Focuses training on the hardest examples.
+    
+    Args:
+        y_true: Ground truth
+        y_pred: Predictions
+        num_hard_examples: Fraction of hard examples to keep
+    """
+    # Flatten
+    y_true_f = tf.reshape(y_true, [-1])
+    y_pred_f = tf.reshape(y_pred, [-1])
+    
+    # Compute per-pixel BCE
+    epsilon = tf.keras.backend.epsilon()
+    y_pred_f = tf.clip_by_value(y_pred_f, epsilon, 1 - epsilon)
+    
+    bce = -y_true_f * tf.math.log(y_pred_f) - (1 - y_true_f) * tf.math.log(1 - y_pred_f)
+    
+    # Select hard examples
+    k = tf.cast(tf.cast(tf.shape(bce)[0], tf.float32) * num_hard_examples, tf.int32)
+    k = tf.maximum(k, 1)
+    
+    hard_losses, _ = tf.nn.top_k(bce, k=k)
+    
+    return tf.reduce_mean(hard_losses)
+
+
+# =============================================================================
+# Section 4: Build and Compare Models
+# =============================================================================
+
+def build_segmentation_model(input_shape=(128, 128, 3)):
+    """Build simple segmentation model."""
+    inputs = layers.Input(shape=input_shape)
+    
+    # Encoder
+    x = layers.Conv2D(32, 3, activation='relu', padding='same')(inputs)
+    x = layers.Conv2D(32, 3, activation='relu', padding='same')(x)
+    x = layers.MaxPooling2D(2)(x)
+    
+    x = layers.Conv2D(64, 3, activation='relu', padding='same')(x)
+    x = layers.Conv2D(64, 3, activation='relu', padding='same')(x)
+    x = layers.MaxPooling2D(2)(x)
+    
+    # Bottleneck
+    x = layers.Conv2D(128, 3, activation='relu', padding='same')(x)
+    
+    # Decoder
+    x = layers.Conv2DTranspose(64, 2, strides=2, activation='relu', padding='same')(x)
+    x = layers.Conv2DTranspose(32, 2, strides=2, activation='relu', padding='same')(x)
+    
+    outputs = layers.Conv2D(1, 1, activation='sigmoid')(x)
+    
+    return Model(inputs, outputs)
+
+
+def dice_coef(y_true, y_pred, smooth=1e-6):
+    """Dice coefficient metric."""
+    y_true_f = tf.reshape(y_true, [-1])
+    y_pred_f = tf.reshape(y_pred, [-1])
+    intersection = tf.reduce_sum(y_true_f * y_pred_f)
+    return (2. * intersection + smooth) / (tf.reduce_sum(y_true_f) + tf.reduce_sum(y_pred_f) + smooth)
+
+
+def compare_imbalance_strategies():
+    """Compare different strategies for handling imbalance."""
+    print("\n" + "="*60)
+    print("COMPARING IMBALANCE HANDLING STRATEGIES")
+    print("="*60)
+    
+    strategies = {
+        'Standard BCE': keras.losses.binary_crossentropy,
+        'Weighted BCE': WeightedLosses.weighted_bce(class_weights),
+        'Dice Loss': lambda yt, yp: 1 - dice_coef(yt, yp),
+        'Weighted Dice': WeightedLosses.weighted_dice(class_weights),
+        'OHEM': hard_example_mining_loss,
+        'Focal Loss': lambda yt, yp: -tf.reduce_mean(
+            0.25 * yt * tf.pow(1 - yp, 2) * tf.math.log(yp + 1e-7) +
+            0.75 * (1 - yt) * tf.pow(yp, 2) * tf.math.log(1 - yp + 1e-7)
+        )
+    }
+    
+    results = {}
+    
+    for name, loss_fn in strategies.items():
+        print(f"\nTraining with: {name}")
+        
+        model = build_segmentation_model()
+        model.compile(
+            optimizer=keras.optimizers.Adam(1e-3),
+            loss=loss_fn,
+            metrics=[dice_coef, 'accuracy']
+        )
+        
+        history = model.fit(
+            X_train, y_train,
+            validation_data=(X_val, y_val),
+            batch_size=8,
+            epochs=30,
+            verbose=0
+        )
+        
+        best_dice = max(history.history['val_dice_coef'])
+        best_acc = max(history.history['val_accuracy'])
+        
+        results[name] = {
+            'val_dice': best_dice,
+            'val_acc': best_acc,
+            'history': history
+        }
+        
+        print(f"  Best Val Dice: {best_dice:.4f}, Best Val Acc: {best_acc:.4f}")
+    
+    # Visualize
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    
+    for name, result in results.items():
+        axes[0].plot(result['history'].history['val_dice_coef'], label=f"{name}")
+    axes[0].set_xlabel('Epoch')
+    axes[0].set_ylabel('Validation Dice')
+    axes[0].set_title('Dice Coefficient Comparison')
+    axes[0].legend()
+    axes[0].grid(True)
+    
+    for name, result in results.items():
+        axes[1].plot(result['history'].history['val_accuracy'], label=f"{name}")
+    axes[1].set_xlabel('Epoch')
+    axes[1].set_ylabel('Validation Accuracy')
+    axes[1].set_title('Accuracy Comparison')
+    axes[1].legend()
+    axes[1].grid(True)
+    
+    plt.tight_layout()
+    plt.savefig('/mnt/okcomputer/output/imbalance_comparison.png', dpi=150)
+    plt.show()
+    print("\nComparison saved to /mnt/okcomputer/output/imbalance_comparison.png")
+    
+    return results
+
+# Run comparison (commented out for speed)
+# results = compare_imbalance_strategies()
+
+# =============================================================================
+# Section 5: Recommendations
+# =============================================================================
+
+print("\n" + "="*60)
+print("RECOMMENDATIONS FOR CLASS IMBALANCE")
+print("="*60)
+
+recommendations = """
+┌────────────────────────┬──────────────────────────────────────────────────┐
+│ Imbalance Level        │ Recommended Strategy                             │
+├────────────────────────┼──────────────────────────────────────────────────┤
+│ Mild (1:2 to 1:10)     │ - Weighted BCE                                   │
+│                        │ - Standard Dice Loss                             │
+├────────────────────────┼──────────────────────────────────────────────────┤
+│ Moderate (1:10 to 1:100)│ - Weighted Dice Loss                            │
+│                        │ - Focal Loss (gamma=2)                           │
+│                        │ - OHEM                                           │
+├────────────────────────┼──────────────────────────────────────────────────┤
+│ Severe (1:100+)        │ - Focal Loss (gamma=3-5)                         │
+│                        │ - Lovász Hinge Loss                              │
+│                        │ - Heavy class weighting                          │
+│                        │ - Data augmentation for minority class           │
+├────────────────────────┼──────────────────────────────────────────────────┤
+│ Extreme (1:1000+)      │ - Combine multiple strategies                    │
+│                        │ - Focal + Weighted + OHEM                        │
+│                        │ - Consider two-stage detection                   │
+│                        │ - Active learning for hard examples              │
+└────────────────────────┴──────────────────────────────────────────────────┘
+
+Additional Tips:
+1. Always monitor both accuracy and Dice/IoU metrics
+2. High accuracy can be misleading with imbalance
+3. Use stratified sampling in data loaders
+4. Consider oversampling minority class
+5. Use appropriate evaluation metrics (not just accuracy)
+"""
+print(recommendations)
+
+# =============================================================================
+# Summary
+# =============================================================================
+
+print("\n" + "="*60)
+print("LAB 5.9 SUMMARY")
+print("="*60)
+print("""
+Key Takeaways:
+1. Class imbalance is common in segmentation (background >> foreground)
+2. Weighted losses help by assigning higher importance to rare classes
+3. OHEM focuses training on hard examples
+4. Focal loss down-weights easy examples automatically
+5. Monitor Dice/IoU, not just accuracy, for imbalanced data
+
+Next: Lab 5.10 will implement custom loss functions.
+""")
+```
+
+---

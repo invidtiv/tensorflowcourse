@@ -1,0 +1,562 @@
+---
+title: "Frechet Inception Distance (FID) Implementation"
+module: 7
+labNumber: 15
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Frechet Inception Distance (FID) Implementation
+
+## Objectives
+- Understand the FID metric
+- Implement FID calculation from scratch
+- Compare FID with Inception Score
+- Evaluate GAN quality using FID
+
+## Theory Overview
+
+FID measures the distance between real and generated image distributions:
+1. Extract features using InceptionV3
+2. Model distributions as multivariate Gaussians
+3. Calculate Frechet distance between Gaussians
+
+Formula:
+```
+FID = ||μ_real - μ_gen||² + Tr(Σ_real + Σ_gen - 2√(Σ_real × Σ_gen))
+```
+
+Lower FID indicates better quality and diversity.
+
+## Complete Implementation
+
+```python
+"""
+Lab 7.14: Frechet Inception Distance (FID) Implementation
+==========================================================
+Calculate FID to evaluate GAN quality.
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras.applications import InceptionV3
+from scipy import linalg
+import os
+
+os.makedirs('fid_evaluation', exist_ok=True)
+
+# =============================================================================
+# Part 1: FID Implementation
+# =============================================================================
+
+class FrechetInceptionDistance:
+    """
+    Frechet Inception Distance calculator for evaluating GAN quality.
+    
+    FID measures the distance between feature distributions of
+    real and generated images using a pre-trained InceptionV3 network.
+    """
+    
+    def __init__(self, input_shape=(299, 299, 3)):
+        """
+        Initialize FID calculator.
+        
+        Args:
+            input_shape: Input shape for InceptionV3
+        """
+        self.input_shape = input_shape
+        
+        # Load InceptionV3 up to the final pooling layer
+        # We use features before the classification layer
+        base_model = InceptionV3(
+            weights='imagenet',
+            include_top=False,  # Exclude classification layer
+            pooling='avg',      # Global average pooling
+            input_shape=input_shape
+        )
+        
+        self.model = base_model
+    
+    def preprocess_images(self, images):
+        """
+        Preprocess images for InceptionV3.
+        
+        Args:
+            images: Images in range [-1, 1] or [0, 1]
+        
+        Returns:
+            Preprocessed images
+        """
+        # Resize to 299x299
+        images = tf.image.resize(images, [299, 299])
+        
+        # Convert grayscale to RGB if needed
+        if images.shape[-1] == 1:
+            images = tf.image.grayscale_to_rgb(images)
+        
+        # Normalize and apply Inception preprocessing
+        images = (images + 1.0) / 2.0 * 255.0
+        images = tf.keras.applications.inception_v3.preprocess_input(images)
+        
+        return images
+    
+    def extract_features(self, images, batch_size=50):
+        """
+        Extract features from images using InceptionV3.
+        
+        Args:
+            images: Input images
+            batch_size: Batch size for feature extraction
+        
+        Returns:
+            Features (N, 2048) for InceptionV3
+        """
+        # Preprocess images
+        images = self.preprocess_images(images)
+        
+        # Extract features in batches
+        features = []
+        for i in range(0, len(images), batch_size):
+            batch = images[i:i+batch_size]
+            feat = self.model.predict(batch, verbose=0)
+            features.append(feat)
+        
+        return np.vstack(features)
+    
+    def calculate_statistics(self, features):
+        """
+        Calculate mean and covariance of features.
+        
+        Args:
+            features: Feature array (N, D)
+        
+        Returns:
+            mu, sigma: Mean and covariance
+        """
+        mu = np.mean(features, axis=0)
+        sigma = np.cov(features, rowvar=False)
+        
+        return mu, sigma
+    
+    def calculate_fid(self, real_images, generated_images, batch_size=50):
+        """
+        Calculate FID between real and generated images.
+        
+        Args:
+            real_images: Real images
+            generated_images: Generated images
+            batch_size: Batch size for feature extraction
+        
+        Returns:
+            FID score (lower is better)
+        """
+        # Extract features
+        print("Extracting features from real images...")
+        real_features = self.extract_features(real_images, batch_size)
+        
+        print("Extracting features from generated images...")
+        gen_features = self.extract_features(generated_images, batch_size)
+        
+        # Calculate statistics
+        mu_real, sigma_real = self.calculate_statistics(real_features)
+        mu_gen, sigma_gen = self.calculate_statistics(gen_features)
+        
+        # Calculate FID
+        fid = self._calculate_frechet_distance(mu_real, sigma_real, 
+                                                mu_gen, sigma_gen)
+        
+        return fid
+    
+    def _calculate_frechet_distance(self, mu1, sigma1, mu2, sigma2, 
+                                     eps=1e-6):
+        """
+        Calculate Frechet distance between two Gaussians.
+        
+        Numpy implementation of the Frechet distance.
+        The Frechet distance between two multivariate Gaussians
+        X_1 ~ N(mu_1, C_1) and X_2 ~ N(mu_2, C_2) is
+            d^2 = ||mu_1 - mu_2||^2 + Tr(C_1 + C_2 - 2*sqrt(C_1*C_2))
+        
+        Stable version by Dougal J. Sutherland.
+        """
+        mu1 = np.atleast_1d(mu1)
+        mu2 = np.atleast_1d(mu2)
+        
+        sigma1 = np.atleast_2d(sigma1)
+        sigma2 = np.atleast_2d(sigma2)
+        
+        assert mu1.shape == mu2.shape, "Mean vectors have different lengths"
+        assert sigma1.shape == sigma2.shape, "Covariances have different dimensions"
+        
+        diff = mu1 - mu2
+        
+        # Product might be almost singular
+        covmean, _ = linalg.sqrtm(sigma1.dot(sigma2), disp=False)
+        if not np.isfinite(covmean).all():
+            print("WARNING: FID calculation produced singular product; "
+                  "adding epsilon to diagonal of covariance")
+            offset = np.eye(sigma1.shape[0]) * eps
+            covmean = linalg.sqrtm((sigma1 + offset).dot(sigma2 + offset))
+        
+        # Numerical error might give slight imaginary component
+        if np.iscomplexobj(covmean):
+            if not np.allclose(np.diagonal(covmean).imag, 0, atol=1e-3):
+                m = np.max(np.abs(covmean.imag))
+                raise ValueError(f"Imaginary component {m}")
+            covmean = covmean.real
+        
+        tr_covmean = np.trace(covmean)
+        
+        fid = diff.dot(diff) + np.trace(sigma1) + np.trace(sigma2) - 2 * tr_covmean
+        
+        return fid
+
+# =============================================================================
+# Part 2: Simplified FID for MNIST (Custom Feature Extractor)
+# =============================================================================
+
+def build_mnist_feature_extractor():
+    """
+    Build a feature extractor for MNIST images.
+    Used for calculating FID on MNIST-generated images.
+    """
+    # Use a pre-trained classifier and extract intermediate features
+    inputs = keras.Input(shape=(28, 28, 1))
+    
+    x = layers.Conv2D(32, 3, activation='relu')(inputs)
+    x = layers.MaxPooling2D(2)(x)
+    x = layers.Conv2D(64, 3, activation='relu')(x)
+    x = layers.MaxPooling2D(2)(x)
+    x = layers.Conv2D(128, 3, activation='relu')(x)
+    x = layers.GlobalAveragePooling2D()(x)
+    
+    # Feature output
+    model = keras.Model(inputs, x, name='MNIST_Feature_Extractor')
+    return model
+
+def calculate_mnist_fid(real_images, generated_images, feature_extractor):
+    """
+    Calculate FID for MNIST images.
+    
+    Args:
+        real_images: Real MNIST images
+        generated_images: Generated MNIST images
+        feature_extractor: Feature extraction model
+    
+    Returns:
+        FID score
+    """
+    # Extract features
+    real_features = feature_extractor.predict(real_images, verbose=0)
+    gen_features = feature_extractor.predict(generated_images, verbose=0)
+    
+    # Calculate statistics
+    mu_real = np.mean(real_features, axis=0)
+    sigma_real = np.cov(real_features, rowvar=False)
+    
+    mu_gen = np.mean(gen_features, axis=0)
+    sigma_gen = np.cov(gen_features, rowvar=False)
+    
+    # Calculate Frechet distance
+    fid_calculator = FrechetInceptionDistance()
+    fid = fid_calculator._calculate_frechet_distance(
+        mu_real, sigma_real, mu_gen, sigma_gen
+    )
+    
+    return fid
+
+# =============================================================================
+# Part 3: Train Feature Extractor
+# =============================================================================
+
+# Load MNIST
+(train_images, train_labels), (test_images, test_labels) = keras.datasets.mnist.load_data()
+
+# Preprocess
+train_images = train_images.reshape(-1, 28, 28, 1).astype('float32') / 255.0
+test_images = test_images.reshape(-1, 28, 28, 1).astype('float32') / 255.0
+
+# Build feature extractor with classification head for training
+inputs = keras.Input(shape=(28, 28, 1))
+x = layers.Conv2D(32, 3, activation='relu')(inputs)
+x = layers.MaxPooling2D(2)(x)
+x = layers.Conv2D(64, 3, activation='relu')(x)
+x = layers.MaxPooling2D(2)(x)
+x = layers.Conv2D(128, 3, activation='relu')(x)
+features = layers.GlobalAveragePooling2D()(x)
+outputs = layers.Dense(10, activation='softmax')(features)
+
+feature_model = keras.Model(inputs, outputs)
+feature_model.compile(
+    optimizer='adam',
+    loss='sparse_categorical_crossentropy',
+    metrics=['accuracy']
+)
+
+# Train
+print("Training feature extractor...")
+feature_model.fit(
+    train_images, train_labels,
+    validation_data=(test_images, test_labels),
+    epochs=5,
+    batch_size=128,
+    verbose=1
+)
+
+# Create feature extractor (without classification head)
+feature_extractor = keras.Model(inputs, features)
+
+# =============================================================================
+# Part 4: Build and Train GAN
+# =============================================================================
+
+def build_fid_generator(latent_dim=100):
+    """Build generator for FID evaluation."""
+    return keras.Sequential([
+        layers.Dense(7*7*128, input_shape=(latent_dim,)),
+        layers.Reshape((7, 7, 128)),
+        layers.BatchNormalization(),
+        layers.LeakyReLU(0.2),
+        layers.Conv2DTranspose(64, 5, strides=2, padding='same'),
+        layers.BatchNormalization(),
+        layers.LeakyReLU(0.2),
+        layers.Conv2DTranspose(1, 5, strides=2, padding='same', activation='tanh')
+    ])
+
+def build_fid_discriminator():
+    """Build discriminator for FID evaluation."""
+    return keras.Sequential([
+        layers.Conv2D(64, 5, strides=2, padding='same', input_shape=(28, 28, 1)),
+        layers.LeakyReLU(0.2),
+        layers.Dropout(0.3),
+        layers.Conv2D(128, 5, strides=2, padding='same'),
+        layers.LeakyReLU(0.2),
+        layers.Dropout(0.3),
+        layers.Flatten(),
+        layers.Dense(1, activation='sigmoid')
+    ])
+
+class FID_GAN(keras.Model):
+    """GAN for FID evaluation."""
+    
+    def __init__(self, latent_dim):
+        super().__init__()
+        self.generator = build_fid_generator(latent_dim)
+        self.discriminator = build_fid_discriminator()
+        self.latent_dim = latent_dim
+        self.g_opt = keras.optimizers.Adam(0.0002, 0.5)
+        self.d_opt = keras.optimizers.Adam(0.0002, 0.5)
+        self.cross_entropy = keras.losses.BinaryCrossentropy()
+    
+    @tf.function
+    def train_step(self, real_images):
+        batch_size = tf.shape(real_images)[0]
+        noise = tf.random.normal([batch_size, self.latent_dim])
+        
+        with tf.GradientTape() as tape_d:
+            fake = self.generator(noise, training=True)
+            real_pred = self.discriminator(real_images, training=True)
+            fake_pred = self.discriminator(fake, training=True)
+            d_loss = (self.cross_entropy(tf.ones_like(real_pred), real_pred) +
+                     self.cross_entropy(tf.zeros_like(fake_pred), fake_pred))
+        
+        grads_d = tape_d.gradient(d_loss, self.discriminator.trainable_variables)
+        self.d_opt.apply_gradients(zip(grads_d, self.discriminator.trainable_variables))
+        
+        noise = tf.random.normal([batch_size, self.latent_dim])
+        with tf.GradientTape() as tape_g:
+            fake = self.generator(noise, training=True)
+            fake_pred = self.discriminator(fake, training=True)
+            g_loss = self.cross_entropy(tf.ones_like(fake_pred), fake_pred)
+        
+        grads_g = tape_g.gradient(g_loss, self.generator.trainable_variables)
+        self.g_opt.apply_gradients(zip(grads_g, self.generator.trainable_variables))
+        
+        return {'d_loss': d_loss, 'g_loss': g_loss}
+
+# Train GAN
+print("\nTraining GAN for FID evaluation...")
+gan = FID_GAN(latent_dim=100)
+gan.compile()
+
+# Prepare data
+train_images_gan = train_images * 2 - 1
+dataset = tf.data.Dataset.from_tensor_slices(train_images_gan)
+dataset = dataset.shuffle(60000).batch(256, drop_remainder=True)
+
+gan.fit(dataset, epochs=30, verbose=0)
+
+# =============================================================================
+# Part 5: Calculate FID
+# =============================================================================
+
+# Generate images
+print("\nGenerating images for FID calculation...")
+noise = tf.random.normal([5000, 100])
+generated_images = gan.generator(noise, training=False)
+
+# Convert to [0, 1] range
+generated_images_01 = (generated_images + 1) / 2
+
+# Select real images for comparison
+real_sample = train_images[:5000]
+
+# Calculate FID
+print("\nCalculating FID...")
+fid = calculate_mnist_fid(real_sample, generated_images_01, feature_extractor)
+
+print(f"\n{'='*50}")
+print(f"Frechet Inception Distance Results")
+print(f"{'='*50}")
+print(f"FID Score: {fid:.4f}")
+print(f"{'='*50}")
+print("\nNote: Lower FID is better")
+print("Typical ranges:")
+print("  - Excellent: FID < 10")
+print("  - Good: FID < 50")
+print("  - Moderate: FID < 100")
+print("  - Poor: FID > 100")
+
+# =============================================================================
+# Part 6: FID vs Training Epochs
+# =============================================================================
+
+def track_fid_during_training(gan, feature_extractor, real_images, 
+                               epochs=50, interval=5):
+    """
+    Track FID throughout training.
+    """
+    fid_scores = []
+    epoch_numbers = []
+    
+    # Prepare data
+    train_images_gan = train_images * 2 - 1
+    dataset = tf.data.Dataset.from_tensor_slices(train_images_gan)
+    dataset = dataset.shuffle(60000).batch(256, drop_remainder=True)
+    
+    for epoch in range(0, epochs + 1, interval):
+        if epoch > 0:
+            gan.fit(dataset, epochs=interval, verbose=0)
+        
+        # Generate images
+        noise = tf.random.normal([2000, 100])
+        generated = gan.generator(noise, training=False)
+        generated_01 = (generated + 1) / 2
+        
+        # Calculate FID
+        fid = calculate_mnist_fid(real_images[:2000], generated_01, feature_extractor)
+        fid_scores.append(fid)
+        epoch_numbers.append(epoch)
+        
+        print(f"Epoch {epoch}: FID = {fid:.4f}")
+    
+    # Plot FID over time
+    plt.figure(figsize=(10, 6))
+    plt.plot(epoch_numbers, fid_scores, marker='o', linewidth=2, color='purple')
+    plt.xlabel('Epoch')
+    plt.ylabel('FID Score')
+    plt.title('FID During Training (Lower is Better)')
+    plt.grid(True, alpha=0.3)
+    plt.savefig('fid_evaluation/fid_over_training.png', dpi=150)
+    plt.show()
+    
+    return fid_scores, epoch_numbers
+
+# Track FID (commented out for faster execution)
+# fid_scores, epochs = track_fid_during_training(
+#     gan, feature_extractor, train_images, epochs=50, interval=5
+# )
+
+# =============================================================================
+# Part 7: Visualize and Compare
+# =============================================================================
+
+# Visualize generated images
+fig, axes = plt.subplots(5, 10, figsize=(15, 8))
+for i, ax in enumerate(axes.flat):
+    ax.imshow(generated_images[i, :, :, 0] * 0.5 + 0.5, cmap='gray')
+    ax.axis('off')
+plt.suptitle(f'Generated Images (FID: {fid:.2f})')
+plt.tight_layout()
+plt.savefig('fid_evaluation/generated_samples.png', dpi=150)
+plt.show()
+
+# Compare with real images
+fig, axes = plt.subplots(2, 10, figsize=(15, 4))
+for i in range(10):
+    axes[0, i].imshow(real_sample[i, :, :, 0], cmap='gray')
+    axes[0, i].axis('off')
+    axes[0, i].set_title('Real')
+    
+    axes[1, i].imshow(generated_images_01[i, :, :, 0], cmap='gray')
+    axes[1, i].axis('off')
+    axes[1, i].set_title('Generated')
+
+plt.suptitle('Real vs Generated Images')
+plt.tight_layout()
+plt.savefig('fid_evaluation/real_vs_generated.png', dpi=150)
+plt.show()
+
+print("\n=== FID Evaluation Complete ===")
+```
+
+---
+
+# Summary: GAN Training Techniques Comparison
+
+## Quick Reference Table
+
+| Technique | Key Idea | Pros | Cons |
+|-----------|----------|------|------|
+| **Standard GAN** | Minimax game with JS divergence | Simple, fast | Unstable, mode collapse |
+| **DCGAN** | Convolutional architecture | Better image quality | Still unstable |
+| **CGAN** | Condition on labels | Controlled generation | Requires labels |
+| **WGAN** | Wasserstein distance + weight clipping | Stable training | Weight clipping limits capacity |
+| **WGAN-GP** | Gradient penalty instead of clipping | More stable, better quality | Slower training |
+| **SNGAN** | Spectral normalization | Very stable | More complex |
+
+## Evaluation Metrics Summary
+
+| Metric | Range | Interpretation | Best For |
+|--------|-------|----------------|----------|
+| **Inception Score** | 1 - ∞ | Higher is better | Quick evaluation |
+| **FID** | 0 - ∞ | Lower is better | Comprehensive evaluation |
+
+## Recommended Training Pipeline
+
+1. Start with **DCGAN** for basic understanding
+2. Add **label smoothing** for stability
+3. Use **WGAN-GP** for production-quality results
+4. Evaluate with **FID** for objective comparison
+
+## Common Issues and Solutions
+
+| Issue | Solution |
+|-------|----------|
+| Mode Collapse | Use WGAN-GP or mini-batch discrimination |
+| Vanishing Gradients | Use LeakyReLU, Wasserstein loss |
+| Training Instability | Lower learning rate, use spectral normalization |
+| Poor Image Quality | Increase network capacity, train longer |
+
+---
+
+# Additional Exercises
+
+## Exercise 1: Implement LSGAN
+Implement Least Squares GAN and compare with standard GAN.
+
+## Exercise 2: Progressive GAN
+Implement progressive growing of GANs for higher resolution images.
+
+## Exercise 3: StyleGAN Components
+Implement key StyleGAN components: AdaIN, noise injection, style mixing.
+
+## Exercise 4: GAN Inversion
+Implement GAN inversion to find latent codes for real images.
+
+---
+
+*End of Module 7: Generative Adversarial Networks Practical Labs*

@@ -1,0 +1,312 @@
+---
+title: "Wasserstein GAN (WGAN)"
+module: 7
+labNumber: 11
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Wasserstein GAN (WGAN)
+
+## Objectives
+- Implement Wasserstein GAN
+- Replace JS divergence with Wasserstein distance
+- Use weight clipping for Lipschitz constraint
+- Understand improved training stability
+
+## Theory Overview
+
+Wasserstein GAN addresses:
+1. Vanishing gradients
+2. Mode collapse
+3. Unstable training
+
+Key changes:
+- Remove sigmoid from discriminator (now called critic)
+- Use Wasserstein loss instead of cross-entropy
+- Clip critic weights to enforce Lipschitz constraint
+
+## Complete Implementation
+
+```python
+"""
+Lab 7.10: Wasserstein GAN (WGAN)
+=================================
+Wasserstein GAN implementation with weight clipping.
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+from tensorflow import keras
+from tensorflow.keras import layers
+import os
+
+os.makedirs('wgan_output', exist_ok=True)
+
+# =============================================================================
+# Part 1: Data Loading
+# =============================================================================
+
+# Load MNIST
+(train_images, _), (_, _) = keras.datasets.mnist.load_data()
+train_images = train_images.reshape(-1, 28, 28, 1).astype('float32')
+train_images = (train_images - 127.5) / 127.5
+
+# =============================================================================
+# Part 2: WGAN Generator (Same as DCGAN)
+# =============================================================================
+
+def build_wgan_generator(latent_dim=100):
+    """Build WGAN generator (same architecture as DCGAN)."""
+    model = keras.Sequential([
+        layers.Dense(7 * 7 * 256, input_shape=(latent_dim,)),
+        layers.Reshape((7, 7, 256)),
+        layers.BatchNormalization(),
+        layers.ReLU(),
+        
+        layers.Conv2DTranspose(128, 5, strides=2, padding='same', use_bias=False),
+        layers.BatchNormalization(),
+        layers.ReLU(),
+        
+        layers.Conv2DTranspose(64, 5, strides=2, padding='same', use_bias=False),
+        layers.BatchNormalization(),
+        layers.ReLU(),
+        
+        layers.Conv2D(1, 5, padding='same', activation='tanh')
+    ], name='WGAN_Generator')
+    return model
+
+# =============================================================================
+# Part 3: WGAN Critic (No Sigmoid!)
+# =============================================================================
+
+def build_wgan_critic():
+    """
+    Build WGAN critic (discriminator without sigmoid).
+    
+    Key difference: No sigmoid activation in output!
+    """
+    model = keras.Sequential([
+        layers.Conv2D(64, 5, strides=2, padding='same', input_shape=(28, 28, 1)),
+        layers.LeakyReLU(0.2),
+        layers.Dropout(0.3),
+        
+        layers.Conv2D(128, 5, strides=2, padding='same', use_bias=False),
+        layers.BatchNormalization(),
+        layers.LeakyReLU(0.2),
+        layers.Dropout(0.3),
+        
+        layers.Conv2D(256, 5, strides=2, padding='same', use_bias=False),
+        layers.BatchNormalization(),
+        layers.LeakyReLU(0.2),
+        layers.Dropout(0.3),
+        
+        layers.Flatten(),
+        layers.Dense(1)  # NO SIGMOID! Linear output.
+    ], name='WGAN_Critic')
+    return model
+
+# =============================================================================
+# Part 4: Weight Clipping
+# =============================================================================
+
+class WeightClipper:
+    """Clip weights to enforce Lipschitz constraint."""
+    
+    def __init__(self, clip_value=0.01):
+        self.clip_value = clip_value
+    
+    def __call__(self, model):
+        """Clip all weights in the model."""
+        for layer in model.layers:
+            if hasattr(layer, 'kernel'):
+                clipped = tf.clip_by_value(layer.kernel, 
+                                          -self.clip_value, 
+                                          self.clip_value)
+                layer.kernel.assign(clipped)
+            if hasattr(layer, 'bias') and layer.bias is not None:
+                clipped = tf.clip_by_value(layer.bias,
+                                          -self.clip_value,
+                                          self.clip_value)
+                layer.bias.assign(clipped)
+
+# =============================================================================
+# Part 5: WGAN Training Class
+# =============================================================================
+
+class WGAN(keras.Model):
+    """
+    Wasserstein GAN implementation.
+    
+    Key differences from standard GAN:
+    1. Critic outputs unbounded values (no sigmoid)
+    2. Wasserstein loss instead of cross-entropy
+    3. Weight clipping for Lipschitz constraint
+    4. Train critic more frequently than generator
+    """
+    
+    def __init__(self, critic, generator, latent_dim, critic_clip_value=0.01,
+                 n_critic=5):
+        super().__init__()
+        self.critic = critic
+        self.generator = generator
+        self.latent_dim = latent_dim
+        self.n_critic = n_critic  # Train critic n_critic times per generator update
+        
+        self.weight_clipper = WeightClipper(critic_clip_value)
+        
+        # Use RMSprop for WGAN (recommended in paper)
+        self.c_optimizer = keras.optimizers.RMSprop(learning_rate=0.00005)
+        self.g_optimizer = keras.optimizers.RMSprop(learning_rate=0.00005)
+    
+    def compile(self):
+        super().compile()
+    
+    @tf.function
+    def train_step(self, real_images):
+        batch_size = tf.shape(real_images)[0]
+        
+        # ======================================================================
+        # Train Critic (multiple times)
+        # ======================================================================
+        for _ in range(self.n_critic):
+            noise = tf.random.normal([batch_size, self.latent_dim])
+            
+            with tf.GradientTape() as tape_c:
+                fake_images = self.generator(noise, training=True)
+                
+                real_pred = self.critic(real_images, training=True)
+                fake_pred = self.critic(fake_images, training=True)
+                
+                # Wasserstein loss: maximize E[f(x)] - E[f(G(z))]
+                # Equivalent to minimize E[f(G(z))] - E[f(x)]
+                c_loss = tf.reduce_mean(fake_pred) - tf.reduce_mean(real_pred)
+            
+            # Update critic
+            grads_c = tape_c.gradient(c_loss, self.critic.trainable_variables)
+            self.c_optimizer.apply_gradients(
+                zip(grads_c, self.critic.trainable_variables)
+            )
+            
+            # Clip weights
+            self.weight_clipper(self.critic)
+        
+        # ======================================================================
+        # Train Generator
+        # ======================================================================
+        noise = tf.random.normal([batch_size, self.latent_dim])
+        
+        with tf.GradientTape() as tape_g:
+            fake_images = self.generator(noise, training=True)
+            fake_pred = self.critic(fake_images, training=True)
+            
+            # Generator wants to minimize -E[f(G(z))]
+            # Or equivalently, maximize E[f(G(z))]
+            g_loss = -tf.reduce_mean(fake_pred)
+        
+        # Update generator
+        grads_g = tape_g.gradient(g_loss, self.generator.trainable_variables)
+        self.g_optimizer.apply_gradients(
+            zip(grads_g, self.generator.trainable_variables)
+        )
+        
+        return {'c_loss': c_loss, 'g_loss': g_loss}
+
+# =============================================================================
+# Part 6: Train WGAN
+# =============================================================================
+
+# Build models
+LATENT_DIM = 100
+generator = build_wgan_generator(LATENT_DIM)
+critic = build_wgan_critic()
+
+print("=== WGAN Generator ===")
+generator.summary()
+print("\n=== WGAN Critic ===")
+critic.summary()
+
+# Create WGAN
+wgan = WGAN(critic, generator, LATENT_DIM, critic_clip_value=0.01, n_critic=5)
+wgan.compile()
+
+# Prepare dataset
+dataset = tf.data.Dataset.from_tensor_slices(train_images)
+dataset = dataset.shuffle(60000).batch(64, drop_remainder=True)
+
+# Callback for generating images
+class WGANCallback(keras.callbacks.Callback):
+    def __init__(self, latent_dim):
+        self.latent_dim = latent_dim
+        self.seed = tf.random.normal([16, latent_dim])
+        self.c_losses = []
+        self.g_losses = []
+    
+    def on_epoch_end(self, epoch, logs=None):
+        self.c_losses.append(logs['c_loss'])
+        self.g_losses.append(logs['g_loss'])
+        
+        if (epoch + 1) % 10 == 0:
+            generated = self.model.generator(self.seed, training=False)
+            
+            fig, axes = plt.subplots(4, 4, figsize=(8, 8))
+            for i, ax in enumerate(axes.flat):
+                ax.imshow(generated[i, :, :, 0] * 0.5 + 0.5, cmap='gray')
+                ax.axis('off')
+            plt.suptitle(f'WGAN Generated Images - Epoch {epoch+1}')
+            plt.tight_layout()
+            plt.savefig(f'wgan_output/wgan_epoch_{epoch+1:03d}.png', dpi=150)
+            plt.close()
+            
+            print(f"Epoch {epoch+1}: C Loss: {logs['c_loss']:.4f}, G Loss: {logs['g_loss']:.4f}")
+
+# Train
+print("\nStarting WGAN training...")
+history = wgan.fit(
+    dataset,
+    epochs=100,
+    callbacks=[WGANCallback(LATENT_DIM)],
+    verbose=0
+)
+
+# =============================================================================
+# Part 7: Visualize Results
+# =============================================================================
+
+# Plot losses
+plt.figure(figsize=(12, 5))
+
+plt.subplot(1, 2, 1)
+plt.plot(history.history['c_loss'], label='Critic Loss', color='blue')
+plt.plot(history.history['g_loss'], label='Generator Loss', color='red')
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
+plt.title('WGAN Training Losses')
+plt.legend()
+plt.grid(True, alpha=0.3)
+
+# Generate final samples
+plt.subplot(1, 2, 2)
+noise = tf.random.normal([64, LATENT_DIM])
+generated = generator(noise, training=False)
+
+fig2, axes = plt.subplots(8, 8, figsize=(10, 10))
+for i, ax in enumerate(axes.flat):
+    ax.imshow(generated[i, :, :, 0] * 0.5 + 0.5, cmap='gray')
+    ax.axis('off')
+plt.suptitle('WGAN Generated Images')
+plt.tight_layout()
+plt.savefig('wgan_output/final_generated.png', dpi=150)
+plt.show()
+
+# Save models
+generator.save('wgan_output/wgan_generator.h5')
+critic.save('wgan_output/wgan_critic.h5')
+
+print("\n=== WGAN Training Complete ===")
+print(f"Final Critic Loss: {history.history['c_loss'][-1]:.4f}")
+print(f"Final Generator Loss: {history.history['g_loss'][-1]:.4f}")
+```
+
+---

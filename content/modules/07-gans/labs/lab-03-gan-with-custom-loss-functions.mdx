@@ -1,0 +1,369 @@
+---
+title: "GAN with Custom Loss Functions"
+module: 7
+labNumber: 3
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# GAN with Custom Loss Functions
+
+## Objectives
+- Implement different GAN loss variants
+- Compare minimax vs. non-saturating loss
+- Implement label smoothing
+- Add feature matching
+
+## Complete Implementation
+
+```python
+"""
+Lab 7.2: GAN with Custom Loss Functions
+========================================
+Exploring different loss functions for GAN training.
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+from tensorflow import keras
+from tensorflow.keras import layers
+
+# =============================================================================
+# Part 1: Loss Function Variants
+# =============================================================================
+
+class GANLosses:
+    """Collection of different GAN loss functions."""
+    
+    @staticmethod
+    def minimax_loss(real_output, fake_output):
+        """
+        Original minimax loss from the GAN paper.
+        
+        D_loss = -E[log(D(x))] - E[log(1 - D(G(z)))]
+        G_loss = E[log(1 - D(G(z)))]
+        """
+        cross_entropy = keras.losses.BinaryCrossentropy()
+        real_loss = cross_entropy(tf.ones_like(real_output), real_output)
+        fake_loss = cross_entropy(tf.zeros_like(fake_output), fake_output)
+        d_loss = real_loss + fake_loss
+        
+        # Generator wants to maximize log(D(G(z)))
+        g_loss = cross_entropy(tf.ones_like(fake_output), fake_output)
+        
+        return d_loss, g_loss
+    
+    @staticmethod
+    def non_saturating_loss(real_output, fake_output):
+        """
+        Non-saturating loss (recommended in practice).
+        
+        G_loss = -E[log(D(G(z)))]
+        This provides stronger gradients when D is confident.
+        """
+        cross_entropy = keras.losses.BinaryCrossentropy()
+        real_loss = cross_entropy(tf.ones_like(real_output), real_output)
+        fake_loss = cross_entropy(tf.zeros_like(fake_output), fake_output)
+        d_loss = real_loss + fake_loss
+        
+        # Generator uses -log(D(G(z))) instead of log(1-D(G(z)))
+        g_loss = -tf.reduce_mean(tf.math.log(fake_output + 1e-8))
+        
+        return d_loss, g_loss
+    
+    @staticmethod
+    def wasserstein_loss(real_output, fake_output):
+        """
+        Wasserstein loss for WGAN.
+        
+        D_loss = E[D(G(z))] - E[D(x)]
+        G_loss = -E[D(G(z))]
+        """
+        d_loss = tf.reduce_mean(fake_output) - tf.reduce_mean(real_output)
+        g_loss = -tf.reduce_mean(fake_output)
+        
+        return d_loss, g_loss
+    
+    @staticmethod
+    def hinge_loss(real_output, fake_output):
+        """
+        Hinge loss for discriminator.
+        
+        D_loss = E[max(0, 1 - D(x))] + E[max(0, 1 + D(G(z)))]
+        G_loss = -E[D(G(z))]
+        """
+        d_loss = tf.reduce_mean(tf.nn.relu(1.0 - real_output)) + \
+                 tf.reduce_mean(tf.nn.relu(1.0 + fake_output))
+        g_loss = -tf.reduce_mean(fake_output)
+        
+        return d_loss, g_loss
+
+# =============================================================================
+# Part 2: Label Smoothing
+# =============================================================================
+
+def label_smoothing_loss(real_output, fake_output, smooth_real=0.9, smooth_fake=0.0):
+    """
+    Label smoothing to prevent discriminator from being too confident.
+    
+    Args:
+        real_output: Discriminator output for real samples
+        fake_output: Discriminator output for fake samples
+        smooth_real: Label for real samples (default 0.9 instead of 1.0)
+        smooth_fake: Label for fake samples (default 0.0)
+    """
+    cross_entropy = keras.losses.BinaryCrossentropy()
+    
+    # Smooth labels: 1.0 -> 0.9, 0.0 -> 0.1
+    real_labels = tf.ones_like(real_output) * smooth_real
+    fake_labels = tf.ones_like(fake_output) * smooth_fake + (1 - smooth_fake) * 0.1
+    
+    real_loss = cross_entropy(real_labels, real_output)
+    fake_loss = cross_entropy(fake_labels, fake_output)
+    d_loss = real_loss + fake_loss
+    
+    # Generator still tries to get D(G(z)) close to 1
+    g_loss = cross_entropy(tf.ones_like(fake_output), fake_output)
+    
+    return d_loss, g_loss
+
+# =============================================================================
+# Part 3: Feature Matching
+# =============================================================================
+
+def build_discriminator_with_features(input_dim=2):
+    """
+    Build discriminator that returns intermediate features.
+    """
+    inputs = keras.Input(shape=(input_dim,))
+    
+    x = layers.Dense(512)(inputs)
+    x = layers.LeakyReLU(alpha=0.2)(x)
+    x = layers.Dropout(0.3)(x)
+    feature1 = x  # Extract features
+    
+    x = layers.Dense(256)(x)
+    x = layers.LeakyReLU(alpha=0.2)(x)
+    x = layers.Dropout(0.3)(x)
+    feature2 = x  # Extract features
+    
+    x = layers.Dense(128)(x)
+    x = layers.LeakyReLU(alpha=0.2)(x)
+    feature3 = x  # Extract features
+    
+    output = layers.Dense(1, activation='sigmoid')(x)
+    
+    model = keras.Model(inputs=inputs, outputs=[output, feature1, feature2, feature3],
+                       name='Discriminator_With_Features')
+    return model
+
+def feature_matching_loss(real_features, fake_features):
+    """
+    Feature matching loss: match statistics of intermediate features.
+    
+    Loss = ||E[f(x)] - E[f(G(z))]||^2
+    """
+    loss = 0
+    for real_feat, fake_feat in zip(real_features, fake_features):
+        loss += tf.reduce_mean(tf.square(
+            tf.reduce_mean(real_feat, axis=0) - tf.reduce_mean(fake_feat, axis=0)
+        ))
+    return loss
+
+# =============================================================================
+# Part 4: Complete Training with Custom Loss
+# =============================================================================
+
+class CustomGAN(keras.Model):
+    """
+    GAN with customizable loss functions.
+    """
+    
+    def __init__(self, latent_dim=2, data_dim=2, loss_type='non_saturating'):
+        super().__init__()
+        self.latent_dim = latent_dim
+        self.data_dim = data_dim
+        self.loss_type = loss_type
+        
+        # Build networks
+        self.generator = self._build_generator()
+        self.discriminator = self._build_discriminator()
+        
+        # Optimizers
+        self.g_optimizer = keras.optimizers.Adam(0.0002, beta_1=0.5)
+        self.d_optimizer = keras.optimizers.Adam(0.0002, beta_1=0.5)
+    
+    def _build_generator(self):
+        """Build generator network."""
+        model = keras.Sequential([
+            layers.Dense(256, input_shape=(self.latent_dim,)),
+            layers.LeakyReLU(alpha=0.2),
+            layers.BatchNormalization(),
+            layers.Dense(512),
+            layers.LeakyReLU(alpha=0.2),
+            layers.BatchNormalization(),
+            layers.Dense(self.data_dim, activation='tanh')
+        ], name='Generator')
+        return model
+    
+    def _build_discriminator(self):
+        """Build discriminator network."""
+        model = keras.Sequential([
+            layers.Dense(512, input_shape=(self.data_dim,)),
+            layers.LeakyReLU(alpha=0.2),
+            layers.Dropout(0.3),
+            layers.Dense(256),
+            layers.LeakyReLU(alpha=0.2),
+            layers.Dropout(0.3),
+            layers.Dense(1, activation='sigmoid')
+        ], name='Discriminator')
+        return model
+    
+    def compile(self):
+        super().compile()
+        self.g_optimizer = keras.optimizers.Adam(0.0002, beta_1=0.5)
+        self.d_optimizer = keras.optimizers.Adam(0.0002, beta_1=0.5)
+    
+    def train_step(self, real_data):
+        batch_size = tf.shape(real_data)[0]
+        noise = tf.random.normal([batch_size, self.latent_dim])
+        
+        # Train discriminator
+        with tf.GradientTape() as tape:
+            fake_data = self.generator(noise, training=True)
+            real_pred = self.discriminator(real_data, training=True)
+            fake_pred = self.discriminator(fake_data, training=True)
+            
+            # Use selected loss function
+            if self.loss_type == 'minimax':
+                d_loss, g_loss = GANLosses.minimax_loss(real_pred, fake_pred)
+            elif self.loss_type == 'non_saturating':
+                d_loss, g_loss = GANLosses.non_saturating_loss(real_pred, fake_pred)
+            elif self.loss_type == 'label_smoothing':
+                d_loss, g_loss = label_smoothing_loss(real_pred, fake_pred)
+            else:
+                d_loss, g_loss = GANLosses.minimax_loss(real_pred, fake_pred)
+        
+        # Update discriminator
+        d_grads = tape.gradient(d_loss, self.discriminator.trainable_variables)
+        self.d_optimizer.apply_gradients(
+            zip(d_grads, self.discriminator.trainable_variables)
+        )
+        
+        # Train generator (with new noise)
+        noise = tf.random.normal([batch_size, self.latent_dim])
+        with tf.GradientTape() as tape:
+            fake_data = self.generator(noise, training=True)
+            fake_pred = self.discriminator(fake_data, training=True)
+            
+            # Generator loss
+            if self.loss_type == 'minimax':
+                _, g_loss = GANLosses.minimax_loss(real_pred, fake_pred)
+            elif self.loss_type == 'non_saturating':
+                _, g_loss = GANLosses.non_saturating_loss(real_pred, fake_pred)
+            elif self.loss_type == 'label_smoothing':
+                _, g_loss = label_smoothing_loss(real_pred, fake_pred)
+            else:
+                _, g_loss = GANLosses.minimax_loss(real_pred, fake_pred)
+        
+        # Update generator
+        g_grads = tape.gradient(g_loss, self.generator.trainable_variables)
+        self.g_optimizer.apply_gradients(
+            zip(g_grads, self.generator.trainable_variables)
+        )
+        
+        return {'d_loss': d_loss, 'g_loss': g_loss}
+
+# =============================================================================
+# Part 5: Compare Different Loss Functions
+# =============================================================================
+
+def compare_loss_functions():
+    """Train GANs with different loss functions and compare."""
+    
+    # Create data
+    data = create_real_data(10000)
+    dataset = tf.data.Dataset.from_tensor_slices(data).batch(256)
+    
+    loss_types = ['minimax', 'non_saturating', 'label_smoothing']
+    results = {}
+    
+    for loss_type in loss_types:
+        print(f"\n{'='*50}")
+        print(f"Training with {loss_type} loss")
+        print('='*50)
+        
+        # Create and train model
+        gan = CustomGAN(latent_dim=2, data_dim=2, loss_type=loss_type)
+        gan.compile()
+        
+        history = gan.fit(dataset, epochs=50, verbose=0)
+        
+        # Store results
+        results[loss_type] = {
+            'd_loss': history.history['d_loss'],
+            'g_loss': history.history['g_loss'],
+            'generator': gan.generator
+        }
+        
+        print(f"Final D Loss: {history.history['d_loss'][-1]:.4f}")
+        print(f"Final G Loss: {history.history['g_loss'][-1]:.4f}")
+    
+    # Visualize comparison
+    fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+    
+    for i, loss_type in enumerate(loss_types):
+        # Plot losses
+        axes[0, i].plot(results[loss_type]['d_loss'], label='D Loss', color='blue')
+        axes[0, i].plot(results[loss_type]['g_loss'], label='G Loss', color='red')
+        axes[0, i].set_title(f'{loss_type.replace("_", " ").title()} Loss')
+        axes[0, i].set_xlabel('Epoch')
+        axes[0, i].set_ylabel('Loss')
+        axes[0, i].legend()
+        axes[0, i].grid(True)
+        
+        # Plot generated samples
+        noise = tf.random.normal([1000, 2])
+        samples = results[loss_type]['generator'](noise, training=False)
+        axes[1, i].scatter(samples[:, 0], samples[:, 1], s=1, alpha=0.5, c='red')
+        axes[1, i].scatter(data[:1000, 0], data[:1000, 1], s=1, alpha=0.3, c='blue')
+        axes[1, i].set_title(f'Generated Samples ({loss_type})')
+        axes[1, i].set_xlabel('x')
+        axes[1, i].set_ylabel('y')
+        axes[1, i].axis('equal')
+        axes[1, i].grid(True)
+    
+    plt.tight_layout()
+    plt.savefig('loss_comparison.png', dpi=150)
+    plt.show()
+    
+    return results
+
+# Run comparison
+results = compare_loss_functions()
+```
+
+## Expected Output
+
+```
+==================================================
+Training with minimax loss
+==================================================
+Final D Loss: 0.5234
+Final G Loss: 1.2345
+
+==================================================
+Training with non_saturating loss
+==================================================
+Final D Loss: 0.6123
+Final G Loss: 0.8765
+
+==================================================
+Training with label_smoothing loss
+==================================================
+Final D Loss: 0.6789
+Final G Loss: 0.9234
+```
+
+---

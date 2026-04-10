@@ -1,0 +1,21 @@
+{
+  "id": "10-production-deployment",
+  "number": 10,
+  "title": "Production Deployment and Optimization",
+  "shortTitle": "Deployment",
+  "description": "Model quantization, TFLite, TF Serving, TFX pipelines, MLOps practices, monitoring, and edge deployment.",
+  "duration": "2 weeks",
+  "difficulty": "advanced",
+  "prerequisites": [
+    4
+  ],
+  "objectives": [
+    "Optimize models with quantization and pruning",
+    "Deploy with TFLite for mobile/edge",
+    "Set up TF Serving for production",
+    "Build TFX pipelines for MLOps",
+    "Monitor models in production"
+  ],
+  "icon": "rocket",
+  "color": "#f97316"
+}

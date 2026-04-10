@@ -1,0 +1,420 @@
+---
+title: "DeepLab/ASPP Implementation - Part 2"
+module: 5
+labNumber: 8
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# DeepLab/ASPP Implementation - Part 2
+
+## Objectives
+- Complete DeepLabV3+ implementation
+- Implement efficient decoder
+- Train and evaluate on segmentation task
+
+## Complete Implementation
+
+```python
+"""
+Lab 5.7: DeepLab/ASPP Implementation - Part 2
+Complete DeepLabV3+ with efficient decoder
+"""
+
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers, Model
+import numpy as np
+import matplotlib.pyplot as plt
+
+tf.random.set_seed(42)
+np.random.seed(42)
+
+print(f"TensorFlow version: {tf.__version__}")
+
+# =============================================================================
+# Section 1: DeepLabV3+ Complete Implementation
+# =============================================================================
+
+def build_deeplabv3_plus(input_shape=(512, 512, 3), num_classes=21, backbone='mobilenet'):
+    """
+    Build complete DeepLabV3+ architecture.
+    
+    DeepLabV3+ improvements over V3:
+    1. Encoder-decoder structure
+    2. Atrous separable convolution for efficiency
+    3. Simple yet effective decoder
+    
+    Args:
+        input_shape: Input image shape
+        num_classes: Number of segmentation classes
+        backbone: 'mobilenet' or 'resnet'
+    
+    Returns:
+        DeepLabV3+ model
+    """
+    print("\n" + "="*60)
+    print("BUILDING DEEPLABV3+")
+    print("="*60)
+    
+    inputs = layers.Input(shape=input_shape)
+    
+    # ============ ENCODER ============
+    
+    if backbone == 'mobilenet':
+        # Use MobileNetV2 as encoder (lightweight)
+        base_model = keras.applications.MobileNetV2(
+            weights='imagenet',
+            include_top=False,
+            input_tensor=inputs
+        )
+        
+        # Get intermediate layer for skip connection
+        # layer_4 is at 1/4 resolution
+        skip_layer_name = 'block_3_expand_relu'  # 1/4 resolution
+        encoder_output_name = 'out_relu'  # 1/16 resolution
+        
+        skip_connection = base_model.get_layer(skip_layer_name).output
+        encoder_output = base_model.get_layer(encoder_output_name).output
+        
+        print(f"  MobileNetV2 backbone")
+        
+    else:  # resnet
+        base_model = keras.applications.ResNet50(
+            weights='imagenet',
+            include_top=False,
+            input_tensor=inputs
+        )
+        
+        skip_layer_name = 'conv2_block3_out'  # 1/4 resolution
+        encoder_output_name = 'conv4_block6_out'  # 1/16 resolution
+        
+        skip_connection = base_model.get_layer(skip_layer_name).output
+        encoder_output = base_model.get_layer(encoder_output_name).output
+        
+        print(f"  ResNet50 backbone")
+    
+    print(f"  Skip connection shape: {skip_connection.shape}")
+    print(f"  Encoder output shape: {encoder_output.shape}")
+    
+    # ============ ASPP MODULE ============
+    
+    def aspp_module(x, num_filters=256):
+        """Atrous Spatial Pyramid Pooling."""
+        shape = x.shape
+        
+        # 1x1 conv
+        b1 = layers.Conv2D(num_filters, 1, padding='same', use_bias=False)(x)
+        b1 = layers.BatchNormalization()(b1)
+        b1 = layers.ReLU()(b1)
+        
+        # 3x3 conv with dilation=6
+        b2 = layers.Conv2D(num_filters, 3, padding='same', dilation_rate=6, use_bias=False)(x)
+        b2 = layers.BatchNormalization()(b2)
+        b2 = layers.ReLU()(b2)
+        
+        # 3x3 conv with dilation=12
+        b3 = layers.Conv2D(num_filters, 3, padding='same', dilation_rate=12, use_bias=False)(x)
+        b3 = layers.BatchNormalization()(b3)
+        b3 = layers.ReLU()(b3)
+        
+        # 3x3 conv with dilation=18
+        b4 = layers.Conv2D(num_filters, 3, padding='same', dilation_rate=18, use_bias=False)(x)
+        b4 = layers.BatchNormalization()(b4)
+        b4 = layers.ReLU()(b4)
+        
+        # Global average pooling
+        b5 = layers.GlobalAveragePooling2D()(x)
+        b5 = layers.Reshape((1, 1, shape[-1]))(b5)
+        b5 = layers.Conv2D(num_filters, 1, use_bias=False)(b5)
+        b5 = layers.BatchNormalization()(b5)
+        b5 = layers.ReLU()(b5)
+        b5 = layers.UpSampling2D(size=(shape[1], shape[2]), interpolation='bilinear')(b5)
+        
+        # Concatenate
+        x = layers.Concatenate()([b1, b2, b3, b4, b5])
+        
+        # 1x1 conv to reduce channels
+        x = layers.Conv2D(num_filters, 1, padding='same', use_bias=False)(x)
+        x = layers.BatchNormalization()(x)
+        x = layers.ReLU()(x)
+        x = layers.Dropout(0.1)(x)
+        
+        return x
+    
+    aspp_output = aspp_module(encoder_output, num_filters=256)
+    print(f"  ASPP output shape: {aspp_output.shape}")
+    
+    # ============ DECODER ============
+    
+    # Upsample by 4x (from 1/16 to 1/4)
+    x = layers.UpSampling2D(size=(4, 4), interpolation='bilinear')(aspp_output)
+    print(f"  After first upsampling: {x.shape}")
+    
+    # Process skip connection
+    skip = layers.Conv2D(48, 1, padding='same', use_bias=False)(skip_connection)
+    skip = layers.BatchNormalization()(skip)
+    skip = layers.ReLU()(skip)
+    print(f"  Skip connection processed: {skip.shape}")
+    
+    # Concatenate skip connection
+    x = layers.Concatenate()([x, skip])
+    print(f"  After concatenation: {x.shape}")
+    
+    # Decoder convolutions
+    x = layers.Conv2D(256, 3, padding='same', use_bias=False)(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.ReLU()(x)
+    
+    x = layers.Conv2D(256, 3, padding='same', use_bias=False)(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.ReLU()(x)
+    
+    # Final upsampling to original resolution
+    x = layers.UpSampling2D(size=(4, 4), interpolation='bilinear')(x)
+    print(f"  After final upsampling: {x.shape}")
+    
+    # Classification layer
+    outputs = layers.Conv2D(num_classes, 1, activation='softmax', name='output')(x)
+    
+    model = Model(inputs, outputs, name='DeepLabV3_Plus')
+    
+    print(f"\nDeepLabV3+ input shape: {model.input_shape}")
+    print(f"DeepLabV3+ output shape: {model.output_shape}")
+    print(f"DeepLabV3+ parameters: {model.count_params():,}")
+    
+    return model
+
+
+# Build DeepLabV3+ with MobileNet backbone
+deeplab_mobilenet = build_deeplabv3_plus(input_shape=(512, 512, 3), num_classes=21, backbone='mobilenet')
+
+# Build DeepLabV3+ with ResNet backbone
+deeplab_resnet = build_deeplabv3_plus(input_shape=(512, 512, 3), num_classes=21, backbone='resnet')
+
+# =============================================================================
+# Section 2: Atrous Separable Convolution
+# =============================================================================
+
+def build_separable_aspp(input_tensor, num_filters=256):
+    """
+    Build ASPP with separable atrous convolutions.
+    
+    Separable convolution = depthwise conv + pointwise conv
+    Much more efficient than standard convolution.
+    """
+    print("\n" + "="*60)
+    print("BUILDING SEPARABLE ASPP")
+    print("="*60)
+    
+    shape = input_tensor.shape
+    
+    # 1x1 conv (pointwise)
+    b1 = layers.Conv2D(num_filters, 1, padding='same', use_bias=False)(input_tensor)
+    b1 = layers.BatchNormalization()(b1)
+    b1 = layers.ReLU()(b1)
+    
+    # Separable conv with dilation=6
+    b2 = layers.SeparableConv2D(num_filters, 3, padding='same', dilation_rate=6, use_bias=False)(input_tensor)
+    b2 = layers.BatchNormalization()(b2)
+    b2 = layers.ReLU()(b2)
+    
+    # Separable conv with dilation=12
+    b3 = layers.SeparableConv2D(num_filters, 3, padding='same', dilation_rate=12, use_bias=False)(input_tensor)
+    b3 = layers.BatchNormalization()(b3)
+    b3 = layers.ReLU()(b3)
+    
+    # Separable conv with dilation=18
+    b4 = layers.SeparableConv2D(num_filters, 3, padding='same', dilation_rate=18, use_bias=False)(input_tensor)
+    b4 = layers.BatchNormalization()(b4)
+    b4 = layers.ReLU()(b4)
+    
+    # Global pooling
+    b5 = layers.GlobalAveragePooling2D()(input_tensor)
+    b5 = layers.Reshape((1, 1, shape[-1]))(b5)
+    b5 = layers.Conv2D(num_filters, 1, use_bias=False)(b5)
+    b5 = layers.BatchNormalization()(b5)
+    b5 = layers.ReLU()(b5)
+    b5 = layers.UpSampling2D(size=(shape[1], shape[2]), interpolation='bilinear')(b5)
+    
+    # Concatenate and reduce
+    x = layers.Concatenate()([b1, b2, b3, b4, b5])
+    x = layers.Conv2D(num_filters, 1, padding='same', use_bias=False)(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.ReLU()(x)
+    
+    print(f"  Separable ASPP output: {x.shape}")
+    
+    return x
+
+
+# Compare parameter counts
+test_input = layers.Input(shape=(32, 32, 256))
+
+# Standard ASPP
+standard_aspp = build_aspp_module(test_input, num_filters=256)
+standard_model = Model(test_input, standard_aspp)
+
+# Separable ASPP  
+separable_aspp = build_separable_aspp(test_input, num_filters=256)
+separable_model = Model(test_input, separable_aspp)
+
+print("\n" + "-"*50)
+print(f"{'Module':<25} {'Parameters':<15}")
+print("-"*50)
+print(f"{'Standard ASPP':<25} {standard_model.count_params():>14,}")
+print(f"{'Separable ASPP':<25} {separable_model.count_params():>14,}")
+print("-"*50)
+
+# =============================================================================
+# Section 3: Training Setup
+# =============================================================================
+
+def setup_deeplab_training(model, num_classes=21):
+    """Setup training configuration for DeepLab."""
+    print("\n" + "="*60)
+    print("DEEPLAB TRAINING SETUP")
+    print("="*60)
+    
+    # Loss
+    loss = keras.losses.CategoricalCrossentropy(from_logits=False)
+    
+    # Metrics
+    metrics = [
+        'accuracy',
+        keras.metrics.MeanIoU(num_classes=num_classes, name='mean_iou')
+    ]
+    
+    # Optimizer with polynomial decay
+    initial_lr = 7e-3
+    decay_steps = 30000
+    end_lr = 1e-6
+    
+    lr_schedule = keras.optimizers.schedules.PolynomialDecay(
+        initial_learning_rate=initial_lr,
+        decay_steps=decay_steps,
+        end_learning_rate=end_lr,
+        power=0.9
+    )
+    
+    optimizer = keras.optimizers.SGD(learning_rate=lr_schedule, momentum=0.9)
+    
+    model.compile(
+        optimizer=optimizer,
+        loss=loss,
+        metrics=metrics
+    )
+    
+    print("Training configuration:")
+    print(f"  Loss: Categorical Crossentropy")
+    print(f"  Optimizer: SGD with polynomial decay")
+    print(f"  Initial LR: {initial_lr}")
+    print(f"  End LR: {end_lr}")
+    
+    return model
+
+
+# Setup for training (commented out as we don't have real data)
+# deeplab_resnet = setup_deeplab_training(deeplab_resnet, num_classes=21)
+
+# =============================================================================
+# Section 4: Model Comparison
+# =============================================================================
+
+def compare_segmentation_models():
+    """Compare different segmentation models."""
+    print("\n" + "="*60)
+    print("MODEL COMPARISON")
+    print("="*60)
+    
+    models_info = {
+        'U-Net': {
+            'params': '31M',
+            'speed': 'Medium',
+            'accuracy': 'Good',
+            'use_case': 'Medical, Small datasets'
+        },
+        'DeepLabV3+ (MobileNet)': {
+            'params': '5.8M',
+            'speed': 'Fast',
+            'accuracy': 'Good',
+            'use_case': 'Mobile, Real-time'
+        },
+        'DeepLabV3+ (ResNet)': {
+            'params': '43M',
+            'speed': 'Slow',
+            'accuracy': 'Best',
+            'use_case': 'High accuracy needed'
+        },
+        'FCN-8s': {
+            'params': '134M',
+            'speed': 'Slow',
+            'accuracy': 'Fair',
+            'use_case': 'Baseline'
+        }
+    }
+    
+    print(f"\n{'Model':<25} {'Params':<10} {'Speed':<10} {'Accuracy':<10} {'Use Case'}")
+    print("-" * 80)
+    for name, info in models_info.items():
+        print(f"{name:<25} {info['params']:<10} {info['speed']:<10} {info['accuracy']:<10} {info['use_case']}")
+
+compare_segmentation_models()
+
+# =============================================================================
+# Section 5: Inference and Visualization
+# =============================================================================
+
+def visualize_deeplab_inference(model, num_samples=3):
+    """Visualize DeepLab inference on random data."""
+    print("\n" + "="*60)
+    print("DEEPLAB INFERENCE VISUALIZATION")
+    print("="*60)
+    
+    # Generate random test data
+    test_images = np.random.rand(num_samples, 512, 512, 3).astype(np.float32)
+    
+    # Predict
+    predictions = model.predict(test_images, verbose=0)
+    
+    fig, axes = plt.subplots(2, num_samples, figsize=(num_samples*4, 8))
+    
+    for i in range(num_samples):
+        # Input
+        axes[0, i].imshow(test_images[i])
+        axes[0, i].set_title('Input Image')
+        axes[0, i].axis('off')
+        
+        # Prediction (argmax)
+        pred_classes = np.argmax(predictions[i], axis=-1)
+        axes[1, i].imshow(pred_classes, cmap='tab20')
+        axes[1, i].set_title('Segmentation')
+        axes[1, i].axis('off')
+    
+    plt.tight_layout()
+    plt.savefig('/mnt/okcomputer/output/deeplab_inference.png', dpi=150)
+    plt.show()
+    print("Inference visualization saved to /mnt/okcomputer/output/deeplab_inference.png")
+
+visualize_deeplab_inference(deeplab_mobilenet)
+
+# =============================================================================
+# Summary
+# =============================================================================
+
+print("\n" + "="*60)
+print("LAB 5.7 SUMMARY")
+print("="*60)
+print("""
+Key Takeaways:
+1. DeepLabV3+ uses encoder-decoder architecture with ASPP
+2. Atrous separable convolution reduces parameters significantly
+3. Skip connections in decoder improve boundary segmentation
+4. MobileNet backbone is suitable for mobile deployment
+5. ResNet backbone provides best accuracy for server deployment
+
+Next: Lab 5.8 will compare different loss functions for segmentation.
+""")
+```
+
+---

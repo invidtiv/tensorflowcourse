@@ -1,0 +1,423 @@
+---
+title: "Character-Level Tokenization"
+module: 8
+labNumber: 4
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Character-Level Tokenization
+
+### Objectives
+- Implement character-level tokenization
+- Build character-level language models
+- Compare with word-level approaches
+
+### Complete Implementation
+
+```python
+"""
+Lab 8.3: Character-Level Tokenization
+=====================================
+Learn character-level tokenization for handling any text.
+"""
+
+import tensorflow as tf
+import numpy as np
+import string
+
+# ============================================================
+# PART 1: Character Vocabulary Creation
+# ============================================================
+
+class CharacterTokenizer:
+    """
+    Character-level tokenizer.
+    Handles any text by breaking into individual characters.
+    """
+    
+    def __init__(self, char_set=None):
+        """
+        Initialize character tokenizer.
+        
+        Args:
+            char_set: Set of characters to include in vocabulary.
+                     If None, uses printable ASCII.
+        """
+        if char_set is None:
+            # Standard character set
+            char_set = string.printable
+        
+        # Create vocabulary
+        self.char_to_id = {'<pad>': 0, '<unk>': 1, '<start>': 2, '<end>': 3}
+        self.id_to_char = {0: '<pad>', 1: '<unk>', 2: '<start>', 3: '<end>'}
+        
+        for idx, char in enumerate(char_set, start=4):
+            self.char_to_id[char] = idx
+            self.id_to_char[idx] = char
+            
+        self.vocab_size = len(self.char_to_id)
+        
+    def encode(self, text, add_special_tokens=True):
+        """
+        Encode text to character IDs.
+        
+        Args:
+            text: Input string
+            add_special_tokens: Whether to add <start> and <end>
+            
+        Returns:
+            List of character IDs
+        """
+        ids = []
+        
+        if add_special_tokens:
+            ids.append(self.char_to_id['<start>'])
+        
+        for char in text:
+            ids.append(self.char_to_id.get(char, self.char_to_id['<unk>']))
+            
+        if add_special_tokens:
+            ids.append(self.char_to_id['<end>'])
+            
+        return ids
+    
+    def decode(self, ids, remove_special_tokens=True):
+        """
+        Decode character IDs to text.
+        
+        Args:
+            ids: List of character IDs
+            remove_special_tokens: Whether to remove special tokens
+            
+        Returns:
+            Reconstructed string
+        """
+        chars = []
+        
+        for id in ids:
+            char = self.id_to_char.get(id, '<unk>')
+            
+            if remove_special_tokens and char in ['<pad>', '<start>', '<end>']:
+                continue
+                
+            chars.append(char)
+            
+        return ''.join(chars)
+    
+    def encode_batch(self, texts, max_length=None, padding=True):
+        """
+        Encode a batch of texts.
+        
+        Args:
+            texts: List of strings
+            max_length: Maximum sequence length
+            padding: Whether to pad sequences
+            
+        Returns:
+            Numpy array of shape (batch_size, max_length)
+        """
+        encoded = [self.encode(text) for text in texts]
+        
+        if max_length is None:
+            max_length = max(len(seq) for seq in encoded)
+        
+        if padding:
+            padded = []
+            for seq in encoded:
+                if len(seq) < max_length:
+                    seq = seq + [self.char_to_id['<pad>']] * (max_length - len(seq))
+                else:
+                    seq = seq[:max_length]
+                padded.append(seq)
+            encoded = padded
+            
+        return np.array(encoded)
+
+
+# ============================================================
+# PART 2: Demonstration
+# ============================================================
+
+print("=" * 60)
+print("CHARACTER-LEVEL TOKENIZATION")
+print("=" * 60)
+
+# Create tokenizer
+tokenizer = CharacterTokenizer()
+
+print(f"\nVocabulary size: {tokenizer.vocab_size}")
+print(f"Sample characters: {list(tokenizer.char_to_id.keys())[:20]}")
+
+# Test encoding
+test_texts = [
+    "Hello, World!",
+    "123 + 456 = 579",
+    "TensorFlow 2.x 🚀"
+]
+
+print("\nEncoding Examples:")
+for text in test_texts:
+    encoded = tokenizer.encode(text)
+    decoded = tokenizer.decode(encoded)
+    print(f"\n  Original: '{text}'")
+    print(f"  Encoded:  {encoded}")
+    print(f"  Decoded:  '{decoded}'")
+
+# Batch encoding
+batch_encoded = tokenizer.encode_batch(test_texts, max_length=30)
+print(f"\nBatch encoded shape: {batch_encoded.shape}")
+print(f"Batch encoded:\n{batch_encoded}")
+
+
+# ============================================================
+# PART 3: Character-Level Dataset Preparation
+# ============================================================
+
+print("\n" + "=" * 60)
+print("CHARACTER-LEVEL DATASET FOR LANGUAGE MODELING")
+print("=" * 60)
+
+def create_char_lm_dataset(text, seq_length=100, tokenizer=None):
+    """
+    Create dataset for character-level language modeling.
+    
+    Args:
+        text: Training text
+        seq_length: Length of input sequences
+        tokenizer: Character tokenizer
+        
+    Returns:
+        X, y tensors for training
+    """
+    if tokenizer is None:
+        tokenizer = CharacterTokenizer()
+    
+    # Encode full text
+    encoded = tokenizer.encode(text, add_special_tokens=False)
+    
+    # Create sequences
+    sequences = []
+    next_chars = []
+    
+    for i in range(0, len(encoded) - seq_length):
+        sequences.append(encoded[i:i + seq_length])
+        next_chars.append(encoded[i + seq_length])
+    
+    X = np.array(sequences)
+    y = np.array(next_chars)
+    
+    return X, y, tokenizer
+
+# Sample text
+sample_text = """
+Machine learning is a subset of artificial intelligence that enables computers 
+to learn and improve from experience without being explicitly programmed. 
+Deep learning is a type of machine learning that uses neural networks with 
+many layers to analyze various factors of data.
+""" * 10  # Repeat for more data
+
+# Create dataset
+X, y, tokenizer = create_char_lm_dataset(sample_text, seq_length=50)
+
+print(f"Dataset shape: X={X.shape}, y={y.shape}")
+print(f"Sample input sequence: {X[0][:20]}")
+print(f"Sample target: {y[0]}")
+
+# Decode sample
+print(f"\nDecoded input: '{tokenizer.decode(X[0])}'")
+print(f"Target character: '{tokenizer.decode([y[0]])}'")
+
+
+# ============================================================
+# PART 4: Character-Level Model
+# ============================================================
+
+print("\n" + "=" * 60)
+print("CHARACTER-LEVEL LSTM MODEL")
+print("=" * 60)
+
+def build_char_lstm_model(vocab_size, embedding_dim=64, lstm_units=128):
+    """
+    Build character-level LSTM for language modeling.
+    
+    Args:
+        vocab_size: Size of character vocabulary
+        embedding_dim: Embedding dimension
+        lstm_units: LSTM hidden units
+        
+    Returns:
+        Compiled model
+    """
+    model = tf.keras.Sequential([
+        # Embedding layer
+        tf.keras.layers.Embedding(vocab_size, embedding_dim),
+        
+        # LSTM layers
+        tf.keras.layers.LSTM(lstm_units, return_sequences=True),
+        tf.keras.layers.LSTM(lstm_units),
+        
+        # Output layer
+        tf.keras.layers.Dense(vocab_size, activation='softmax')
+    ])
+    
+    model.compile(
+        optimizer='adam',
+        loss='sparse_categorical_crossentropy',
+        metrics=['accuracy']
+    )
+    
+    return model
+
+# Build model
+model = build_char_lstm_model(tokenizer.vocab_size)
+model.summary()
+
+# Train (commented out for demo)
+# history = model.fit(X, y, epochs=10, batch_size=64, validation_split=0.1)
+
+
+# ============================================================
+# PART 5: Text Generation with Character Model
+# ============================================================
+
+print("\n" + "=" * 60)
+print("TEXT GENERATION")
+print("=" * 60)
+
+def generate_text(model, tokenizer, seed_text, length=200, temperature=1.0):
+    """
+    Generate text using trained character model.
+    
+    Args:
+        model: Trained model
+        tokenizer: Character tokenizer
+        seed_text: Starting text
+        length: Number of characters to generate
+        temperature: Sampling temperature
+        
+    Returns:
+        Generated text
+    """
+    generated = seed_text
+    
+    for _ in range(length):
+        # Encode current text
+        encoded = tokenizer.encode(generated, add_special_tokens=False)
+        
+        # Take last seq_length characters
+        encoded = encoded[-50:]
+        
+        # Pad if needed
+        while len(encoded) < 50:
+            encoded = [tokenizer.char_to_id['<pad>']] + encoded
+        
+        # Predict
+        x_pred = np.array([encoded])
+        preds = model.predict(x_pred, verbose=0)[0]
+        
+        # Apply temperature
+        preds = np.log(preds + 1e-10) / temperature
+        exp_preds = np.exp(preds)
+        preds = exp_preds / np.sum(exp_preds)
+        
+        # Sample
+        next_index = np.random.choice(len(preds), p=preds)
+        next_char = tokenizer.id_to_char[next_index]
+        
+        generated += next_char
+    
+    return generated
+
+# Note: This would work with a trained model
+# generated = generate_text(model, tokenizer, "Machine learning", length=200)
+# print(generated)
+
+
+# ============================================================
+# PART 6: TensorFlow Text Character Tokenizer
+# ============================================================
+
+print("\n" + "=" * 60)
+print("TENSORFLOW TEXT CHARACTER TOKENIZER")
+print("=" * 60)
+
+# Using TensorFlow Text for character tokenization
+texts = tf.constant(["Hello, World!", "TensorFlow 2.x"])
+
+# Character splitter
+chars = tf.strings.unicode_split(texts, 'UTF-8')
+print(f"\nCharacter split:\n{chars}")
+
+# Byte encoding
+bytes_encoded = tf.io.encode_base64(texts)
+print(f"\nByte encoding:\n{bytes_encoded}")
+
+
+# ============================================================
+# COMPARISON: Word vs Character Tokenization
+# ============================================================
+
+print("\n" + "=" * 60)
+print("COMPARISON: WORD VS CHARACTER TOKENIZATION")
+print("=" * 60)
+
+comparison = """
+Word-Level Tokenization:
+- Pros: Semantically meaningful, smaller sequences
+- Cons: OOV problem, large vocabulary, language-specific
+
+Character-Level Tokenization:
+- Pros: No OOV, small vocabulary, language-agnostic
+- Cons: Long sequences, less semantic meaning
+
+Subword Tokenization (BPE/WordPiece):
+- Pros: Balance between word and character
+- Cons: More complex, requires training
+
+When to use each:
+- Word-level: Large corpus, specific domain
+- Character-level: Multilingual, rare words important
+- Subword: General purpose, recommended default
+"""
+
+print(comparison)
+
+
+# ============================================================
+# EXERCISES
+# ============================================================
+
+print("\n" + "=" * 60)
+print("EXERCISES")
+print("=" * 60)
+
+exercises = """
+Exercise 1: Unicode Character Handling
+--------------------------------------
+Extend the CharacterTokenizer to:
+- Handle full Unicode range
+- Support emoji and special characters
+- Implement byte-fallback for unknown characters
+
+Exercise 2: Character N-grams
+-----------------------------
+Implement character n-gram tokenization:
+- Generate character bigrams and trigrams
+- Use as features for text classification
+- Compare with unigram performance
+
+Exercise 3: Hybrid Tokenization
+-------------------------------
+Create a hybrid tokenizer that:
+- Uses word-level for common words
+- Falls back to character-level for OOV words
+- Maintains efficiency while handling any text
+"""
+
+print(exercises)
+```
+
+---
+
+# Word Embeddings Labs

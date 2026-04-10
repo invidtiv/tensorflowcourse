@@ -1,0 +1,392 @@
+---
+title: "Text Generation with RNN"
+module: 8
+labNumber: 10
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Text Generation with RNN
+
+### Objectives
+- Build character-level text generator
+- Implement temperature-based sampling
+- Create complete generation pipeline
+
+### Complete Implementation
+
+```python
+"""
+Lab 8.9: Text Generation with RNN
+=================================
+Build a character-level text generator using LSTM.
+"""
+
+import tensorflow as tf
+import numpy as np
+import random
+import os
+
+# ============================================================
+# PART 1: Data Preparation
+# ============================================================
+
+print("=" * 60)
+print("TEXT GENERATION WITH RNN")
+print("=" * 60)
+
+# Sample text for training
+text = """
+Machine learning is a method of data analysis that automates analytical model building. 
+It is a branch of artificial intelligence based on the idea that systems can learn from data, 
+identify patterns and make decisions with minimal human intervention.
+
+Deep learning is part of a broader family of machine learning methods based on artificial 
+neural networks. Learning can be supervised, semi-supervised or unsupervised.
+
+Natural language processing is a subfield of linguistics, computer science, and artificial 
+intelligence concerned with the interactions between computers and human language, in 
+particular how to program computers to process and analyze large amounts of natural language data.
+
+TensorFlow is an end-to-end open source platform for machine learning. It has a comprehensive, 
+flexible ecosystem of tools, libraries and community resources that lets researchers push the 
+state-of-the-art in ML and developers easily build and deploy ML powered applications.
+""" * 20  # Repeat for more training data
+
+# Create character vocabulary
+chars = sorted(list(set(text)))
+char_to_idx = {c: i for i, c in enumerate(chars)}
+idx_to_char = {i: c for i, c in enumerate(chars)}
+
+vocab_size = len(chars)
+print(f"Vocabulary size: {vocab_size}")
+print(f"Characters: {chars}")
+
+# Encode text
+encoded = np.array([char_to_idx[c] for c in text])
+print(f"Encoded text shape: {encoded.shape}")
+
+
+# ============================================================
+# PART 2: Create Training Sequences
+# ============================================================
+
+seq_length = 100  # Length of input sequences
+step = 3  # Step size for creating sequences
+
+# Create sequences
+sequences = []
+next_chars = []
+
+for i in range(0, len(encoded) - seq_length, step):
+    sequences.append(encoded[i:i + seq_length])
+    next_chars.append(encoded[i + seq_length])
+
+X = np.array(sequences)
+y = np.array(next_chars)
+
+print(f"Number of sequences: {len(sequences)}")
+print(f"X shape: {X.shape}")
+print(f"y shape: {y.shape}")
+
+
+# ============================================================
+# PART 3: Build Text Generation Model
+# ============================================================
+
+def build_text_generation_model(vocab_size, seq_length, embedding_dim=64, lstm_units=128):
+    """
+    Build LSTM model for text generation.
+    
+    Args:
+        vocab_size: Number of unique characters
+        seq_length: Length of input sequences
+        embedding_dim: Character embedding dimension
+        lstm_units: LSTM hidden units
+        
+    Returns:
+        Compiled model
+    """
+    model = tf.keras.Sequential([
+        # Character embedding
+        tf.keras.layers.Embedding(vocab_size, embedding_dim, input_length=seq_length),
+        
+        # LSTM layers
+        tf.keras.layers.LSTM(lstm_units, return_sequences=True),
+        tf.keras.layers.Dropout(0.2),
+        tf.keras.layers.LSTM(lstm_units),
+        tf.keras.layers.Dropout(0.2),
+        
+        # Output layer
+        tf.keras.layers.Dense(vocab_size, activation='softmax')
+    ])
+    
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+        loss='sparse_categorical_crossentropy'
+    )
+    
+    return model
+
+# Build model
+model = build_text_generation_model(vocab_size, seq_length)
+
+print("\nModel Architecture:")
+model.summary()
+
+
+# ============================================================
+# PART 4: Training
+# ============================================================
+
+# Callbacks
+callbacks = [
+    tf.keras.callbacks.ModelCheckpoint(
+        'text_gen_model.keras',
+        monitor='loss',
+        save_best_only=True
+    ),
+    tf.keras.callbacks.EarlyStopping(
+        monitor='loss',
+        patience=5,
+        restore_best_weights=True
+    )
+]
+
+# Train
+print("\nTraining...")
+history = model.fit(
+    X, y,
+    batch_size=128,
+    epochs=50,
+    callbacks=callbacks,
+    verbose=1
+)
+
+print(f"\nFinal loss: {history.history['loss'][-1]:.4f}")
+
+
+# ============================================================
+# PART 5: Text Generation
+# ============================================================
+
+def generate_text(model, seed_text, length=500, temperature=1.0):
+    """
+    Generate text using trained model.
+    
+    Args:
+        model: Trained text generation model
+        seed_text: Starting text (must be at least seq_length characters)
+        length: Number of characters to generate
+        temperature: Sampling temperature (higher = more random)
+        
+    Returns:
+        Generated text
+    """
+    generated = seed_text
+    
+    for _ in range(length):
+        # Encode the last seq_length characters
+        encoded_seed = [char_to_idx.get(c, 0) for c in generated[-seq_length:]]
+        
+        # Pad if necessary
+        while len(encoded_seed) < seq_length:
+            encoded_seed = [0] + encoded_seed
+        
+        # Predict
+        x_pred = np.array([encoded_seed])
+        preds = model.predict(x_pred, verbose=0)[0]
+        
+        # Apply temperature
+        preds = np.log(preds + 1e-10) / temperature
+        exp_preds = np.exp(preds)
+        preds = exp_preds / np.sum(exp_preds)
+        
+        # Sample next character
+        next_idx = np.random.choice(len(preds), p=preds)
+        next_char = idx_to_char[next_idx]
+        
+        generated += next_char
+    
+    return generated
+
+
+# ============================================================
+# PART 6: Generate Samples with Different Temperatures
+# ============================================================
+
+print("\n" + "=" * 60)
+print("GENERATED TEXT SAMPLES")
+print("=" * 60)
+
+seed = text[:seq_length]
+
+for temp in [0.2, 0.5, 1.0, 1.5]:
+    print(f"\n--- Temperature: {temp} ---")
+    generated = generate_text(model, seed, length=300, temperature=temp)
+    print(generated[seq_length:])
+    print()
+
+
+# ============================================================
+# PART 7: Temperature Explanation
+# ============================================================
+
+print("\n" + "=" * 60)
+print("TEMPERATURE SAMPLING EXPLAINED")
+print("=" * 60)
+
+temperature_explanation = """
+Temperature controls randomness in text generation:
+
+Low Temperature (0.2 - 0.5):
+- More deterministic
+- Repetitive but coherent
+- Good for factual text
+
+Medium Temperature (0.7 - 1.0):
+- Balanced randomness
+- Creative but coherent
+- Good general purpose
+
+High Temperature (1.2 - 2.0):
+- Very random
+- Creative but less coherent
+- Good for brainstorming
+
+Formula: 
+  probs = softmax(logits / temperature)
+  
+- temp → 0: argmax (greedy)
+- temp → ∞: uniform random
+"""
+
+print(temperature_explanation)
+
+
+# ============================================================
+# PART 8: Advanced Sampling Techniques
+# ============================================================
+
+def generate_text_top_k(model, seed_text, length=500, k=10):
+    """
+    Generate text using top-k sampling.
+    
+    Only sample from the top k most likely characters.
+    """
+    generated = seed_text
+    
+    for _ in range(length):
+        encoded_seed = [char_to_idx.get(c, 0) for c in generated[-seq_length:]]
+        while len(encoded_seed) < seq_length:
+            encoded_seed = [0] + encoded_seed
+        
+        x_pred = np.array([encoded_seed])
+        preds = model.predict(x_pred, verbose=0)[0]
+        
+        # Get top k
+        top_k_idx = np.argsort(preds)[-k:]
+        top_k_probs = preds[top_k_idx]
+        top_k_probs = top_k_probs / np.sum(top_k_probs)
+        
+        # Sample from top k
+        next_idx = np.random.choice(top_k_idx, p=top_k_probs)
+        next_char = idx_to_char[next_idx]
+        
+        generated += next_char
+    
+    return generated
+
+
+def generate_text_nucleus(model, seed_text, length=500, p=0.9):
+    """
+    Generate text using nucleus (top-p) sampling.
+    
+    Sample from the smallest set of characters whose cumulative 
+    probability exceeds p.
+    """
+    generated = seed_text
+    
+    for _ in range(length):
+        encoded_seed = [char_to_idx.get(c, 0) for c in generated[-seq_length:]]
+        while len(encoded_seed) < seq_length:
+            encoded_seed = [0] + encoded_seed
+        
+        x_pred = np.array([encoded_seed])
+        preds = model.predict(x_pred, verbose=0)[0]
+        
+        # Sort by probability
+        sorted_idx = np.argsort(preds)[::-1]
+        sorted_probs = preds[sorted_idx]
+        
+        # Find nucleus
+        cumsum = np.cumsum(sorted_probs)
+        nucleus_size = np.searchsorted(cumsum, p) + 1
+        
+        # Sample from nucleus
+        nucleus_idx = sorted_idx[:nucleus_size]
+        nucleus_probs = preds[nucleus_idx]
+        nucleus_probs = nucleus_probs / np.sum(nucleus_probs)
+        
+        next_idx = np.random.choice(nucleus_idx, p=nucleus_probs)
+        next_char = idx_to_char[next_idx]
+        
+        generated += next_char
+    
+    return generated
+
+
+# Test advanced sampling
+print("\n" + "=" * 60)
+print("ADVANCED SAMPLING")
+print("=" * 60)
+
+print("\n--- Top-k (k=10) ---")
+print(generate_text_top_k(model, seed, length=200, k=10)[seq_length:])
+
+print("\n--- Nucleus (p=0.9) ---")
+print(generate_text_nucleus(model, seed, length=200, p=0.9)[seq_length:])
+
+
+# ============================================================
+# EXERCISES
+# ============================================================
+
+print("\n" + "=" * 60)
+print("EXERCISES")
+print("=" * 60)
+
+exercises = """
+Exercise 1: Word-level Generation
+---------------------------------
+Implement word-level text generation:
+- Use word tokens instead of characters
+- Handle OOV words
+- Compare quality with character-level
+
+Exercise 2: Conditional Generation
+----------------------------------
+Add conditioning to text generation:
+- Generate text in specific style
+- Topic-controlled generation
+- Sentiment-controlled generation
+
+Exercise 3: Beam Search
+-----------------------
+Implement beam search decoding:
+- Keep top k sequences at each step
+- Score sequences by cumulative probability
+- Compare with sampling methods
+
+Exercise 4: Transformer Generation
+----------------------------------
+Replace LSTM with Transformer:
+- Use self-attention mechanism
+- Implement positional encoding
+- Compare generation quality
+"""
+
+print(exercises)
+```
+
+---

@@ -1,0 +1,526 @@
+---
+title: "Advanced IoU Metrics (GIoU, DIoU, CIoU)"
+module: 6
+labNumber: 3
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Advanced IoU Metrics (GIoU, DIoU, CIoU)
+
+## Objectives
+- Understand limitations of standard IoU
+- Implement Generalized IoU (GIoU)
+- Implement Distance IoU (DIoU)
+- Implement Complete IoU (CIoU)
+- Compare different IoU metrics
+
+## Theory
+
+### Limitations of Standard IoU
+1. IoU = 0 when boxes don't overlap (no gradient information)
+2. Doesn't consider distance between non-overlapping boxes
+3. Doesn't consider aspect ratio differences
+
+### GIoU (Generalized IoU)
+Addresses the zero-gradient problem by incorporating the smallest enclosing box:
+```
+GIoU = IoU - |C - (A ∪ B)| / |C|
+```
+where C is the smallest convex box enclosing both A and B.
+
+### DIoU (Distance IoU)
+Incorporates the normalized distance between box centers:
+```
+DIoU = IoU - ρ²(b, b^gt) / c²
+```
+where ρ is Euclidean distance between centers, c is diagonal of enclosing box.
+
+### CIoU (Complete IoU)
+Combines overlap, distance, and aspect ratio:
+```
+CIoU = IoU - ρ²/c² - αv
+```
+where v measures aspect ratio consistency, α is weighting parameter.
+
+## Complete Implementation
+
+```python
+"""
+Lab 6.2: Advanced IoU Metrics (GIoU, DIoU, CIoU)
+Object Detection Systems - Module 6
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+
+# =============================================================================
+# Section 1: GIoU Implementation
+# =============================================================================
+
+def calculate_giou(boxes1: tf.Tensor, boxes2: tf.Tensor) -> tf.Tensor:
+    """
+    Calculate Generalized IoU (GIoU) between two sets of boxes.
+    
+    GIoU = IoU - |C - Union| / |C|
+    
+    Args:
+        boxes1: Tensor of shape [N, 4] in [x_min, y_min, x_max, y_max]
+        boxes2: Tensor of shape [M, 4] in [x_min, y_min, x_max, y_max]
+    
+    Returns:
+        GIoU matrix of shape [N, M]
+    """
+    # Expand dimensions for broadcasting
+    boxes1 = tf.expand_dims(boxes1, 1)  # [N, 1, 4]
+    boxes2 = tf.expand_dims(boxes2, 0)  # [1, M, 4]
+    
+    # Unpack coordinates
+    x1_min, y1_min, x1_max, y1_max = tf.unstack(boxes1, axis=-1)
+    x2_min, y2_min, x2_max, y2_max = tf.unstack(boxes2, axis=-1)
+    
+    # Calculate intersection
+    intersect_xmin = tf.maximum(x1_min, x2_min)
+    intersect_ymin = tf.maximum(y1_min, y2_min)
+    intersect_xmax = tf.minimum(x1_max, x2_max)
+    intersect_ymax = tf.minimum(y1_max, y2_max)
+    
+    intersect_width = tf.maximum(0.0, intersect_xmax - intersect_xmin)
+    intersect_height = tf.maximum(0.0, intersect_ymax - intersect_ymin)
+    intersection_area = intersect_width * intersect_height
+    
+    # Calculate areas
+    box1_area = (x1_max - x1_min) * (y1_max - y1_min)
+    box2_area = (x2_max - x2_min) * (y2_max - y2_min)
+    
+    # Calculate union
+    union_area = box1_area + box2_area - intersection_area
+    
+    # Calculate IoU
+    epsilon = 1e-7
+    iou = intersection_area / (union_area + epsilon)
+    
+    # Calculate enclosing box (C)
+    c_xmin = tf.minimum(x1_min, x2_min)
+    c_ymin = tf.minimum(y1_min, y2_min)
+    c_xmax = tf.maximum(x1_max, x2_max)
+    c_ymax = tf.maximum(y1_max, y2_max)
+    
+    c_width = tf.maximum(0.0, c_xmax - c_xmin)
+    c_height = tf.maximum(0.0, c_ymax - c_ymin)
+    c_area = c_width * c_height
+    
+    # Calculate GIoU
+    giou = iou - (c_area - union_area) / (c_area + epsilon)
+    
+    return giou
+
+
+# =============================================================================
+# Section 2: DIoU Implementation
+# =============================================================================
+
+def calculate_diou(boxes1: tf.Tensor, boxes2: tf.Tensor) -> tf.Tensor:
+    """
+    Calculate Distance IoU (DIoU) between two sets of boxes.
+    
+    DIoU = IoU - ρ²(b, b^gt) / c²
+    
+    Args:
+        boxes1: Tensor of shape [N, 4] in [x_min, y_min, x_max, y_max]
+        boxes2: Tensor of shape [M, 4] in [x_min, y_min, x_max, y_max]
+    
+    Returns:
+        DIoU matrix of shape [N, M]
+    """
+    # Expand dimensions
+    boxes1 = tf.expand_dims(boxes1, 1)
+    boxes2 = tf.expand_dims(boxes2, 0)
+    
+    # Unpack coordinates
+    x1_min, y1_min, x1_max, y1_max = tf.unstack(boxes1, axis=-1)
+    x2_min, y2_min, x2_max, y2_max = tf.unstack(boxes2, axis=-1)
+    
+    # Calculate intersection
+    intersect_xmin = tf.maximum(x1_min, x2_min)
+    intersect_ymin = tf.maximum(y1_min, y2_min)
+    intersect_xmax = tf.minimum(x1_max, x2_max)
+    intersect_ymax = tf.minimum(y1_max, y2_max)
+    
+    intersect_width = tf.maximum(0.0, intersect_xmax - intersect_xmin)
+    intersect_height = tf.maximum(0.0, intersect_ymax - intersect_ymin)
+    intersection_area = intersect_width * intersect_height
+    
+    # Calculate areas
+    box1_area = (x1_max - x1_min) * (y1_max - y1_min)
+    box2_area = (x2_max - x2_min) * (y2_max - y2_min)
+    
+    # Calculate union
+    union_area = box1_area + box2_area - intersection_area
+    
+    # Calculate IoU
+    epsilon = 1e-7
+    iou = intersection_area / (union_area + epsilon)
+    
+    # Calculate center points
+    center_x1 = (x1_min + x1_max) / 2
+    center_y1 = (y1_min + y1_max) / 2
+    center_x2 = (x2_min + x2_max) / 2
+    center_y2 = (y2_min + y2_max) / 2
+    
+    # Calculate distance between centers
+    center_distance_sq = tf.square(center_x1 - center_x2) + tf.square(center_y1 - center_y2)
+    
+    # Calculate diagonal of enclosing box
+    c_xmin = tf.minimum(x1_min, x2_min)
+    c_ymin = tf.minimum(y1_min, y2_min)
+    c_xmax = tf.maximum(x1_max, x2_max)
+    c_ymax = tf.maximum(y1_max, y2_max)
+    
+    c_diagonal_sq = tf.square(c_xmax - c_xmin) + tf.square(c_ymax - c_ymin)
+    
+    # Calculate DIoU
+    diou = iou - center_distance_sq / (c_diagonal_sq + epsilon)
+    
+    return diou
+
+
+# =============================================================================
+# Section 3: CIoU Implementation
+# =============================================================================
+
+def calculate_ciou(boxes1: tf.Tensor, boxes2: tf.Tensor) -> tf.Tensor:
+    """
+    Calculate Complete IoU (CIoU) between two sets of boxes.
+    
+    CIoU = IoU - ρ²/c² - αv
+    where v = (4/π²) * (arctan(w_gt/h_gt) - arctan(w/h))²
+    
+    Args:
+        boxes1: Tensor of shape [N, 4] in [x_min, y_min, x_max, y_max]
+        boxes2: Tensor of shape [M, 4] in [x_min, y_min, x_max, y_max]
+    
+    Returns:
+        CIoU matrix of shape [N, M]
+    """
+    # Expand dimensions
+    boxes1 = tf.expand_dims(boxes1, 1)
+    boxes2 = tf.expand_dims(boxes2, 0)
+    
+    # Unpack coordinates
+    x1_min, y1_min, x1_max, y1_max = tf.unstack(boxes1, axis=-1)
+    x2_min, y2_min, x2_max, y2_max = tf.unstack(boxes2, axis=-1)
+    
+    # Calculate intersection
+    intersect_xmin = tf.maximum(x1_min, x2_min)
+    intersect_ymin = tf.maximum(y1_min, y2_min)
+    intersect_xmax = tf.minimum(x1_max, x2_max)
+    intersect_ymax = tf.minimum(y1_max, y2_max)
+    
+    intersect_width = tf.maximum(0.0, intersect_xmax - intersect_xmin)
+    intersect_height = tf.maximum(0.0, intersect_ymax - intersect_ymin)
+    intersection_area = intersect_width * intersect_height
+    
+    # Calculate areas
+    box1_area = (x1_max - x1_min) * (y1_max - y1_min)
+    box2_area = (x2_max - x2_min) * (y2_max - y2_min)
+    
+    # Calculate union
+    union_area = box1_area + box2_area - intersection_area
+    
+    # Calculate IoU
+    epsilon = 1e-7
+    iou = intersection_area / (union_area + epsilon)
+    
+    # Calculate center points
+    center_x1 = (x1_min + x1_max) / 2
+    center_y1 = (y1_min + y1_max) / 2
+    center_x2 = (x2_min + x2_max) / 2
+    center_y2 = (y2_min + y2_max) / 2
+    
+    # Calculate distance between centers
+    center_distance_sq = tf.square(center_x1 - center_x2) + tf.square(center_y1 - center_y2)
+    
+    # Calculate diagonal of enclosing box
+    c_xmin = tf.minimum(x1_min, x2_min)
+    c_ymin = tf.minimum(y1_min, y2_min)
+    c_xmax = tf.maximum(x1_max, x2_max)
+    c_ymax = tf.maximum(y1_max, y2_max)
+    
+    c_diagonal_sq = tf.square(c_xmax - c_xmin) + tf.square(c_ymax - c_ymin)
+    
+    # Calculate aspect ratio consistency term (v)
+    w1 = x1_max - x1_min
+    h1 = y1_max - y1_min
+    w2 = x2_max - x2_min
+    h2 = y2_max - y2_min
+    
+    # Add epsilon to avoid log(0)
+    v = (4 / (np.pi ** 2)) * tf.square(
+        tf.atan(w2 / (h2 + epsilon)) - tf.atan(w1 / (h1 + epsilon))
+    )
+    
+    # Calculate alpha
+    alpha = v / ((1 - iou) + v + epsilon)
+    
+    # Calculate CIoU
+    ciou = iou - center_distance_sq / (c_diagonal_sq + epsilon) - alpha * v
+    
+    return ciou
+
+
+# =============================================================================
+# Section 4: Comparison and Visualization
+# =============================================================================
+
+def compare_iou_metrics(boxes1: tf.Tensor, boxes2: tf.Tensor):
+    """
+    Compare all IoU metrics for given boxes.
+    """
+    iou = calculate_iou_batch(boxes1, boxes2)
+    giou = calculate_giou(boxes1, boxes2)
+    diou = calculate_diou(boxes1, boxes2)
+    ciou = calculate_ciou(boxes1, boxes2)
+    
+    return {
+        'IoU': iou.numpy(),
+        'GIoU': giou.numpy(),
+        'DIoU': diou.numpy(),
+        'CIoU': ciou.numpy()
+    }
+
+
+def visualize_iou_comparison():
+    """
+    Visualize comparison of different IoU metrics.
+    """
+    # Create test cases with different scenarios
+    test_cases = [
+        # Case 1: Perfect overlap
+        {
+            'name': 'Perfect Overlap',
+            'box1': tf.constant([[0.3, 0.3, 0.7, 0.7]]),
+            'box2': tf.constant([[0.3, 0.3, 0.7, 0.7]])
+        },
+        # Case 2: Partial overlap
+        {
+            'name': 'Partial Overlap',
+            'box1': tf.constant([[0.2, 0.2, 0.5, 0.5]]),
+            'box2': tf.constant([[0.3, 0.3, 0.6, 0.6]])
+        },
+        # Case 3: No overlap, close
+        {
+            'name': 'No Overlap (Close)',
+            'box1': tf.constant([[0.1, 0.1, 0.3, 0.3]]),
+            'box2': tf.constant([[0.35, 0.35, 0.55, 0.55]])
+        },
+        # Case 4: No overlap, far
+        {
+            'name': 'No Overlap (Far)',
+            'box1': tf.constant([[0.1, 0.1, 0.2, 0.2]]),
+            'box2': tf.constant([[0.8, 0.8, 0.9, 0.9]])
+        },
+        # Case 5: Different aspect ratios
+        {
+            'name': 'Different Aspect Ratios',
+            'box1': tf.constant([[0.3, 0.4, 0.7, 0.6]]),  # Wide
+            'box2': tf.constant([[0.4, 0.2, 0.6, 0.8]])   # Tall
+        }
+    ]
+    
+    results = []
+    
+    for case in test_cases:
+        metrics = compare_iou_metrics(case['box1'], case['box2'])
+        results.append({
+            'name': case['name'],
+            'metrics': {k: v[0, 0] for k, v in metrics.items()}
+        })
+    
+    # Print comparison table
+    print("\n" + "=" * 80)
+    print("IoU Metrics Comparison")
+    print("=" * 80)
+    print(f"{'Case':<25} {'IoU':>10} {'GIoU':>10} {'DIoU':>10} {'CIoU':>10}")
+    print("-" * 80)
+    
+    for result in results:
+        m = result['metrics']
+        print(f"{result['name']:<25} {m['IoU']:>10.4f} {m['GIoU']:>10.4f} {m['DIoU']:>10.4f} {m['CIoU']:>10.4f}")
+    
+    print("=" * 80)
+    
+    return results
+
+
+def plot_metrics_heatmap():
+    """
+    Create heatmaps comparing different IoU metrics.
+    """
+    # Create a grid of boxes
+    n_boxes = 5
+    boxes = tf.constant([
+        [0.1, 0.1, 0.3, 0.3],
+        [0.15, 0.15, 0.35, 0.35],
+        [0.5, 0.5, 0.7, 0.7],
+        [0.6, 0.6, 0.9, 0.9],
+        [0.2, 0.6, 0.4, 0.9],
+    ])
+    
+    # Calculate all metrics
+    iou = calculate_iou_batch(boxes, boxes)
+    giou = calculate_giou(boxes, boxes)
+    diou = calculate_diou(boxes, boxes)
+    ciou = calculate_ciou(boxes, boxes)
+    
+    # Plot heatmaps
+    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+    
+    metrics = [
+        ('IoU', iou),
+        ('GIoU', giou),
+        ('DIoU', diou),
+        ('CIoU', ciou)
+    ]
+    
+    for ax, (name, metric) in zip(axes.flat, metrics):
+        im = ax.imshow(metric.numpy(), cmap='RdYlGn', vmin=-1, vmax=1)
+        ax.set_title(f'{name} Matrix')
+        ax.set_xlabel('Box Index')
+        ax.set_ylabel('Box Index')
+        
+        # Add text annotations
+        for i in range(n_boxes):
+            for j in range(n_boxes):
+                text = ax.text(j, i, f'{metric[i, j].numpy():.2f}',
+                              ha="center", va="center", color="black", fontsize=8)
+        
+        plt.colorbar(im, ax=ax)
+    
+    plt.tight_layout()
+    plt.show()
+
+
+# =============================================================================
+# Section 5: Loss Functions using Advanced IoU
+# =============================================================================
+
+def giou_loss(pred_boxes: tf.Tensor, target_boxes: tf.Tensor) -> tf.Tensor:
+    """
+    GIoU loss for bounding box regression.
+    
+    Args:
+        pred_boxes: Predicted boxes [N, 4]
+        target_boxes: Target boxes [N, 4]
+    
+    Returns:
+        Loss value
+    """
+    giou = calculate_giou(pred_boxes, target_boxes)
+    # GIoU ranges from -1 to 1, loss is 1 - GIoU
+    loss = 1 - tf.linalg.diag_part(giou)
+    return tf.reduce_mean(loss)
+
+
+def diou_loss(pred_boxes: tf.Tensor, target_boxes: tf.Tensor) -> tf.Tensor:
+    """
+    DIoU loss for bounding box regression.
+    """
+    diou = calculate_diou(pred_boxes, target_boxes)
+    loss = 1 - tf.linalg.diag_part(diou)
+    return tf.reduce_mean(loss)
+
+
+def ciou_loss(pred_boxes: tf.Tensor, target_boxes: tf.Tensor) -> tf.Tensor:
+    """
+    CIoU loss for bounding box regression.
+    """
+    ciou = calculate_ciou(pred_boxes, target_boxes)
+    loss = 1 - tf.linalg.diag_part(ciou)
+    return tf.reduce_mean(loss)
+
+
+def demonstrate_loss_functions():
+    """
+    Demonstrate different IoU-based loss functions.
+    """
+    print("\n" + "=" * 60)
+    print("IoU-based Loss Functions Demo")
+    print("=" * 60)
+    
+    # Create predictions and targets with different scenarios
+    pred_boxes = tf.constant([
+        [0.2, 0.2, 0.5, 0.5],   # Good prediction
+        [0.1, 0.1, 0.3, 0.3],   # Offset prediction
+        [0.6, 0.6, 0.9, 0.9],   # Wrong location
+    ])
+    
+    target_boxes = tf.constant([
+        [0.22, 0.22, 0.52, 0.52],
+        [0.2, 0.2, 0.4, 0.4],
+        [0.2, 0.2, 0.5, 0.5],
+    ])
+    
+    # Calculate losses
+    giou_l = giou_loss(pred_boxes, target_boxes)
+    diou_l = diou_loss(pred_boxes, target_boxes)
+    ciou_l = ciou_loss(pred_boxes, target_boxes)
+    
+    print(f"\nPrediction vs Target Losses:")
+    print(f"  GIoU Loss: {giou_l.numpy():.4f}")
+    print(f"  DIoU Loss: {diou_l.numpy():.4f}")
+    print(f"  CIoU Loss: {ciou_l.numpy():.4f}")
+    
+    print("\nNote: Lower loss is better. CIoU typically provides the best gradient signal.")
+    print("=" * 60)
+
+
+# =============================================================================
+# Main Execution
+# =============================================================================
+
+if __name__ == "__main__":
+    print("\n" + "=" * 70)
+    print("Lab 6.2: Advanced IoU Metrics (GIoU, DIoU, CIoU)")
+    print("=" * 70)
+    
+    # Run comparison
+    results = visualize_iou_comparison()
+    
+    # Plot heatmaps
+    print("\nGenerating metric comparison heatmaps...")
+    plot_metrics_heatmap()
+    
+    # Demonstrate loss functions
+    demonstrate_loss_functions()
+    
+    print("\n" + "=" * 70)
+    print("Lab 6.2 Complete!")
+    print("=" * 70)
+```
+
+## Expected Output
+
+```
+================================================================================
+IoU Metrics Comparison
+================================================================================
+Case                              IoU       GIoU       DIoU       CIoU
+--------------------------------------------------------------------------------
+Perfect Overlap                  1.0000     1.0000     1.0000     1.0000
+Partial Overlap                  0.3913     0.2500     0.3056     0.2944
+No Overlap (Close)               0.0000    -0.1429    -0.0400    -0.0512
+No Overlap (Far)                 0.0000    -0.7778    -0.6800    -0.6912
+Different Aspect Ratios          0.1429    -0.0408    -0.0408    -0.1735
+================================================================================
+```
+
+## Key Insights
+
+1. **GIoU**: Provides gradient even when boxes don't overlap (-1 to 1 range)
+2. **DIoU**: Penalizes based on center distance, good for convergence
+3. **CIoU**: Best overall, considers overlap, distance, and aspect ratio
+
+---

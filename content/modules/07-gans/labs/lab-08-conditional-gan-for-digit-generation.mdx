@@ -1,0 +1,335 @@
+---
+title: "Conditional GAN for Digit Generation"
+module: 7
+labNumber: 8
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Conditional GAN for Digit Generation
+
+## Objectives
+- Implement Conditional GAN (CGAN)
+- Generate digits conditioned on class labels
+- Control generation with label input
+- Visualize conditional generation
+
+## Theory Overview
+
+Conditional GANs incorporate label information:
+- Generator: G(z, y) where y is the class label
+- Discriminator: D(x, y) classifies real/fake given label
+
+This allows controlled generation of specific classes.
+
+## Complete Implementation
+
+```python
+"""
+Lab 7.7: Conditional GAN for Digit Generation
+===============================================
+CGAN implementation for generating specific MNIST digits.
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+from tensorflow import keras
+from tensorflow.keras import layers
+import time
+import os
+
+os.makedirs('cgan_output', exist_ok=True)
+
+# =============================================================================
+# Part 1: Load MNIST with Labels
+# =============================================================================
+
+# Load MNIST
+(train_images, train_labels), (_, _) = keras.datasets.mnist.load_data()
+
+# Preprocess
+train_images = train_images.reshape(-1, 28, 28, 1).astype('float32')
+train_images = (train_images - 127.5) / 127.5
+train_labels = train_labels.astype('int32')
+
+NUM_CLASSES = 10
+IMG_SHAPE = (28, 28, 1)
+LATENT_DIM = 100
+
+print(f"Training images: {train_images.shape}")
+print(f"Training labels: {train_labels.shape}")
+
+# =============================================================================
+# Part 2: Build Conditional Generator
+# =============================================================================
+
+def build_conditional_generator(latent_dim, num_classes, img_shape):
+    """
+    Build conditional generator that takes both noise and label.
+    
+    Architecture:
+    - Noise input: latent_dim
+    - Label input: num_classes (one-hot)
+    - Concatenate and process through upsampling layers
+    """
+    # Noise input
+    noise_input = keras.Input(shape=(latent_dim,), name='noise_input')
+    
+    # Label input (will be embedded)
+    label_input = keras.Input(shape=(1,), dtype='int32', name='label_input')
+    
+    # Embed label to same dimension as latent space
+    label_embedding = layers.Embedding(num_classes, latent_dim)(label_input)
+    label_embedding = layers.Flatten()(label_embedding)
+    
+    # Concatenate noise and label embedding
+    merged = layers.Concatenate()([noise_input, label_embedding])
+    
+    # Foundation: 7x7x256
+    x = layers.Dense(7 * 7 * 256)(merged)
+    x = layers.Reshape((7, 7, 256))(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.ReLU()(x)
+    
+    # 7x7 -> 14x14
+    x = layers.Conv2DTranspose(128, 5, strides=2, padding='same', use_bias=False)(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.ReLU()(x)
+    
+    # 14x14 -> 28x28
+    x = layers.Conv2DTranspose(64, 5, strides=2, padding='same', use_bias=False)(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.ReLU()(x)
+    
+    # Output
+    output = layers.Conv2D(1, 5, padding='same', activation='tanh')(x)
+    
+    model = keras.Model([noise_input, label_input], output, name='Conditional_Generator')
+    return model
+
+# Create generator
+generator = build_conditional_generator(LATENT_DIM, NUM_CLASSES, IMG_SHAPE)
+print("=== Conditional Generator ===")
+generator.summary()
+
+# Test generator
+noise = tf.random.normal([5, LATENT_DIM])
+labels = tf.constant([[0], [1], [2], [3], [4]], dtype='int32')
+generated = generator([noise, labels], training=False)
+print(f"\nGenerated shape: {generated.shape}")
+
+# =============================================================================
+# Part 3: Build Conditional Discriminator
+# =============================================================================
+
+def build_conditional_discriminator(num_classes, img_shape):
+    """
+    Build conditional discriminator that takes both image and label.
+    """
+    # Image input
+    img_input = keras.Input(shape=img_shape, name='image_input')
+    
+    # Label input
+    label_input = keras.Input(shape=(1,), dtype='int32', name='label_input')
+    
+    # Embed label and reshape to match image dimensions
+    label_embedding = layers.Embedding(num_classes, np.prod(img_shape))(label_input)
+    label_embedding = layers.Reshape(img_shape)(label_embedding)
+    
+    # Concatenate image and label embedding
+    merged = layers.Concatenate()([img_input, label_embedding])
+    
+    # Convolutional layers
+    x = layers.Conv2D(64, 3, strides=2, padding='same')(merged)
+    x = layers.LeakyReLU(0.2)(x)
+    x = layers.Dropout(0.25)(x)
+    
+    x = layers.Conv2D(128, 3, strides=2, padding='same', use_bias=False)(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.LeakyReLU(0.2)(x)
+    x = layers.Dropout(0.25)(x)
+    
+    x = layers.Conv2D(256, 3, strides=2, padding='same', use_bias=False)(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.LeakyReLU(0.2)(x)
+    x = layers.Dropout(0.25)(x)
+    
+    # Output
+    x = layers.Flatten()(x)
+    output = layers.Dense(1, activation='sigmoid')(x)
+    
+    model = keras.Model([img_input, label_input], output, name='Conditional_Discriminator')
+    return model
+
+# Create discriminator
+discriminator = build_conditional_discriminator(NUM_CLASSES, IMG_SHAPE)
+print("\n=== Conditional Discriminator ===")
+discriminator.summary()
+
+# Test discriminator
+decision = discriminator([generated, labels], training=False)
+print(f"\nDiscriminator output: {decision.numpy().flatten()}")
+
+# =============================================================================
+# Part 4: Training Loop
+# =============================================================================
+
+class ConditionalGAN(keras.Model):
+    """Conditional GAN for MNIST digit generation."""
+    
+    def __init__(self, generator, discriminator, latent_dim, num_classes):
+        super().__init__()
+        self.generator = generator
+        self.discriminator = discriminator
+        self.latent_dim = latent_dim
+        self.num_classes = num_classes
+        
+        self.g_optimizer = keras.optimizers.Adam(0.0002, beta_1=0.5)
+        self.d_optimizer = keras.optimizers.Adam(0.0002, beta_1=0.5)
+        self.cross_entropy = keras.losses.BinaryCrossentropy()
+    
+    def compile(self):
+        super().compile()
+    
+    @tf.function
+    def train_step(self, data):
+        images, labels = data
+        batch_size = tf.shape(images)[0]
+        
+        # Generate noise
+        noise = tf.random.normal([batch_size, self.latent_dim])
+        
+        # Generate fake images with labels
+        generated_images = self.generator([noise, labels], training=True)
+        
+        # ======================================================================
+        # Train Discriminator
+        # ======================================================================
+        with tf.GradientTape() as tape_d:
+            real_output = self.discriminator([images, labels], training=True)
+            fake_output = self.discriminator([generated_images, labels], training=True)
+            
+            d_loss_real = self.cross_entropy(tf.ones_like(real_output) * 0.9, real_output)
+            d_loss_fake = self.cross_entropy(tf.zeros_like(fake_output), fake_output)
+            d_loss = d_loss_real + d_loss_fake
+        
+        grads_d = tape_d.gradient(d_loss, self.discriminator.trainable_variables)
+        self.d_optimizer.apply_gradients(zip(grads_d, self.discriminator.trainable_variables))
+        
+        # ======================================================================
+        # Train Generator
+        # ======================================================================
+        noise = tf.random.normal([batch_size, self.latent_dim])
+        
+        with tf.GradientTape() as tape_g:
+            generated_images = self.generator([noise, labels], training=True)
+            fake_output = self.discriminator([generated_images, labels], training=True)
+            g_loss = self.cross_entropy(tf.ones_like(fake_output), fake_output)
+        
+        grads_g = tape_g.gradient(g_loss, self.generator.trainable_variables)
+        self.g_optimizer.apply_gradients(zip(grads_g, self.generator.trainable_variables))
+        
+        return {'d_loss': d_loss, 'g_loss': g_loss}
+
+# Create and compile CGAN
+cgan = ConditionalGAN(generator, discriminator, LATENT_DIM, NUM_CLASSES)
+cgan.compile()
+
+# =============================================================================
+# Part 5: Training
+# =============================================================================
+
+# Prepare dataset
+dataset = tf.data.Dataset.from_tensor_slices((train_images, train_labels))
+dataset = dataset.shuffle(60000).batch(256, drop_remainder=True)
+
+# Training parameters
+EPOCHS = 50
+
+# Callback to generate images
+class CGANCallback(keras.callbacks.Callback):
+    def __init__(self, latent_dim, num_classes):
+        self.latent_dim = latent_dim
+        self.num_classes = num_classes
+        self.seed_noise = tf.random.normal([10, latent_dim])
+        self.seed_labels = tf.constant([[i] for i in range(10)], dtype='int32')
+    
+    def on_epoch_end(self, epoch, logs=None):
+        if (epoch + 1) % 10 == 0:
+            generated = self.model.generator(
+                [self.seed_noise, self.seed_labels], training=False
+            )
+            
+            fig, axes = plt.subplots(2, 5, figsize=(12, 5))
+            for i, ax in enumerate(axes.flat):
+                ax.imshow(generated[i, :, :, 0] * 0.5 + 0.5, cmap='gray')
+                ax.set_title(f'Digit: {i}')
+                ax.axis('off')
+            plt.suptitle(f'Conditional Generation - Epoch {epoch+1}')
+            plt.tight_layout()
+            plt.savefig(f'cgan_output/cgan_epoch_{epoch+1:03d}.png', dpi=150)
+            plt.close()
+
+# Train
+print("\nStarting Conditional GAN training...")
+history = cgan.fit(
+    dataset,
+    epochs=EPOCHS,
+    callbacks=[CGANCallback(LATENT_DIM, NUM_CLASSES)],
+    verbose=1
+)
+
+# =============================================================================
+# Part 6: Generate All Digits
+# =============================================================================
+
+def generate_all_digits(generator, latent_dim):
+    """Generate samples of all 10 digits."""
+    fig, axes = plt.subplots(10, 10, figsize=(15, 15))
+    
+    for digit in range(10):
+        noise = tf.random.normal([10, latent_dim])
+        labels = tf.constant([[digit]] * 10, dtype='int32')
+        generated = generator([noise, labels], training=False)
+        
+        for i in range(10):
+            axes[digit, i].imshow(generated[i, :, :, 0] * 0.5 + 0.5, cmap='gray')
+            axes[digit, i].axis('off')
+            if i == 0:
+                axes[digit, i].set_ylabel(f'Digit {digit}', rotation=0, 
+                                          labelpad=30, fontsize=12)
+    
+    plt.suptitle('Conditional Generation - All Digits', fontsize=16)
+    plt.tight_layout()
+    plt.savefig('cgan_output/all_digits.png', dpi=150)
+    plt.show()
+
+generate_all_digits(generator, LATENT_DIM)
+
+# =============================================================================
+# Part 7: Visualize Results
+# =============================================================================
+
+# Plot losses
+plt.figure(figsize=(10, 5))
+plt.plot(history.history['g_loss'], label='Generator', color='red')
+plt.plot(history.history['d_loss'], label='Discriminator', color='blue')
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
+plt.title('Conditional GAN Training Losses')
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.savefig('cgan_output/training_losses.png', dpi=150)
+plt.show()
+
+# Save models
+generator.save('cgan_output/cgan_generator.h5')
+discriminator.save('cgan_output/cgan_discriminator.h5')
+
+print("\n=== Conditional GAN Training Complete ===")
+print(f"Final Generator Loss: {history.history['g_loss'][-1]:.4f}")
+print(f"Final Discriminator Loss: {history.history['d_loss'][-1]:.4f}")
+```
+
+---

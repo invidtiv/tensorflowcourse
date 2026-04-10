@@ -1,0 +1,451 @@
+---
+title: "Convolution Operation from Scratch - Part 2"
+module: 3
+labNumber: 3
+difficulty: "easy"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Convolution Operation from Scratch - Part 2
+
+## Objectives
+- Implement advanced convolution operations
+- Understand backpropagation through convolution
+- Build a complete convolutional layer with learnable parameters
+
+## Prerequisites
+- Completion of Lab 3.1
+- Understanding of gradient descent
+
+```python
+"""
+Lab 3.2: Convolution Operation from Scratch - Part 2
+Advanced convolution operations and backpropagation
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+import tensorflow as tf
+from tensorflow import keras
+
+# =============================================================================
+# Section 1: Convolution with Bias and Activation
+# =============================================================================
+
+class Conv2DLayer:
+    """
+    A complete convolutional layer with learnable parameters.
+    """
+    
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0):
+        """
+        Initialize the convolutional layer.
+        
+        Args:
+            in_channels: Number of input channels
+            out_channels: Number of output channels (filters)
+            kernel_size: Size of the convolutional kernel (assumes square)
+            stride: Stride for convolution
+            padding: Padding size
+        """
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.padding = padding
+        
+        # Initialize weights using He initialization
+        # He et al. (2015): sqrt(2 / fan_in)
+        fan_in = kernel_size * kernel_size * in_channels
+        self.weights = np.random.randn(kernel_size, kernel_size, 
+                                       in_channels, out_channels) * np.sqrt(2.0 / fan_in)
+        
+        # Initialize bias to zeros
+        self.bias = np.zeros(out_channels)
+        
+        # Cache for backward pass
+        self.cache = None
+    
+    def forward(self, X):
+        """
+        Forward pass through the convolutional layer.
+        
+        Args:
+            X: Input of shape (batch_size, H, W, C_in)
+        
+        Returns:
+            Output of shape (batch_size, H_out, W_out, C_out)
+        """
+        batch_size, H, W, C_in = X.shape
+        
+        # Add padding
+        if self.padding > 0:
+            X_padded = np.pad(X, ((0, 0), (self.padding, self.padding), 
+                                  (self.padding, self.padding), (0, 0)), 
+                            mode='constant', constant_values=0)
+        else:
+            X_padded = X
+        
+        # Calculate output dimensions
+        H_out = (H + 2 * self.padding - self.kernel_size) // self.stride + 1
+        W_out = (W + 2 * self.padding - self.kernel_size) // self.stride + 1
+        
+        # Initialize output
+        output = np.zeros((batch_size, H_out, W_out, self.out_channels))
+        
+        # Perform convolution for each sample in batch
+        for b in range(batch_size):
+            for c_out in range(self.out_channels):
+                for i in range(H_out):
+                    for j in range(W_out):
+                        i_start = i * self.stride
+                        j_start = j * self.stride
+                        
+                        # Extract region
+                        region = X_padded[b, i_start:i_start + self.kernel_size,
+                                         j_start:j_start + self.kernel_size, :]
+                        
+                        # Convolution operation
+                        output[b, i, j, c_out] = np.sum(region * self.weights[:, :, :, c_out])
+                
+                # Add bias
+                output[b, :, :, c_out] += self.bias[c_out]
+        
+        # Cache for backward pass
+        self.cache = (X, X_padded)
+        
+        return output
+    
+    def backward(self, dout):
+        """
+        Backward pass through the convolutional layer.
+        
+        Args:
+            dout: Gradient from next layer (batch_size, H_out, W_out, C_out)
+        
+        Returns:
+            dX: Gradient w.r.t. input
+            dW: Gradient w.r.t. weights
+            db: Gradient w.r.t. bias
+        """
+        X, X_padded = self.cache
+        batch_size, H, W, C_in = X.shape
+        _, H_out, W_out, _ = dout.shape
+        
+        # Initialize gradients
+        dX_padded = np.zeros_like(X_padded)
+        dW = np.zeros_like(self.weights)
+        db = np.zeros_like(self.bias)
+        
+        # Compute gradients
+        for b in range(batch_size):
+            for c_out in range(self.out_channels):
+                # Gradient w.r.t. bias
+                db[c_out] += np.sum(dout[b, :, :, c_out])
+                
+                for i in range(H_out):
+                    for j in range(W_out):
+                        i_start = i * self.stride
+                        j_start = j * self.stride
+                        
+                        region = X_padded[b, i_start:i_start + self.kernel_size,
+                                         j_start:j_start + self.kernel_size, :]
+                        
+                        # Gradient w.r.t. weights
+                        dW[:, :, :, c_out] += region * dout[b, i, j, c_out]
+                        
+                        # Gradient w.r.t. input
+                        dX_padded[b, i_start:i_start + self.kernel_size,
+                                 j_start:j_start + self.kernel_size, :] += \
+                            self.weights[:, :, :, c_out] * dout[b, i, j, c_out]
+        
+        # Remove padding from dX if needed
+        if self.padding > 0:
+            dX = dX_padded[:, self.padding:-self.padding, 
+                          self.padding:-self.padding, :]
+        else:
+            dX = dX_padded
+        
+        return dX, dW, db
+
+
+# =============================================================================
+# Section 2: Test the Convolutional Layer
+# =============================================================================
+
+print("=" * 60)
+print("CONVOLUTIONAL LAYER WITH LEARNABLE PARAMETERS")
+print("=" * 60)
+
+# Create a test batch
+batch_size = 2
+H, W, C_in = 8, 8, 3
+C_out = 4
+kernel_size = 3
+
+X_test = np.random.randn(batch_size, H, W, C_in).astype(np.float32)
+
+# Create our custom layer
+conv_layer = Conv2DLayer(C_in, C_out, kernel_size, stride=1, padding=1)
+
+print(f"\nInput shape: {X_test.shape}")
+print(f"Layer config: {C_in} -> {C_out} channels, kernel={kernel_size}x{kernel_size}")
+
+# Forward pass
+output = conv_layer.forward(X_test)
+print(f"\nOutput shape: {output.shape}")
+
+# Verify shape calculation
+expected_H = (H + 2 * 1 - kernel_size) // 1 + 1
+expected_W = (W + 2 * 1 - kernel_size) // 1 + 1
+print(f"Expected output shape: ({batch_size}, {expected_H}, {expected_W}, {C_out})")
+
+# Test backward pass
+dout = np.random.randn(*output.shape).astype(np.float32)
+dX, dW, db = conv_layer.backward(dout)
+
+print(f"\nGradient shapes:")
+print(f"  dX: {dX.shape}")
+print(f"  dW: {dW.shape}")
+print(f"  db: {db.shape}")
+
+
+# =============================================================================
+# Section 3: Compare with Keras
+# =============================================================================
+
+def compare_with_keras():
+    """Compare our implementation with Keras Conv2D."""
+    
+    print("\n" + "=" * 60)
+    print("COMPARISON WITH KERAS CONV2D")
+    print("=" * 60)
+    
+    # Create test input
+    X = np.random.randn(4, 28, 28, 1).astype(np.float32)
+    
+    # Our implementation
+    our_conv = Conv2DLayer(1, 8, kernel_size=3, stride=1, padding=1)
+    our_output = our_conv.forward(X)
+    
+    # Keras implementation
+    keras_conv = keras.layers.Conv2D(8, 3, padding='same', 
+                                     kernel_initializer='he_normal',
+                                     input_shape=(28, 28, 1))
+    # Build the layer
+    _ = keras_conv(X)
+    
+    # Set our weights to Keras layer
+    # Our weights: (3, 3, 1, 8), Keras expects: (3, 3, 1, 8)
+    keras_conv.set_weights([our_conv.weights, our_conv.bias])
+    
+    keras_output = keras_conv(X).numpy()
+    
+    print(f"\nOur output shape: {our_output.shape}")
+    print(f"Keras output shape: {keras_output.shape}")
+    
+    diff = np.abs(our_output - keras_output)
+    print(f"\nMax absolute difference: {np.max(diff):.10f}")
+    print(f"Mean absolute difference: {np.mean(diff):.10f}")
+    
+    if np.max(diff) < 1e-5:
+        print("\n✓ Forward pass matches Keras!")
+    else:
+        print("\n✗ Results differ from Keras")
+
+compare_with_keras()
+
+
+# =============================================================================
+# Section 4: Receptive Field Calculation
+# =============================================================================
+
+def calculate_receptive_field(layer_configs):
+    """
+    Calculate the receptive field size for a CNN architecture.
+    
+    Args:
+        layer_configs: List of dicts with 'kernel_size', 'stride', 'dilation'
+    
+    Returns:
+        receptive_field: Size of the receptive field
+    """
+    rf = 1  # Initial receptive field
+    stride_product = 1
+    
+    for config in layer_configs:
+        k = config.get('kernel_size', 3)
+        s = config.get('stride', 1)
+        d = config.get('dilation', 1)
+        
+        # Effective kernel size with dilation
+        effective_k = k + (k - 1) * (d - 1)
+        
+        # Update receptive field
+        rf = rf + (effective_k - 1) * stride_product
+        stride_product *= s
+    
+    return rf
+
+
+print("\n" + "=" * 60)
+print("RECEPTIVE FIELD CALCULATION")
+print("=" * 60)
+
+# Example: VGG-like architecture
+vgg_layers = [
+    {'kernel_size': 3, 'stride': 1},
+    {'kernel_size': 3, 'stride': 1},
+    {'kernel_size': 2, 'stride': 2},  # Pooling
+    {'kernel_size': 3, 'stride': 1},
+    {'kernel_size': 3, 'stride': 1},
+    {'kernel_size': 2, 'stride': 2},  # Pooling
+    {'kernel_size': 3, 'stride': 1},
+    {'kernel_size': 3, 'stride': 1},
+    {'kernel_size': 3, 'stride': 1},
+    {'kernel_size': 2, 'stride': 2},  # Pooling
+]
+
+rf = calculate_receptive_field(vgg_layers)
+print(f"\nVGG-like architecture receptive field: {rf}x{rf}")
+
+# Example: ResNet with dilated convolution
+resnet_layers = [
+    {'kernel_size': 7, 'stride': 2},
+    {'kernel_size': 3, 'stride': 1},
+    {'kernel_size': 3, 'stride': 1},
+    {'kernel_size': 3, 'stride': 2},
+    {'kernel_size': 3, 'stride': 1, 'dilation': 2},
+    {'kernel_size': 3, 'stride': 1, 'dilation': 2},
+]
+
+rf_resnet = calculate_receptive_field(resnet_layers)
+print(f"ResNet with dilation receptive field: {rf_resnet}x{rf_resnet}")
+
+
+# =============================================================================
+# Section 5: Parameter Count Analysis
+# =============================================================================
+
+def count_parameters(in_channels, out_channels, kernel_size, use_bias=True):
+    """Count parameters in a convolutional layer."""
+    weights = kernel_size * kernel_size * in_channels * out_channels
+    bias = out_channels if use_bias else 0
+    return weights + bias
+
+
+print("\n" + "=" * 60)
+print("PARAMETER COUNT ANALYSIS")
+print("=" * 60)
+
+# Standard convolution
+std_params = count_parameters(256, 512, 3)
+print(f"\nStandard Conv (256 -> 512, 3x3): {std_params:,} parameters")
+
+# Depthwise separable convolution
+depthwise_params = count_parameters(256, 256, 3)  # Depthwise
+pointwise_params = count_parameters(256, 512, 1)  # Pointwise
+separable_params = depthwise_params + pointwise_params
+print(f"Depthwise Separable Conv (256 -> 512): {separable_params:,} parameters")
+
+print(f"\nParameter reduction: {(1 - separable_params/std_params)*100:.1f}%")
+
+
+# =============================================================================
+# Section 6: Grouped Convolution
+# =============================================================================
+
+def grouped_convolution(X, weights, groups=1):
+    """
+    Perform grouped convolution.
+    
+    Args:
+        X: Input (batch, H, W, C_in)
+        weights: Weights (k, k, C_in/groups, C_out)
+        groups: Number of groups
+    
+    Returns:
+        Output (batch, H_out, W_out, C_out)
+    """
+    batch, H, W, C_in = X.shape
+    k, _, _, C_out = weights.shape
+    
+    assert C_in % groups == 0
+    assert C_out % groups == 0
+    
+    channels_per_group_in = C_in // groups
+    channels_per_group_out = C_out // groups
+    
+    outputs = []
+    
+    for g in range(groups):
+        # Extract group input
+        X_group = X[:, :, :, g*channels_per_group_in:(g+1)*channels_per_group_in]
+        
+        # Extract group weights
+        W_group = weights[:, :, :, g*channels_per_group_out:(g+1)*channels_per_group_out]
+        
+        # Perform convolution for this group
+        # (Simplified - full implementation would use our conv2d function)
+        group_output = np.zeros((batch, H-k+1, W-k+1, channels_per_group_out))
+        
+        for b in range(batch):
+            for c in range(channels_per_group_out):
+                for i in range(H-k+1):
+                    for j in range(W-k+1):
+                        region = X_group[b, i:i+k, j:j+k, :]
+                        group_output[b, i, j, c] = np.sum(region * W_group[:, :, :, c])
+        
+        outputs.append(group_output)
+    
+    return np.concatenate(outputs, axis=-1)
+
+
+print("\n" + "=" * 60)
+print("GROUPED CONVOLUTION (ResNeXt / Xception style)")
+print("=" * 60)
+
+# Test grouped convolution
+X_group = np.random.randn(2, 14, 14, 64).astype(np.float32)
+W_group = np.random.randn(3, 3, 32, 128).astype(np.float32)  # 32 = 64/2, 128 = 64*2
+
+group_output = grouped_convolution(X_group, W_group, groups=2)
+print(f"\nInput shape: {X_group.shape}")
+print(f"Groups: 2")
+print(f"Output shape: {group_output.shape}")
+
+
+# =============================================================================
+# Section 7: Exercises
+# =============================================================================
+
+print("\n" + "=" * 60)
+print("EXERCISES")
+print("=" * 60)
+
+print("""
+Exercise 1: Implement Transposed Convolution
+- Create a function for transposed (deconvolution) operation
+- Use it for upsampling
+
+Exercise 2: Implement Dilated Convolution
+- Add dilation parameter to Conv2DLayer
+- Visualize the expanded receptive field
+
+Exercise 3: Implement Batch Normalization
+- Add batch norm after convolution
+- Compare training stability
+
+Exercise 4: Implement Atrous Spatial Pyramid Pooling (ASPP)
+- Multiple dilated convolutions in parallel
+- Concatenate outputs
+""")
+
+print("\n" + "=" * 60)
+print("Lab 3.2 Complete!")
+print("=" * 60)
+```
+
+---
+
+<a name="lab-33"></a>

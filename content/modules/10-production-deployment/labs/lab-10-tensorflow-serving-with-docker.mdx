@@ -1,0 +1,631 @@
+---
+title: "TensorFlow Serving with Docker"
+module: 10
+labNumber: 10
+difficulty: "hard"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# TensorFlow Serving with Docker
+
+## Objectives
+- Deploy TensorFlow Serving using Docker
+- Configure multiple models
+- Implement model versioning and rollback
+- Set up production-ready serving
+
+## Complete Implementation
+
+```python
+"""
+Lab 10.9: TensorFlow Serving with Docker
+========================================
+Production deployment of TensorFlow Serving using Docker and Docker Compose.
+"""
+
+import tensorflow as tf
+import numpy as np
+import os
+import json
+
+print("=" * 60)
+print("Lab 10.9: TensorFlow Serving with Docker")
+print("=" * 60)
+
+# ============================================================
+# PART 1: Create Multiple Models
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 1: Creating Multiple Models")
+print("=" * 60)
+
+# Model 1: MNIST Classifier
+def create_mnist_model():
+    model = tf.keras.Sequential([
+        tf.keras.layers.Conv2D(32, 3, activation='relu', input_shape=(28, 28, 1)),
+        tf.keras.layers.MaxPooling2D(),
+        tf.keras.layers.Conv2D(64, 3, activation='relu'),
+        tf.keras.layers.MaxPooling2D(),
+        tf.keras.layers.Flatten(),
+        tf.keras.layers.Dense(64, activation='relu'),
+        tf.keras.layers.Dense(10, activation='softmax')
+    ])
+    return model
+
+# Model 2: Simple Regressor
+def create_regressor_model():
+    model = tf.keras.Sequential([
+        tf.keras.layers.Dense(64, activation='relu', input_shape=(5,)),
+        tf.keras.layers.Dense(32, activation='relu'),
+        tf.keras.layers.Dense(1)
+    ])
+    return model
+
+# Train and export MNIST model
+print("Creating MNIST classifier...")
+mnist_model = create_mnist_model()
+mnist_model.compile(optimizer='adam', loss='sparse_categorical_crossentropy')
+
+(x_train, y_train), _ = tf.keras.datasets.mnist.load_data()
+x_train = x_train[:1000].reshape(-1, 28, 28, 1).astype('float32') / 255.0
+mnist_model.fit(x_train, y_train[:1000], epochs=2, verbose=0)
+
+# Export MNIST model
+mnist_path = "docker_models/mnist/1"
+os.makedirs(mnist_path, exist_ok=True)
+tf.saved_model.save(mnist_model, mnist_path)
+print(f"MNIST model exported to: {mnist_path}")
+
+# Train and export regressor
+print("\nCreating regressor model...")
+regressor = create_regressor_model()
+regressor.compile(optimizer='adam', loss='mse')
+
+x_reg = np.random.random((1000, 5))
+y_reg = np.random.random((1000, 1))
+regressor.fit(x_reg, y_reg, epochs=2, verbose=0)
+
+# Export regressor
+regressor_path = "docker_models/regressor/1"
+os.makedirs(regressor_path, exist_ok=True)
+tf.saved_model.save(regressor, regressor_path)
+print(f"Regressor model exported to: {regressor_path}")
+
+# ============================================================
+# PART 2: Model Configuration File
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 2: Creating Model Configuration")
+print("=" * 60)
+
+# Create models.config
+models_config = """model_config_list {
+  config {
+    name: 'mnist'
+    base_path: '/models/mnist'
+    model_platform: "tensorflow"
+    model_version_policy: {
+      all: {}
+    }
+  }
+  config {
+    name: 'regressor'
+    base_path: '/models/regressor'
+    model_platform: "tensorflow"
+    model_version_policy: {
+      latest: {
+        num_versions: 2
+      }
+    }
+  }
+}
+"""
+
+with open('docker_models/models.config', 'w') as f:
+    f.write(models_config)
+
+print("Models configuration created: docker_models/models.config")
+print("\nConfiguration content:")
+print(models_config)
+
+# ============================================================
+# PART 3: Docker Commands
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 3: Docker Commands")
+print("=" * 60)
+
+docker_commands = """
+# ============================================
+# Docker Commands for TensorFlow Serving
+# ============================================
+
+# 1. Basic Single Model Serving
+# -----------------------------
+docker run -p 8501:8501 \\
+  --mount type=bind,source=$(pwd)/docker_models/mnist,target=/models/mnist \\
+  -e MODEL_NAME=mnist \\
+  -t tensorflow/serving
+
+# 2. Multiple Models with Config File
+# -----------------------------------
+docker run -p 8501:8501 \\
+  --mount type=bind,source=$(pwd)/docker_models,target=/models \\
+  -t tensorflow/serving \\
+  --model_config_file=/models/models.config
+
+# 3. With Monitoring and Logging
+# ------------------------------
+docker run -p 8501:8501 -p 8500:8500 \\
+  --mount type=bind,source=$(pwd)/docker_models,target=/models \\
+  -e MODEL_NAME=mnist \\
+  -t tensorflow/serving \\
+  --monitoring_config_file=/models/monitoring.config \\
+  --rest_api_timeout_in_ms=30000
+
+# 4. With Resource Limits
+# -----------------------
+docker run -p 8501:8501 \\
+  --memory=2g \\
+  --cpus=2 \\
+  --mount type=bind,source=$(pwd)/docker_models,target=/models \\
+  -e MODEL_NAME=mnist \\
+  -t tensorflow/serving
+
+# 5. Production Mode with Batching
+# --------------------------------
+docker run -p 8501:8501 \\
+  --mount type=bind,source=$(pwd)/docker_models,target=/models \\
+  --mount type=bind,source=$(pwd)/batch_config,target=/batch_config \\
+  -t tensorflow/serving \\
+  --enable_batching \\
+  --batching_config_file=/batch_config/batching.config
+
+# 6. With Custom Entry Point
+# --------------------------
+docker run -p 8501:8501 \\
+  --entrypoint tensorflow_model_server \\
+  --mount type=bind,source=$(pwd)/docker_models,target=/models \\
+  tensorflow/serving \\
+  --model_name=mnist \\
+  --model_base_path=/models/mnist \\
+  --rest_api_port=8501
+
+# 7. Detached Mode (Background)
+# -----------------------------
+docker run -d -p 8501:8501 \\
+  --name tf-serving \\
+  --mount type=bind,source=$(pwd)/docker_models,target=/models \\
+  -e MODEL_NAME=mnist \\
+  -t tensorflow/serving
+
+# Check logs
+docker logs tf-serving
+
+# Stop container
+docker stop tf-serving
+docker rm tf-serving
+"""
+
+print(docker_commands)
+
+# Save to file
+with open('docker_commands.sh', 'w') as f:
+    f.write(docker_commands)
+print("Docker commands saved to: docker_commands.sh")
+
+# ============================================================
+# PART 4: Docker Compose Configuration
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 4: Docker Compose Configuration")
+print("=" * 60)
+
+docker_compose = """version: '3.8'
+
+services:
+  tensorflow-serving:
+    image: tensorflow/serving:latest
+    ports:
+      - "8501:8501"  # REST API
+      - "8500:8500"  # gRPC
+    volumes:
+      - ./docker_models:/models
+    environment:
+      - MODEL_CONFIG_FILE=/models/models.config
+    command: >
+      tensorflow_model_server
+      --model_config_file=/models/models.config
+      --rest_api_port=8501
+      --allow_version_labels_for_unavailable_models
+      --rest_api_timeout_in_ms=30000
+      --enable_model_warmup
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          cpus: '1'
+          memory: 2G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/v1/models/mnist"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+
+  # Optional: Monitoring with Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    depends_on:
+      - tensorflow-serving
+    profiles:
+      - monitoring
+
+  # Optional: Load Balancer (for multiple serving instances)
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - tensorflow-serving
+    profiles:
+      - scaled
+"""
+
+with open('docker-compose.yml', 'w') as f:
+    f.write(docker_compose)
+
+print("Docker Compose configuration created: docker-compose.yml")
+
+# ============================================================
+# PART 5: Batching Configuration
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 5: Batching Configuration")
+print("=" * 60)
+
+batching_config = """max_batch_size { value: 32 }
+batch_timeout_micros { value: 10000 }
+max_enqueued_batches { value: 100 }
+num_batch_threads { value: 8 }
+pad_variable_length_inputs: true
+"""
+
+os.makedirs('batch_config', exist_ok=True)
+with open('batch_config/batching.config', 'w') as f:
+    f.write(batching_config)
+
+print("Batching configuration created: batch_config/batching.config")
+print("\nConfiguration content:")
+print(batching_config)
+
+# ============================================================
+# PART 6: Model Versioning and Rollback
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 6: Model Versioning and Rollback")
+print("=" * 60)
+
+# Create version 2 of MNIST model
+print("Creating version 2 of MNIST model...")
+mnist_v2 = create_mnist_model()
+mnist_v2.compile(optimizer='adam', loss='sparse_categorical_crossentropy')
+mnist_v2.fit(x_train, y_train[:1000], epochs=3, verbose=0)  # Train longer
+
+mnist_v2_path = "docker_models/mnist/2"
+os.makedirs(mnist_v2_path, exist_ok=True)
+tf.saved_model.save(mnist_v2, mnist_v2_path)
+print(f"MNIST v2 exported to: {mnist_v2_path}")
+
+versioning_guide = """
+# Model Versioning and Rollback
+# =============================
+
+## Version Management
+
+1. Directory Structure:
+   ```
+   models/
+   └── mnist/
+       ├── 1/          # Version 1
+       │   └── ...
+       ├── 2/          # Version 2
+       │   └── ...
+       └── labels/     # Version labels
+           ├── stable -> ../1
+           └── canary -> ../2
+   ```
+
+2. Version Policies in Config:
+   - All: Serve all versions
+   - Latest: Serve only latest N versions
+   - Specific: Serve specific versions
+
+3. Version Labels:
+   ```protobuf
+   version_labels: {
+     key: "stable"
+     value: "1"
+   }
+   version_labels: {
+     key: "canary"
+     value: "2"
+   }
+   ```
+
+## Rollback Procedure
+
+1. Identify problematic version:
+   ```bash
+   curl http://localhost:8501/v1/models/mnist
+   ```
+
+2. Update config to exclude version:
+   ```protobuf
+   model_version_policy: {
+     specific: {
+       versions: 1  # Only serve version 1
+     }
+   }
+   ```
+
+3. Reload config without restart:
+   ```bash
+   curl -X POST http://localhost:8501/v1/models/mnist/config/reload
+   ```
+
+## A/B Testing
+
+Request specific version:
+```bash
+curl -X POST http://localhost:8501/v1/models/mnist/versions/1:predict
+```
+
+Or use labels:
+```bash
+curl -X POST http://localhost:8501/v1/models/mnist/labels/stable:predict
+```
+"""
+
+print(versioning_guide)
+
+# ============================================================
+# PART 7: Monitoring Configuration
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 7: Monitoring Configuration")
+print("=" * 60)
+
+prometheus_config = """global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'tensorflow-serving'
+    static_configs:
+      - targets: ['tensorflow-serving:8501']
+    metrics_path: '/monitoring/prometheus/metrics'
+"""
+
+with open('prometheus.yml', 'w') as f:
+    f.write(prometheus_config)
+
+print("Prometheus configuration created: prometheus.yml")
+
+# ============================================================
+# PART 8: Production Deployment Script
+# ============================================================
+
+print("\n" + "=" * 60)
+print("PART 8: Production Deployment Script")
+print("=" * 60)
+
+deploy_script = """#!/bin/bash
+# Production Deployment Script for TensorFlow Serving
+
+set -e
+
+echo "=== TensorFlow Serving Deployment ==="
+
+# Configuration
+MODELS_DIR="./docker_models"
+COMPOSE_FILE="docker-compose.yml"
+
+# Function: Check prerequisites
+check_prerequisites() {
+    echo "Checking prerequisites..."
+    
+    if ! command -v docker &> /dev/null; then
+        echo "Error: Docker not installed"
+        exit 1
+    fi
+    
+    if ! command -v docker-compose &> /dev/null; then
+        echo "Error: Docker Compose not installed"
+        exit 1
+    fi
+    
+    echo "Prerequisites OK"
+}
+
+# Function: Validate models
+validate_models() {
+    echo "Validating models..."
+    
+    for model_dir in $MODELS_DIR/*/; do
+        if [ -d "$model_dir" ]; then
+            model_name=$(basename "$model_dir")
+            echo "  Checking model: $model_name"
+            
+            # Check for valid SavedModel
+            if [ ! -f "$model_dir/1/saved_model.pb" ]; then
+                echo "    Warning: No saved_model.pb found"
+            fi
+        fi
+    done
+    
+    echo "Model validation complete"
+}
+
+# Function: Deploy
+deploy() {
+    echo "Deploying TensorFlow Serving..."
+    
+    # Pull latest image
+    docker-compose -f $COMPOSE_FILE pull
+    
+    # Start services
+    docker-compose -f $COMPOSE_FILE up -d
+    
+    # Wait for health check
+    echo "Waiting for service to be healthy..."
+    sleep 10
+    
+    # Verify deployment
+    if curl -sf http://localhost:8501/v1/models/mnist > /dev/null; then
+        echo "Deployment successful!"
+        echo "REST API: http://localhost:8501"
+        echo "gRPC: localhost:8500"
+    else
+        echo "Deployment may have failed. Check logs:"
+        docker-compose -f $COMPOSE_FILE logs
+    fi
+}
+
+# Function: View logs
+view_logs() {
+    docker-compose -f $COMPOSE_FILE logs -f
+}
+
+# Function: Stop
+stop() {
+    echo "Stopping TensorFlow Serving..."
+    docker-compose -f $COMPOSE_FILE down
+}
+
+# Function: Update model
+update_model() {
+    local model_name=$1
+    local version=$2
+    
+    echo "Updating model $model_name to version $version..."
+    
+    # Reload config
+    curl -X POST http://localhost:8501/v1/models/$model_name/config/reload
+    
+    echo "Model updated"
+}
+
+# Main
+case "$1" in
+    deploy)
+        check_prerequisites
+        validate_models
+        deploy
+        ;;
+    stop)
+        stop
+        ;;
+    logs)
+        view_logs
+        ;;
+    update)
+        update_model $2 $3
+        ;;
+    *)
+        echo "Usage: $0 {deploy|stop|logs|update <model> <version>}"
+        exit 1
+        ;;
+esac
+"""
+
+with open('deploy.sh', 'w') as f:
+    f.write(deploy_script)
+
+os.chmod('deploy.sh', 0o755)
+print("Deployment script created: deploy.sh")
+
+# ============================================================
+# PART 9: Summary
+# ============================================================
+
+print("\n" + "=" * 60)
+print("SUMMARY: Docker Deployment")
+print("=" * 60)
+
+print("""
+Files Created:
+==============
+- docker_models/           : Model directory
+- docker_models/models.config : Model configuration
+- docker-compose.yml       : Docker Compose file
+- batch_config/            : Batching configuration
+- prometheus.yml           : Monitoring configuration
+- deploy.sh                : Deployment script
+- docker_commands.sh       : Docker command reference
+
+Quick Start:
+============
+
+1. Deploy TensorFlow Serving:
+   ./deploy.sh deploy
+
+2. Test deployment:
+   curl http://localhost:8501/v1/models/mnist
+
+3. Make prediction:
+   curl -X POST http://localhost:8501/v1/models/mnist:predict \\
+     -H 'Content-Type: application/json' \\
+     -d '{"instances": [...]}'
+
+4. View logs:
+   ./deploy.sh logs
+
+5. Stop serving:
+   ./deploy.sh stop
+
+Production Checklist:
+=====================
+[ ] Resource limits configured
+[ ] Health checks enabled
+[ ] Logging configured
+[ ] Monitoring set up
+[ ] Backup/rollback plan
+[ ] Load balancing configured
+[ ] Security (TLS, auth)
+[ ] Rate limiting
+""")
+
+# Cleanup
+import shutil
+for d in ['docker_models', 'batch_config', '__pycache__']:
+    if os.path.exists(d):
+        shutil.rmtree(d)
+for f in ['docker-compose.yml', 'prometheus.yml', 'deploy.sh', 
+          'docker_commands.sh']:
+    if os.path.exists(f):
+        os.remove(f)
+print("\nCleanup completed!")
+```
+
+---

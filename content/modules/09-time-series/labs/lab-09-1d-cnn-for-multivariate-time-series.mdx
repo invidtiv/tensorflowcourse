@@ -1,0 +1,189 @@
+---
+title: "1D CNN for Multivariate Time Series"
+module: 9
+labNumber: 9
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# 1D CNN for Multivariate Time Series
+
+### Complete Implementation
+
+```python
+"""
+Lab 3.2: 1D CNN for Multivariate Time Series
+Topic: Energy Demand Prediction
+"""
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+from sklearn.metrics import mean_squared_error, mean_absolute_error
+from sklearn.preprocessing import MinMaxScaler
+
+np.random.seed(42)
+tf.random.set_seed(42)
+
+# Generate Multivariate Energy Data
+print("=" * 60)
+print("STEP 1: Generating Multivariate Energy Data")
+print("=" * 60)
+
+def generate_energy_data(n_hours=24*365):
+    dates = pd.date_range(start='2020-01-01', periods=n_hours, freq='H')
+    hour = np.arange(n_hours) % 24
+    day_of_week = (np.arange(n_hours) // 24) % 7
+    temp = 20 + 5 * np.sin(2 * np.pi * hour / 24) + 10 * np.sin(2 * np.pi * np.arange(n_hours) / (24*365))
+    humidity = 70 - 0.5 * temp + np.random.normal(0, 5, n_hours)
+    demand = 500 + 50 * np.sin(2 * np.pi * hour / 24 - np.pi/3)
+    demand += 2 * (temp - 20)**2
+    demand += np.where(day_of_week < 5, 50, -30)
+    demand += np.random.normal(0, 20, n_hours)
+    df = pd.DataFrame({
+        'demand': demand,
+        'temperature': temp,
+        'humidity': humidity,
+        'hour_sin': np.sin(2 * np.pi * hour / 24),
+        'hour_cos': np.cos(2 * np.pi * hour / 24),
+        'is_weekend': (day_of_week >= 5).astype(int)
+    }, index=dates)
+    return df
+
+energy_data = generate_energy_data(24*365)
+print(f"Generated {len(energy_data)} hours of data")
+print(f"Features: {list(energy_data.columns)}")
+
+# Preprocess and Create Windows
+print("\n" + "=" * 60)
+print("STEP 2: Preprocessing and Windowing")
+print("=" * 60)
+
+scaler = MinMaxScaler()
+scaled_data = scaler.fit_transform(energy_data)
+
+def create_multivariate_windows(data, window_size, target_col=0, horizon=1):
+    X, y = [], []
+    for i in range(len(data) - window_size - horizon + 1):
+        X.append(data[i:(i + window_size)])
+        y.append(data[i + window_size, target_col])
+    return np.array(X), np.array(y)
+
+window_size = 24
+X, y = create_multivariate_windows(scaled_data, window_size, target_col=0, horizon=1)
+print(f"X shape: {X.shape} (samples, timesteps, features)")
+print(f"y shape: {y.shape}")
+
+train_size = int(0.7 * len(X))
+val_size = int(0.15 * len(X))
+X_train, y_train = X[:train_size], y[:train_size]
+X_val, y_val = X[train_size:train_size + val_size], y[train_size:train_size + val_size]
+X_test, y_test = X[train_size + val_size:], y[train_size + val_size:]
+
+# Build Multivariate CNN
+print("\n" + "=" * 60)
+print("STEP 3: Building Multivariate CNN")
+print("=" * 60)
+
+def build_multivariate_cnn(window_size, n_features):
+    model = keras.Sequential([
+        layers.Conv1D(128, 3, activation='relu', padding='same',
+                      input_shape=(window_size, n_features)),
+        layers.BatchNormalization(),
+        layers.Conv1D(128, 3, activation='relu', padding='same'),
+        layers.BatchNormalization(),
+        layers.MaxPooling1D(2),
+        layers.Dropout(0.2),
+        layers.Conv1D(64, 3, activation='relu', padding='same'),
+        layers.BatchNormalization(),
+        layers.Conv1D(64, 3, activation='relu', padding='same'),
+        layers.BatchNormalization(),
+        layers.MaxPooling1D(2),
+        layers.Dropout(0.2),
+        layers.Conv1D(32, 3, activation='relu', padding='same'),
+        layers.BatchNormalization(),
+        layers.GlobalAveragePooling1D(),
+        layers.Dense(64, activation='relu'),
+        layers.Dropout(0.3),
+        layers.Dense(32, activation='relu'),
+        layers.Dense(1)
+    ])
+    model.compile(optimizer='adam', loss='mse', metrics=['mae'])
+    return model
+
+n_features = X.shape[2]
+model_multi = build_multivariate_cnn(window_size, n_features)
+model_multi.summary()
+
+# Train Model
+print("\n" + "=" * 60)
+print("STEP 4: Training Model")
+print("=" * 60)
+
+early_stop = keras.callbacks.EarlyStopping(
+    monitor='val_loss', patience=10, restore_best_weights=True
+)
+reduce_lr = keras.callbacks.ReduceLROnPlateau(
+    monitor='val_loss', factor=0.5, patience=5, min_lr=1e-6
+)
+
+history = model_multi.fit(
+    X_train, y_train,
+    validation_data=(X_val, y_val),
+    epochs=50,
+    batch_size=64,
+    callbacks=[early_stop, reduce_lr],
+    verbose=1
+)
+
+# Plot training history
+fig, axes = plt.subplots(1, 2, figsize=(15, 5))
+axes[0].plot(history.history['loss'], label='Train')
+axes[0].plot(history.history['val_loss'], label='Validation')
+axes[0].set_title('Loss')
+axes[0].legend()
+axes[0].grid(True, alpha=0.3)
+axes[1].plot(history.history['mae'], label='Train')
+axes[1].plot(history.history['val_mae'], label='Validation')
+axes[1].set_title('MAE')
+axes[1].legend()
+axes[1].grid(True, alpha=0.3)
+plt.savefig('/mnt/okcomputer/output/lab3_2_training_history.png', dpi=150)
+plt.show()
+
+# Evaluate and Save
+print("\n" + "=" * 60)
+print("STEP 5: Evaluation")
+print("=" * 60)
+
+y_pred = model_multi.predict(X_test)
+demand_scaler = MinMaxScaler()
+demand_scaler.min_ = scaler.min_[0]
+demand_scaler.scale_ = scaler.scale_[0]
+y_test_inv = demand_scaler.inverse_transform(y_test.reshape(-1, 1)).flatten()
+y_pred_inv = demand_scaler.inverse_transform(y_pred).flatten()
+
+mse = mean_squared_error(y_test_inv, y_pred_inv)
+mae = mean_absolute_error(y_test_inv, y_pred_inv)
+rmse = np.sqrt(mse)
+mape = np.mean(np.abs((y_test_inv - y_pred_inv) / y_test_inv)) * 100
+
+print(f"Test MSE: {mse:.4f}")
+print(f"Test MAE: {mae:.4f}")
+print(f"Test RMSE: {rmse:.4f}")
+print(f"Test MAPE: {mape:.2f}%")
+
+# Save model
+model_multi.save('/mnt/okcomputer/output/lab3_2_multivariate_cnn.h5')
+
+print("\n" + "=" * 60)
+print("Lab 3.2 Complete!")
+print("=" * 60)
+```
+
+---
+
+# Part 4: LSTM Forecasting

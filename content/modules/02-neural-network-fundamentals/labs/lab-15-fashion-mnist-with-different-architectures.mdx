@@ -1,0 +1,254 @@
+---
+title: "Fashion-MNIST with Different Architectures"
+module: 2
+labNumber: 15
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-06-part6.md"
+---
+# Fashion-MNIST with Different Architectures
+
+## Objectives
+- Compare CNN architectures
+- Implement data augmentation
+- Use learning rate scheduling
+- Apply early stopping
+
+---
+
+```python
+"""
+Lab 2.8: Fashion-MNIST with Different Architectures
+Comparing different CNN architectures on Fashion-MNIST.
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+
+print("=" * 60)
+print("LAB 2.8: Fashion-MNIST with Different Architectures")
+print("=" * 60)
+
+# ============================================================
+# STEP 1: Load and Prepare Data
+# ============================================================
+print("\n[STEP 1] Loading Fashion-MNIST dataset...")
+
+(X_train, y_train), (X_test, y_test) = tf.keras.datasets.fashion_mnist.load_data()
+
+# Normalize and reshape
+X_train = X_train.astype('float32') / 255.0
+X_test = X_test.astype('float32') / 255.0
+X_train = X_train.reshape(-1, 28, 28, 1)
+X_test = X_test.reshape(-1, 28, 28, 1)
+
+# Use subset for faster training
+X_train_sub = X_train[:10000]
+y_train_sub = y_train[:10000]
+X_test_sub = X_test[:2000]
+y_test_sub = y_test[:2000]
+
+print(f"Training samples: {len(X_train_sub)}")
+print(f"Test samples: {len(X_test_sub)}")
+
+# ============================================================
+# STEP 2: Define Different Architectures
+# ============================================================
+print("\n[STEP 2] Defining different architectures...")
+
+def create_shallow_cnn():
+    """Shallow CNN with fewer layers."""
+    model = tf.keras.Sequential([
+        tf.keras.layers.Conv2D(32, (3, 3), activation='relu', input_shape=(28, 28, 1)),
+        tf.keras.layers.MaxPooling2D((2, 2)),
+        tf.keras.layers.Conv2D(64, (3, 3), activation='relu'),
+        tf.keras.layers.MaxPooling2D((2, 2)),
+        tf.keras.layers.Flatten(),
+        tf.keras.layers.Dense(64, activation='relu'),
+        tf.keras.layers.Dense(10, activation='softmax')
+    ], name='shallow_cnn')
+    return model
+
+def create_deep_cnn():
+    """Deep CNN with more layers."""
+    model = tf.keras.Sequential([
+        tf.keras.layers.Conv2D(32, (3, 3), padding='same', input_shape=(28, 28, 1)),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation('relu'),
+        tf.keras.layers.Conv2D(32, (3, 3), padding='same'),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation('relu'),
+        tf.keras.layers.MaxPooling2D((2, 2)),
+        tf.keras.layers.Dropout(0.25),
+        
+        tf.keras.layers.Conv2D(64, (3, 3), padding='same'),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation('relu'),
+        tf.keras.layers.Conv2D(64, (3, 3), padding='same'),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation('relu'),
+        tf.keras.layers.MaxPooling2D((2, 2)),
+        tf.keras.layers.Dropout(0.25),
+        
+        tf.keras.layers.Conv2D(128, (3, 3), padding='same'),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation('relu'),
+        tf.keras.layers.GlobalAveragePooling2D(),
+        tf.keras.layers.Dropout(0.5),
+        tf.keras.layers.Dense(10, activation='softmax')
+    ], name='deep_cnn')
+    return model
+
+def create_lenet_style():
+    """LeNet-style architecture."""
+    model = tf.keras.Sequential([
+        tf.keras.layers.Conv2D(6, (5, 5), activation='relu', input_shape=(28, 28, 1)),
+        tf.keras.layers.AveragePooling2D((2, 2)),
+        tf.keras.layers.Conv2D(16, (5, 5), activation='relu'),
+        tf.keras.layers.AveragePooling2D((2, 2)),
+        tf.keras.layers.Flatten(),
+        tf.keras.layers.Dense(120, activation='relu'),
+        tf.keras.layers.Dense(84, activation='relu'),
+        tf.keras.layers.Dense(10, activation='softmax')
+    ], name='lenet_style')
+    return model
+
+# ============================================================
+# STEP 3: Data Augmentation
+# ============================================================
+print("\n[STEP 3] Setting up data augmentation...")
+
+data_augmentation = tf.keras.Sequential([
+    tf.keras.layers.RandomRotation(0.1),
+    tf.keras.layers.RandomZoom(0.1),
+    tf.keras.layers.RandomTranslation(0.1, 0.1)
+])
+
+# Visualize augmented images
+fig, axes = plt.subplots(2, 5, figsize=(15, 6))
+sample_image = X_train_sub[0:1]
+
+for i in range(5):
+    axes[0, i].imshow(sample_image[0].reshape(28, 28), cmap='gray')
+    axes[0, i].set_title('Original')
+    axes[0, i].axis('off')
+    
+    augmented = data_augmentation(sample_image)
+    axes[1, i].imshow(augmented[0].numpy().reshape(28, 28), cmap='gray')
+    axes[1, i].set_title('Augmented')
+    axes[1, i].axis('off')
+
+plt.suptitle('Data Augmentation Examples', fontsize=14, fontweight='bold')
+plt.tight_layout()
+plt.savefig('/mnt/okcomputer/output/data_augmentation.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+# ============================================================
+# STEP 4: Train Models with Callbacks
+# ============================================================
+print("\n[STEP 4] Training models with callbacks...")
+
+# Callbacks
+early_stopping = tf.keras.callbacks.EarlyStopping(
+    monitor='val_loss',
+    patience=5,
+    restore_best_weights=True
+)
+
+lr_scheduler = tf.keras.callbacks.ReduceLROnPlateau(
+    monitor='val_loss',
+    factor=0.5,
+    patience=3,
+    min_lr=1e-6
+)
+
+models_dict = {
+    'Shallow CNN': create_shallow_cnn(),
+    'Deep CNN': create_deep_cnn(),
+    'LeNet Style': create_lenet_style()
+}
+
+results = {}
+
+for name, model in models_dict.items():
+    print(f"\nTraining {name}...")
+    
+    model.compile(
+        optimizer='adam',
+        loss='sparse_categorical_crossentropy',
+        metrics=['accuracy']
+    )
+    
+    history = model.fit(
+        X_train_sub, y_train_sub,
+        validation_split=0.2,
+        epochs=30,
+        batch_size=64,
+        callbacks=[early_stopping, lr_scheduler],
+        verbose=0
+    )
+    
+    # Evaluate
+    test_loss, test_acc = model.evaluate(X_test_sub, y_test_sub, verbose=0)
+    
+    results[name] = {
+        'history': history,
+        'test_accuracy': test_acc,
+        'epochs_trained': len(history.history['loss'])
+    }
+    
+    print(f"  Test accuracy: {test_acc:.4f}")
+    print(f"  Epochs trained: {len(history.history['loss'])}")
+
+# ============================================================
+# STEP 5: Compare Results
+# ============================================================
+print("\n[STEP 5] Comparing results...")
+
+fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+# Validation accuracy
+ax1 = axes[0]
+for name, result in results.items():
+    ax1.plot(result['history'].history['val_accuracy'], 
+             label=f"{name} ({result['test_accuracy']:.3f})", linewidth=2)
+ax1.set_xlabel('Epoch')
+ax1.set_ylabel('Validation Accuracy')
+ax1.set_title('Validation Accuracy Comparison', fontweight='bold')
+ax1.legend()
+ax1.grid(True, alpha=0.3)
+
+# Test accuracy comparison
+ax2 = axes[1]
+names = list(results.keys())
+accuracies = [results[n]['test_accuracy'] for n in names]
+colors = ['skyblue', 'lightgreen', 'salmon']
+bars = ax2.bar(names, accuracies, color=colors, alpha=0.7)
+ax2.set_ylabel('Test Accuracy')
+ax2.set_title('Final Test Accuracy', fontweight='bold')
+ax2.set_ylim([0.7, 0.9])
+ax2.grid(True, alpha=0.3, axis='y')
+
+for bar in bars:
+    height = bar.get_height()
+    ax2.text(bar.get_x() + bar.get_width()/2., height,
+             f'{height:.3f}', ha='center', va='bottom')
+
+plt.suptitle('Fashion-MNIST Architecture Comparison', fontsize=14, fontweight='bold')
+plt.tight_layout()
+plt.savefig('/mnt/okcomputer/output/architecture_comparison.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+print("\n" + "=" * 60)
+print("LAB 2.8 COMPLETED SUCCESSFULLY!")
+print("=" * 60)
+print("\nKEY TAKEAWAYS:")
+print("1. Deeper CNNs can achieve better performance")
+print("2. Batch normalization and dropout improve generalization")
+print("3. Early stopping prevents overfitting")
+print("4. Learning rate scheduling helps convergence")
+print("5. Data augmentation increases effective dataset size")
+```
+
+---

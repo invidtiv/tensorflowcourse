@@ -1,0 +1,401 @@
+---
+title: "Attention from Scratch"
+module: 8
+labNumber: 12
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Attention from Scratch
+
+### Objectives
+- Implement attention mechanism from scratch
+- Understand query, key, value concepts
+- Apply to sequence-to-sequence model
+
+### Complete Implementation
+
+```python
+"""
+Lab 8.11: Attention Mechanism from Scratch
+==========================================
+Implement the attention mechanism from scratch.
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+
+# ============================================================
+# PART 1: Attention Mechanism Fundamentals
+# ============================================================
+
+print("=" * 60)
+print("ATTENTION MECHANISM FROM SCRATCH")
+print("=" * 60)
+
+attention_concepts = """
+Attention Mechanism:
+
+The attention mechanism allows the model to focus on different 
+parts of the input sequence when producing each output.
+
+Key Components:
+1. Query (Q): What we're looking for
+2. Key (K): What we match against
+3. Value (V): What we extract information from
+
+Attention Score = f(Q, K)
+Attention Weights = softmax(Attention Score)
+Output = sum(Attention Weights * V)
+
+Common Score Functions:
+- Dot Product: Q · K^T
+- Scaled Dot Product: (Q · K^T) / sqrt(d_k)
+- Additive: v^T * tanh(W_q * Q + W_k * K)
+"""
+
+print(attention_concepts)
+
+
+# ============================================================
+# PART 2: Dot-Product Attention
+# ============================================================
+
+class DotProductAttention(tf.keras.layers.Layer):
+    """
+    Dot-product attention mechanism.
+    
+    score(Q, K) = Q · K^T
+    """
+    
+    def __init__(self, **kwargs):
+        super(DotProductAttention, self).__init__(**kwargs)
+    
+    def call(self, query, key, value, mask=None):
+        """
+        Compute attention.
+        
+        Args:
+            query: (batch_size, query_len, d_k)
+            key: (batch_size, key_len, d_k)
+            value: (batch_size, value_len, d_v)
+            mask: Optional mask (batch_size, query_len, key_len)
+            
+        Returns:
+            output: (batch_size, query_len, d_v)
+            attention_weights: (batch_size, query_len, key_len)
+        """
+        # Compute attention scores
+        # score = Q · K^T
+        scores = tf.matmul(query, key, transpose_b=True)  # (batch, query_len, key_len)
+        
+        # Scale scores
+        d_k = tf.cast(tf.shape(key)[-1], tf.float32)
+        scores = scores / tf.math.sqrt(d_k)
+        
+        # Apply mask if provided
+        if mask is not None:
+            scores += (mask * -1e9)
+        
+        # Compute attention weights
+        attention_weights = tf.nn.softmax(scores, axis=-1)
+        
+        # Apply attention to values
+        output = tf.matmul(attention_weights, value)
+        
+        return output, attention_weights
+
+
+# ============================================================
+# PART 3: Scaled Dot-Product Attention
+# ============================================================
+
+class ScaledDotProductAttention(tf.keras.layers.Layer):
+    """
+    Scaled dot-product attention (used in Transformer).
+    
+    score(Q, K) = (Q · K^T) / sqrt(d_k)
+    """
+    
+    def __init__(self, dropout_rate=0.0, **kwargs):
+        super(ScaledDotProductAttention, self).__init__(**kwargs)
+        self.dropout_rate = dropout_rate
+        self.dropout = tf.keras.layers.Dropout(dropout_rate)
+    
+    def call(self, query, key, value, mask=None, training=False):
+        """
+        Compute scaled dot-product attention.
+        """
+        d_k = tf.cast(tf.shape(query)[-1], tf.float32)
+        
+        # Compute attention scores
+        scores = tf.matmul(query, key, transpose_b=True)
+        scores = scores / tf.math.sqrt(d_k)
+        
+        # Apply mask
+        if mask is not None:
+            scores += (mask * -1e9)
+        
+        # Softmax
+        attention_weights = tf.nn.softmax(scores, axis=-1)
+        
+        # Apply dropout
+        attention_weights = self.dropout(attention_weights, training=training)
+        
+        # Apply attention
+        output = tf.matmul(attention_weights, value)
+        
+        return output, attention_weights
+
+
+# ============================================================
+# PART 4: Attention Visualization
+# ============================================================
+
+print("\n" + "=" * 60)
+print("ATTENTION VISUALIZATION")
+print("=" * 60)
+
+def visualize_attention(query_words, key_words, attention_weights):
+    """
+    Visualize attention weights as a heatmap.
+    
+    Args:
+        query_words: List of query words
+        key_words: List of key words
+        attention_weights: Attention weight matrix
+    """
+    fig, ax = plt.subplots(figsize=(10, 8))
+    
+    # Create heatmap
+    im = ax.imshow(attention_weights, cmap='viridis', aspect='auto')
+    
+    # Set ticks
+    ax.set_xticks(np.arange(len(key_words)))
+    ax.set_yticks(np.arange(len(query_words)))
+    
+    # Set labels
+    ax.set_xticklabels(key_words, rotation=45, ha='right')
+    ax.set_yticklabels(query_words)
+    
+    # Add colorbar
+    plt.colorbar(im, ax=ax)
+    
+    # Add values
+    for i in range(len(query_words)):
+        for j in range(len(key_words)):
+            text = ax.text(j, i, f'{attention_weights[i, j]:.2f}',
+                          ha="center", va="center", color="w", fontsize=8)
+    
+    ax.set_xlabel('Key (Input)')
+    ax.set_ylabel('Query (Output)')
+    ax.set_title('Attention Weights')
+    
+    plt.tight_layout()
+    plt.savefig('attention_heatmap.png', dpi=150)
+    plt.show()
+    
+    print("Attention visualization saved to 'attention_heatmap.png'")
+
+
+# Demonstrate attention
+print("\nDemonstrating attention mechanism...")
+
+# Create sample data
+batch_size = 1
+query_len = 4
+key_len = 6
+d_k = 8
+d_v = 8
+
+# Random query, key, value
+query = tf.random.normal((batch_size, query_len, d_k))
+key = tf.random.normal((batch_size, key_len, d_k))
+value = tf.random.normal((batch_size, key_len, d_v))
+
+# Create attention layer
+attention = ScaledDotProductAttention()
+
+# Compute attention
+output, weights = attention(query, key, value)
+
+print(f"\nQuery shape: {query.shape}")
+print(f"Key shape: {key.shape}")
+print(f"Value shape: {value.shape}")
+print(f"Output shape: {output.shape}")
+print(f"Attention weights shape: {weights.shape}")
+
+# Visualize
+query_words = ['The', 'cat', 'sat', 'down']
+key_words = ['A', 'furry', 'cat', 'sat', 'on', 'mat']
+
+visualize_attention(query_words, key_words, weights[0].numpy())
+
+
+# ============================================================
+# PART 5: Self-Attention
+# ============================================================
+
+print("\n" + "=" * 60)
+print("SELF-ATTENTION")
+print("=" * 60)
+
+class SelfAttention(tf.keras.layers.Layer):
+    """
+    Self-attention layer.
+    
+    Query, Key, and Value all come from the same input.
+    """
+    
+    def __init__(self, d_model, **kwargs):
+        super(SelfAttention, self).__init__(**kwargs)
+        self.d_model = d_model
+        
+        # Projection layers
+        self.W_q = tf.keras.layers.Dense(d_model)
+        self.W_k = tf.keras.layers.Dense(d_model)
+        self.W_v = tf.keras.layers.Dense(d_model)
+        
+        self.attention = ScaledDotProductAttention()
+    
+    def call(self, x, mask=None, training=False):
+        """
+        Apply self-attention.
+        
+        Args:
+            x: Input tensor (batch, seq_len, d_model)
+            mask: Optional mask
+            
+        Returns:
+            output, attention_weights
+        """
+        # Project to Q, K, V
+        query = self.W_q(x)
+        key = self.W_k(x)
+        value = self.W_v(x)
+        
+        # Apply attention
+        output, weights = self.attention(
+            query, key, value, mask=mask, training=training
+        )
+        
+        return output, weights
+
+
+# Demonstrate self-attention
+print("\nDemonstrating self-attention...")
+
+seq_len = 5
+d_model = 16
+
+# Input sequence
+x = tf.random.normal((batch_size, seq_len, d_model))
+
+# Self-attention layer
+self_attention = SelfAttention(d_model)
+
+# Apply self-attention
+output, weights = self_attention(x)
+
+print(f"\nInput shape: {x.shape}")
+print(f"Output shape: {output.shape}")
+print(f"Self-attention weights shape: {weights.shape}")
+print(f"\nSelf-attention allows each position to attend to all positions.")
+
+
+# ============================================================
+# PART 6: Attention for Sequence Classification
+# ============================================================
+
+print("\n" + "=" * 60)
+print("ATTENTION FOR SEQUENCE CLASSIFICATION")
+print("=" * 60)
+
+class AttentionClassifier(tf.keras.Model):
+    """
+    Text classifier using attention mechanism.
+    """
+    
+    def __init__(self, vocab_size, embedding_dim, hidden_units, num_classes):
+        super(AttentionClassifier, self).__init__()
+        
+        self.embedding = tf.keras.layers.Embedding(vocab_size, embedding_dim)
+        
+        # Bidirectional LSTM
+        self.lstm = tf.keras.layers.Bidirectional(
+            tf.keras.layers.LSTM(hidden_units, return_sequences=True)
+        )
+        
+        # Attention
+        self.attention = SelfAttention(hidden_units * 2)
+        
+        # Classification head
+        self.global_pool = tf.keras.layers.GlobalAveragePooling1D()
+        self.dense1 = tf.keras.layers.Dense(64, activation='relu')
+        self.dropout = tf.keras.layers.Dropout(0.5)
+        self.output_layer = tf.keras.layers.Dense(num_classes, activation='softmax')
+    
+    def call(self, inputs, training=False):
+        # Embed
+        x = self.embedding(inputs)
+        
+        # LSTM encoding
+        lstm_out = self.lstm(x)
+        
+        # Apply attention
+        attended, attention_weights = self.attention(lstm_out, training=training)
+        
+        # Global pooling
+        pooled = self.global_pool(attended)
+        
+        # Classification
+        x = self.dense1(pooled)
+        x = self.dropout(x, training=training)
+        output = self.output_layer(x)
+        
+        return output, attention_weights
+
+
+# ============================================================
+# EXERCISES
+# ============================================================
+
+print("\n" + "=" * 60)
+print("EXERCISES")
+print("=" * 60)
+
+exercises = """
+Exercise 1: Multi-Head Attention
+--------------------------------
+Implement multi-head attention:
+- Split into multiple attention heads
+- Compute attention in parallel
+- Concatenate and project results
+
+Exercise 2: Additive Attention
+------------------------------
+Implement additive (Bahdanau) attention:
+- Use feedforward network for scoring
+- Compare with dot-product attention
+- Analyze when each works better
+
+Exercise 3: Location-Based Attention
+------------------------------------
+Implement location-based attention:
+- Incorporate position information
+- Use convolutional features
+- Apply to speech recognition
+
+Exercise 4: Hierarchical Attention
+----------------------------------
+Implement hierarchical attention:
+- Word-level attention
+- Sentence-level attention
+- Apply to document classification
+"""
+
+print(exercises)
+```
+
+---

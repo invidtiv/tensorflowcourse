@@ -1,0 +1,457 @@
+---
+title: "Mode Collapse Detection and Mitigation"
+module: 7
+labNumber: 10
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Mode Collapse Detection and Mitigation
+
+## Objectives
+- Understand mode collapse in GANs
+- Implement techniques to detect mode collapse
+- Apply mitigation strategies
+- Compare different approaches
+
+## Theory Overview
+
+Mode collapse occurs when the generator produces limited variety, ignoring parts of the true data distribution.
+
+Detection methods:
+1. Visual inspection of samples
+2. Cluster analysis of generated data
+3. Inception Score analysis
+4. FID score monitoring
+
+Mitigation strategies:
+1. Mini-batch discrimination
+2. Unrolled GANs
+3. Wasserstein GAN
+4. Feature matching
+
+## Complete Implementation
+
+```python
+"""
+Lab 7.9: Mode Collapse Detection and Mitigation
+=================================================
+Detecting and addressing mode collapse in GANs.
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+from tensorflow import keras
+from tensorflow.keras import layers
+from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
+import os
+
+os.makedirs('mode_collapse_output', exist_ok=True)
+
+# =============================================================================
+# Part 1: Create Multi-Modal Dataset
+# =============================================================================
+
+def create_multimodal_data(n_samples=10000, n_modes=8):
+    """
+    Create a dataset with multiple distinct modes.
+    This makes mode collapse easy to detect.
+    """
+    samples_per_mode = n_samples // n_modes
+    data = []
+    labels = []
+    
+    for mode in range(n_modes):
+        angle = 2 * np.pi * mode / n_modes
+        center_x = 3 * np.cos(angle)
+        center_y = 3 * np.sin(angle)
+        
+        # Generate cluster
+        cluster = np.random.randn(samples_per_mode, 2) * 0.3
+        cluster[:, 0] += center_x
+        cluster[:, 1] += center_y
+        
+        data.append(cluster)
+        labels.extend([mode] * samples_per_mode)
+    
+    return np.vstack(data).astype('float32'), np.array(labels)
+
+# Create dataset
+real_data, real_labels = create_multimodal_data(10000, 8)
+
+# Visualize
+plt.figure(figsize=(8, 8))
+colors = plt.cm.tab10(np.linspace(0, 1, 8))
+for mode in range(8):
+    mask = real_labels == mode
+    plt.scatter(real_data[mask, 0], real_data[mask, 1], 
+                c=[colors[mode]], s=5, alpha=0.5, label=f'Mode {mode}')
+plt.title('Multi-Modal Training Data (8 Modes)')
+plt.xlabel('x')
+plt.ylabel('y')
+plt.legend()
+plt.axis('equal')
+plt.grid(True, alpha=0.3)
+plt.savefig('mode_collapse_output/real_multimodal_data.png', dpi=150)
+plt.show()
+
+# =============================================================================
+# Part 2: Standard GAN (Prone to Mode Collapse)
+# =============================================================================
+
+def build_simple_generator(latent_dim=2):
+    """Simple generator."""
+    return keras.Sequential([
+        layers.Dense(128, input_shape=(latent_dim,)),
+        layers.ReLU(),
+        layers.Dense(256),
+        layers.ReLU(),
+        layers.Dense(2, activation='tanh')
+    ], name='Simple_Generator')
+
+def build_simple_discriminator():
+    """Simple discriminator."""
+    return keras.Sequential([
+        layers.Dense(256, input_shape=(2,)),
+        layers.LeakyReLU(0.2),
+        layers.Dense(128),
+        layers.LeakyReLU(0.2),
+        layers.Dense(1, activation='sigmoid')
+    ], name='Simple_Discriminator')
+
+# =============================================================================
+# Part 3: Mode Collapse Detection Functions
+# =============================================================================
+
+def detect_mode_collapsed_samples(generated_data, n_modes=8, threshold=0.5):
+    """
+    Detect mode collapse using clustering.
+    
+    Args:
+        generated_data: Generated samples
+        n_modes: Expected number of modes
+        threshold: Minimum samples per mode to consider it "covered"
+    
+    Returns:
+        coverage_ratio: Ratio of modes covered
+        cluster_sizes: Number of samples in each cluster
+    """
+    # Cluster generated data
+    kmeans = KMeans(n_clusters=n_modes, random_state=42, n_init=10)
+    cluster_labels = kmeans.fit_predict(generated_data)
+    
+    # Count samples per cluster
+    cluster_sizes = np.bincount(cluster_labels, minlength=n_modes)
+    
+    # Calculate coverage (clusters with sufficient samples)
+    expected_per_mode = len(generated_data) / n_modes
+    covered_modes = np.sum(cluster_sizes > threshold * expected_per_mode)
+    coverage_ratio = covered_modes / n_modes
+    
+    return coverage_ratio, cluster_sizes, kmeans
+
+def calculate_mode_coverage_score(real_data, generated_data, n_modes=8):
+    """
+    Calculate how well the generated data covers the real data modes.
+    """
+    # Cluster real data to find true modes
+    kmeans_real = KMeans(n_clusters=n_modes, random_state=42, n_init=10)
+    real_clusters = kmeans_real.fit_predict(real_data)
+    
+    # Assign generated data to real clusters
+    generated_clusters = kmeans_real.predict(generated_data)
+    
+    # Count coverage
+    real_mode_counts = np.bincount(real_clusters, minlength=n_modes)
+    gen_mode_counts = np.bincount(generated_clusters, minlength=n_modes)
+    
+    # Calculate coverage ratio for each mode
+    coverage = gen_mode_counts / (real_mode_counts + 1e-8)
+    avg_coverage = np.mean(coverage)
+    
+    return avg_coverage, coverage, gen_mode_counts
+
+def visualize_mode_coverage(real_data, generated_data, n_modes=8, title=''):
+    """Visualize real and generated data with mode detection."""
+    fig, axes = plt.subplots(1, 2, figsize=(16, 7))
+    
+    # Real data with true modes
+    kmeans_real = KMeans(n_clusters=n_modes, random_state=42, n_init=10)
+    real_clusters = kmeans_real.fit_predict(real_data)
+    
+    axes[0].scatter(real_data[:, 0], real_data[:, 1], 
+                    c=real_clusters, cmap='tab10', s=5, alpha=0.5)
+    axes[0].scatter(kmeans_real.cluster_centers_[:, 0], 
+                    kmeans_real.cluster_centers_[:, 1],
+                    c='red', s=200, marker='X', edgecolors='black', linewidths=2)
+    axes[0].set_title('Real Data (True Modes)')
+    axes[0].set_xlabel('x')
+    axes[0].set_ylabel('y')
+    axes[0].axis('equal')
+    axes[0].grid(True, alpha=0.3)
+    
+    # Generated data clustered
+    kmeans_gen = KMeans(n_clusters=n_modes, random_state=42, n_init=10)
+    gen_clusters = kmeans_gen.fit_predict(generated_data)
+    
+    axes[1].scatter(generated_data[:, 0], generated_data[:, 1],
+                    c=gen_clusters, cmap='tab10', s=5, alpha=0.5)
+    axes[1].scatter(kmeans_gen.cluster_centers_[:, 0],
+                    kmeans_gen.cluster_centers_[:, 1],
+                    c='red', s=200, marker='X', edgecolors='black', linewidths=2)
+    axes[1].set_title(f'Generated Data - {title}')
+    axes[1].set_xlabel('x')
+    axes[1].set_ylabel('y')
+    axes[1].axis('equal')
+    axes[1].grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    return fig
+
+# =============================================================================
+# Part 4: Train Standard GAN and Detect Mode Collapse
+# =============================================================================
+
+class StandardGAN(keras.Model):
+    """Standard GAN (prone to mode collapse)."""
+    
+    def __init__(self, latent_dim=2):
+        super().__init__()
+        self.latent_dim = latent_dim
+        self.generator = build_simple_generator(latent_dim)
+        self.discriminator = build_simple_discriminator()
+        
+        self.g_opt = keras.optimizers.Adam(0.0002, beta_1=0.5)
+        self.d_opt = keras.optimizers.Adam(0.0002, beta_1=0.5)
+        self.cross_entropy = keras.losses.BinaryCrossentropy()
+    
+    @tf.function
+    def train_step(self, real_data):
+        batch_size = tf.shape(real_data)[0]
+        noise = tf.random.normal([batch_size, self.latent_dim])
+        
+        # Train discriminator
+        with tf.GradientTape() as tape_d:
+            fake_data = self.generator(noise, training=True)
+            real_pred = self.discriminator(real_data, training=True)
+            fake_pred = self.discriminator(fake_data, training=True)
+            
+            d_loss = (self.cross_entropy(tf.ones_like(real_pred), real_pred) +
+                     self.cross_entropy(tf.zeros_like(fake_pred), fake_pred))
+        
+        grads_d = tape_d.gradient(d_loss, self.discriminator.trainable_variables)
+        self.d_opt.apply_gradients(zip(grads_d, self.discriminator.trainable_variables))
+        
+        # Train generator
+        noise = tf.random.normal([batch_size, self.latent_dim])
+        with tf.GradientTape() as tape_g:
+            fake_data = self.generator(noise, training=True)
+            fake_pred = self.discriminator(fake_data, training=True)
+            g_loss = self.cross_entropy(tf.ones_like(fake_pred), fake_pred)
+        
+        grads_g = tape_g.gradient(g_loss, self.generator.trainable_variables)
+        self.g_opt.apply_gradients(zip(grads_g, self.generator.trainable_variables))
+        
+        return {'g_loss': g_loss, 'd_loss': d_loss}
+
+# Train standard GAN
+print("\n=== Training Standard GAN ===")
+standard_gan = StandardGAN(latent_dim=2)
+standard_gan.compile()
+
+dataset = tf.data.Dataset.from_tensor_slices(real_data)
+dataset = dataset.shuffle(10000).batch(256, drop_remainder=True)
+
+standard_gan.fit(dataset, epochs=100, verbose=0)
+
+# Generate samples and detect mode collapse
+noise = tf.random.normal([5000, 2])
+standard_generated = standard_gan.generator(noise, training=False).numpy()
+
+coverage, sizes, _ = detect_mode_collapsed_samples(standard_generated, n_modes=8)
+avg_coverage, mode_coverage, gen_counts = calculate_mode_coverage_score(
+    real_data, standard_generated, n_modes=8
+)
+
+print(f"\nStandard GAN Mode Coverage:")
+print(f"  Cluster-based coverage: {coverage * 100:.1f}%")
+print(f"  Real-data coverage: {avg_coverage * 100:.1f}%")
+print(f"  Samples per detected cluster: {sizes}")
+
+# Visualize
+fig = visualize_mode_coverage(real_data, standard_generated, n_modes=8, 
+                              title=f'Standard GAN (Coverage: {coverage*100:.0f}%)')
+plt.savefig('mode_collapse_output/standard_gan_modes.png', dpi=150)
+plt.show()
+
+# =============================================================================
+# Part 5: GAN with Mini-Batch Discrimination (Mitigation)
+# =============================================================================
+
+class MinibatchDiscrimination(layers.Layer):
+    """
+    Mini-batch discrimination layer to encourage diversity.
+    """
+    
+    def __init__(self, num_kernels=5, kernel_dim=3):
+        super().__init__()
+        self.num_kernels = num_kernels
+        self.kernel_dim = kernel_dim
+    
+    def build(self, input_shape):
+        self.T = self.add_weight(
+            shape=(input_shape[-1], self.num_kernels * self.kernel_dim),
+            initializer='glorot_uniform',
+            trainable=True,
+            name='T'
+        )
+    
+    def call(self, x):
+        # x: (batch_size, features)
+        batch_size = tf.shape(x)[0]
+        
+        # Compute M = x * T (batch_size, num_kernels * kernel_dim)
+        M = tf.matmul(x, self.T)
+        M = tf.reshape(M, [batch_size, self.num_kernels, self.kernel_dim])
+        
+        # Compute L1 distances between samples
+        M_i = tf.expand_dims(M, 0)  # (1, batch, kernels, dim)
+        M_j = tf.expand_dims(M, 1)  # (batch, 1, kernels, dim)
+        
+        # L1 distance
+        dist = tf.reduce_sum(tf.abs(M_i - M_j), axis=-1)  # (batch, batch, kernels)
+        
+        # Apply negative exponential
+        dist = tf.exp(-dist)
+        
+        # Sum over samples (excluding self)
+        dist = tf.reduce_sum(dist, axis=1) - 1  # Subtract self-distance
+        
+        # Concatenate with original features
+        return tf.concat([x, dist], axis=-1)
+
+def build_mb_discriminator():
+    """Build discriminator with mini-batch discrimination."""
+    inputs = keras.Input(shape=(2,))
+    
+    x = layers.Dense(256)(inputs)
+    x = layers.LeakyReLU(0.2)(x)
+    
+    x = layers.Dense(128)(x)
+    x = layers.LeakyReLU(0.2)(x)
+    
+    # Mini-batch discrimination
+    x = MinibatchDiscrimination(num_kernels=5, kernel_dim=3)(x)
+    
+    x = layers.Dense(64)(x)
+    x = layers.LeakyReLU(0.2)(x)
+    
+    outputs = layers.Dense(1, activation='sigmoid')(x)
+    
+    return keras.Model(inputs, outputs)
+
+class MBGAN(keras.Model):
+    """GAN with Mini-Batch Discrimination."""
+    
+    def __init__(self, latent_dim=2):
+        super().__init__()
+        self.latent_dim = latent_dim
+        self.generator = build_simple_generator(latent_dim)
+        self.discriminator = build_mb_discriminator()
+        
+        self.g_opt = keras.optimizers.Adam(0.0002, beta_1=0.5)
+        self.d_opt = keras.optimizers.Adam(0.0002, beta_1=0.5)
+        self.cross_entropy = keras.losses.BinaryCrossentropy()
+    
+    @tf.function
+    def train_step(self, real_data):
+        batch_size = tf.shape(real_data)[0]
+        noise = tf.random.normal([batch_size, self.latent_dim])
+        
+        # Train discriminator
+        with tf.GradientTape() as tape_d:
+            fake_data = self.generator(noise, training=True)
+            real_pred = self.discriminator(real_data, training=True)
+            fake_pred = self.discriminator(fake_data, training=True)
+            
+            d_loss = (self.cross_entropy(tf.ones_like(real_pred), real_pred) +
+                     self.cross_entropy(tf.zeros_like(fake_pred), fake_pred))
+        
+        grads_d = tape_d.gradient(d_loss, self.discriminator.trainable_variables)
+        self.d_opt.apply_gradients(zip(grads_d, self.discriminator.trainable_variables))
+        
+        # Train generator
+        noise = tf.random.normal([batch_size, self.latent_dim])
+        with tf.GradientTape() as tape_g:
+            fake_data = self.generator(noise, training=True)
+            fake_pred = self.discriminator(fake_data, training=True)
+            g_loss = self.cross_entropy(tf.ones_like(fake_pred), fake_pred)
+        
+        grads_g = tape_g.gradient(g_loss, self.generator.trainable_variables)
+        self.g_opt.apply_gradients(zip(grads_g, self.generator.trainable_variables))
+        
+        return {'g_loss': g_loss, 'd_loss': d_loss}
+
+# Train MB-GAN
+print("\n=== Training GAN with Mini-Batch Discrimination ===")
+mb_gan = MBGAN(latent_dim=2)
+mb_gan.compile()
+mb_gan.fit(dataset, epochs=100, verbose=0)
+
+# Generate samples
+noise = tf.random.normal([5000, 2])
+mb_generated = mb_gan.generator(noise, training=False).numpy()
+
+mb_coverage, mb_sizes, _ = detect_mode_collapsed_samples(mb_generated, n_modes=8)
+mb_avg_coverage, _, _ = calculate_mode_coverage_score(real_data, mb_generated, n_modes=8)
+
+print(f"\nMini-Batch GAN Mode Coverage:")
+print(f"  Cluster-based coverage: {mb_coverage * 100:.1f}%")
+print(f"  Real-data coverage: {mb_avg_coverage * 100:.1f}%")
+print(f"  Samples per detected cluster: {mb_sizes}")
+
+# Visualize
+fig = visualize_mode_coverage(real_data, mb_generated, n_modes=8,
+                              title=f'MB-Disc GAN (Coverage: {mb_coverage*100:.0f}%)')
+plt.savefig('mode_collapse_output/mb_gan_modes.png', dpi=150)
+plt.show()
+
+# =============================================================================
+# Part 6: Comparison Summary
+# =============================================================================
+
+print("\n" + "="*60)
+print("MODE COLLAPSE COMPARISON SUMMARY")
+print("="*60)
+print(f"{'Method':<30} {'Coverage':<15} {'Mode Coverage':<15}")
+print("-"*60)
+print(f"{'Standard GAN':<30} {coverage*100:>6.1f}% {avg_coverage*100:>14.1f}%")
+print(f"{'Mini-Batch Discrimination':<30} {mb_coverage*100:>6.1f}% {mb_avg_coverage*100:>14.1f}%")
+print("="*60)
+
+# Side-by-side comparison
+fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+
+axes[0].scatter(real_data[:, 0], real_data[:, 1], c='blue', s=1, alpha=0.3)
+axes[0].set_title('Real Data (8 Modes)')
+axes[0].axis('equal')
+axes[0].grid(True, alpha=0.3)
+
+axes[1].scatter(standard_generated[:, 0], standard_generated[:, 1], c='red', s=1, alpha=0.3)
+axes[1].set_title(f'Standard GAN\nCoverage: {coverage*100:.0f}%')
+axes[1].axis('equal')
+axes[1].grid(True, alpha=0.3)
+
+axes[2].scatter(mb_generated[:, 0], mb_generated[:, 1], c='green', s=1, alpha=0.3)
+axes[2].set_title(f'MB-Discrimination GAN\nCoverage: {mb_coverage*100:.0f}%')
+axes[2].axis('equal')
+axes[2].grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.savefig('mode_collapse_output/comparison.png', dpi=150)
+plt.show()
+```
+
+---

@@ -1,0 +1,492 @@
+---
+title: "DeepLab/ASPP Implementation - Part 1"
+module: 5
+labNumber: 7
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# DeepLab/ASPP Implementation - Part 1
+
+## Objectives
+- Understand Atrous (Dilated) Convolution
+- Implement Atrous Spatial Pyramid Pooling (ASPP)
+- Build DeepLab-style encoder with atrous convolutions
+
+## Complete Implementation
+
+```python
+"""
+Lab 5.6: DeepLab/ASPP Implementation - Part 1
+Atrous Convolution and ASPP Module
+"""
+
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers, Model
+import numpy as np
+import matplotlib.pyplot as plt
+
+tf.random.set_seed(42)
+np.random.seed(42)
+
+print(f"TensorFlow version: {tf.__version__}")
+
+# =============================================================================
+# Section 1: Understanding Atrous (Dilated) Convolution
+# =============================================================================
+
+def demonstrate_atrous_convolution():
+    """
+    Demonstrate atrous convolution and compare with standard convolution.
+    
+    Atrous convolution inserts zeros between kernel weights,
+    effectively increasing the receptive field without increasing parameters.
+    """
+    print("\n" + "="*60)
+    print("DEMONSTRATING ATRous (DILATED) CONVOLUTION")
+    print("="*60)
+    
+    # Create a simple input
+    input_feat = tf.constant([[[[1.0], [2.0], [3.0], [4.0]],
+                                [[5.0], [6.0], [7.0], [8.0]],
+                                [[9.0], [10.0], [11.0], [12.0]],
+                                [[13.0], [14.0], [15.0], [16.0]]]])  # 4x4x1
+    
+    print(f"Input shape: {input_feat.shape}")
+    print(f"Input:\n{input_feat.numpy().squeeze()}")
+    
+    # Standard convolution (dilation_rate=1)
+    std_conv = layers.Conv2D(1, 3, padding='same', kernel_initializer='ones', use_bias=False)
+    std_output = std_conv(input_feat)
+    
+    print(f"\nStandard Conv (3x3, dilation=1):")
+    print(f"  Output shape: {std_output.shape}")
+    print(f"  Kernel weights: {std_conv.kernel.numpy().squeeze()}")
+    print(f"  Receptive field: 3x3")
+    
+    # Atrous convolution (dilation_rate=2)
+    atrous_conv = layers.Conv2D(1, 3, padding='same', dilation_rate=2, 
+                                kernel_initializer='ones', use_bias=False)
+    atrous_output = atrous_conv(input_feat)
+    
+    print(f"\nAtrous Conv (3x3, dilation=2):")
+    print(f"  Output shape: {atrous_output.shape}")
+    print(f"  Kernel weights: {atrous_conv.kernel.numpy().squeeze()}")
+    print(f"  Receptive field: 5x5 (effective)")
+    
+    # Atrous convolution (dilation_rate=3)
+    atrous_conv3 = layers.Conv2D(1, 3, padding='same', dilation_rate=3,
+                                 kernel_initializer='ones', use_bias=False)
+    atrous_output3 = atrous_conv3(input_feat)
+    
+    print(f"\nAtrous Conv (3x3, dilation=3):")
+    print(f"  Output shape: {atrous_output3.shape}")
+    print(f"  Receptive field: 7x7 (effective)")
+    
+    print("""
+    Key Insight:
+    - Standard 3x3 conv: 9 parameters, 3x3 receptive field
+    - Atrous 3x3 conv (dilation=2): 9 parameters, 5x5 receptive field
+    - Atrous 3x3 conv (dilation=3): 9 parameters, 7x7 receptive field
+    
+    Same parameters, larger receptive field!
+    """)
+
+demonstrate_atrous_convolution()
+
+# =============================================================================
+# Section 2: Visualize Receptive Fields
+# =============================================================================
+
+def visualize_receptive_fields():
+    """Visualize how dilation affects receptive field."""
+    print("\n" + "="*60)
+    print("VISUALIZING RECEPTIVE FIELDS")
+    print("="*60)
+    
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+    
+    # Create a grid to represent receptive field
+    grid_size = 15
+    center = grid_size // 2
+    
+    for idx, (dilation, title) in enumerate([(1, 'Standard Conv\n(dilation=1)'),
+                                              (2, 'Atrous Conv\n(dilation=2)'),
+                                              (3, 'Atrous Conv\n(dilation=3)')]):
+        grid = np.zeros((grid_size, grid_size))
+        grid[center, center] = 1  # Center pixel
+        
+        # Mark receptive field
+        kernel_size = 3
+        effective_kernel = kernel_size + (kernel_size - 1) * (dilation - 1)
+        radius = effective_kernel // 2
+        
+        for i in range(-radius, radius + 1, dilation if dilation > 1 else 1):
+            for j in range(-radius, radius + 1, dilation if dilation > 1 else 1):
+                if abs(i) <= radius and abs(j) <= radius:
+                    if center + i >= 0 and center + i < grid_size and \
+                       center + j >= 0 and center + j < grid_size:
+                        grid[center + i, center + j] = 0.5
+        
+        # Mark actual kernel positions
+        for i in range(-radius, radius + 1, dilation):
+            for j in range(-radius, radius + 1, dilation):
+                if center + i >= 0 and center + i < grid_size and \
+                   center + j >= 0 and center + j < grid_size:
+                    grid[center + i, center + j] = 1
+        
+        axes[idx].imshow(grid, cmap='Blues', vmin=0, vmax=1)
+        axes[idx].set_title(f'{title}\nRF: {effective_kernel}x{effective_kernel}')
+        axes[idx].axis('off')
+    
+    plt.tight_layout()
+    plt.savefig('/mnt/okcomputer/output/atrous_receptive_fields.png', dpi=150)
+    plt.show()
+    print("Receptive field visualization saved to /mnt/okcomputer/output/atrous_receptive_fields.png")
+
+visualize_receptive_fields()
+
+# =============================================================================
+# Section 3: Atrous Spatial Pyramid Pooling (ASPP)
+# =============================================================================
+
+def build_aspp_module(input_tensor, num_filters=256, num_classes=21):
+    """
+    Build Atrous Spatial Pyramid Pooling (ASPP) module.
+    
+    ASPP captures multi-scale context using atrous convolutions
+    with different dilation rates.
+    
+    Components:
+    1. 1x1 convolution (no dilation)
+    2. 3x3 conv with dilation=6
+    3. 3x3 conv with dilation=12
+    4. 3x3 conv with dilation=18
+    5. Global average pooling
+    
+    Args:
+        input_tensor: Input feature tensor
+        num_filters: Number of output filters
+        num_classes: Number of classes (for output)
+    
+    Returns:
+        ASPP output tensor
+    """
+    print("\n" + "="*60)
+    print("BUILDING ASPP MODULE")
+    print("="*60)
+    
+    shape = input_tensor.shape
+    
+    # Branch 1: 1x1 convolution
+    conv_1x1 = layers.Conv2D(num_filters, 1, padding='same', use_bias=False)(input_tensor)
+    conv_1x1 = layers.BatchNormalization()(conv_1x1)
+    conv_1x1 = layers.ReLU()(conv_1x1)
+    print(f"  1x1 conv branch: {conv_1x1.shape}")
+    
+    # Branch 2: 3x3 conv with dilation=6
+    conv_3x3_r6 = layers.Conv2D(num_filters, 3, padding='same', dilation_rate=6, use_bias=False)(input_tensor)
+    conv_3x3_r6 = layers.BatchNormalization()(conv_3x3_r6)
+    conv_3x3_r6 = layers.ReLU()(conv_3x3_r6)
+    print(f"  3x3 conv (dilation=6): {conv_3x3_r6.shape}")
+    
+    # Branch 3: 3x3 conv with dilation=12
+    conv_3x3_r12 = layers.Conv2D(num_filters, 3, padding='same', dilation_rate=12, use_bias=False)(input_tensor)
+    conv_3x3_r12 = layers.BatchNormalization()(conv_3x3_r12)
+    conv_3x3_r12 = layers.ReLU()(conv_3x3_r12)
+    print(f"  3x3 conv (dilation=12): {conv_3x3_r12.shape}")
+    
+    # Branch 4: 3x3 conv with dilation=18
+    conv_3x3_r18 = layers.Conv2D(num_filters, 3, padding='same', dilation_rate=18, use_bias=False)(input_tensor)
+    conv_3x3_r18 = layers.BatchNormalization()(conv_3x3_r18)
+    conv_3x3_r18 = layers.ReLU()(conv_3x3_r18)
+    print(f"  3x3 conv (dilation=18): {conv_3x3_r18.shape}")
+    
+    # Branch 5: Global average pooling
+    global_feat = layers.GlobalAveragePooling2D()(input_tensor)
+    global_feat = layers.Reshape((1, 1, shape[-1]))(global_feat)
+    global_feat = layers.Conv2D(num_filters, 1, use_bias=False)(global_feat)
+    global_feat = layers.BatchNormalization()(global_feat)
+    global_feat = layers.ReLU()(global_feat)
+    global_feat = layers.UpSampling2D(size=(shape[1], shape[2]), interpolation='bilinear')(global_feat)
+    print(f"  Global pooling branch: {global_feat.shape}")
+    
+    # Concatenate all branches
+    concat = layers.Concatenate()([conv_1x1, conv_3x3_r6, conv_3x3_r12, conv_3x3_r18, global_feat])
+    print(f"  Concatenated: {concat.shape}")
+    
+    # 1x1 conv to reduce channels
+    output = layers.Conv2D(num_filters, 1, padding='same', use_bias=False)(concat)
+    output = layers.BatchNormalization()(output)
+    output = layers.ReLU()(output)
+    output = layers.Dropout(0.5)(output)
+    print(f"  ASPP output: {output.shape}")
+    
+    return output
+
+
+# Test ASPP module
+test_input = layers.Input(shape=(32, 32, 256))
+aspp_output = build_aspp_module(test_input, num_filters=256)
+aspp_model = Model(test_input, aspp_output)
+print(f"\nASPP module parameters: {aspp_model.count_params():,}")
+
+# =============================================================================
+# Section 4: DeepLab-style Encoder with Atrous Convolutions
+# =============================================================================
+
+def build_atrous_encoder(input_shape=(224, 224, 3)):
+    """
+    Build encoder with atrous convolutions (DeepLab-style).
+    
+    Uses ResNet-like blocks with increasing dilation rates
+    to maintain resolution while expanding receptive field.
+    """
+    print("\n" + "="*60)
+    print("BUILDING ATRous ENCODER")
+    print("="*60)
+    
+    def conv_block(x, filters, kernel_size=3, dilation_rate=1):
+        x = layers.Conv2D(filters, kernel_size, padding='same', 
+                         dilation_rate=dilation_rate, use_bias=False)(x)
+        x = layers.BatchNormalization()(x)
+        x = layers.ReLU()(x)
+        return x
+    
+    def residual_block(x, filters, dilation_rate=1):
+        shortcut = x
+        
+        x = conv_block(x, filters // 4, 1)
+        x = conv_block(x, filters // 4, 3, dilation_rate)
+        x = layers.Conv2D(filters, 1, padding='same', use_bias=False)(x)
+        x = layers.BatchNormalization()(x)
+        
+        # Adjust shortcut if needed
+        if shortcut.shape[-1] != filters:
+            shortcut = layers.Conv2D(filters, 1, padding='same', use_bias=False)(shortcut)
+            shortcut = layers.BatchNormalization()(shortcut)
+        
+        x = layers.Add()([x, shortcut])
+        x = layers.ReLU()(x)
+        return x
+    
+    inputs = layers.Input(shape=input_shape)
+    
+    # Initial conv
+    x = conv_block(inputs, 64, 7, 1)
+    x = layers.MaxPooling2D(3, strides=2, padding='same')(x)
+    print(f"  After initial conv: {x.shape}")
+    
+    # Block 1 - no dilation
+    for _ in range(3):
+        x = residual_block(x, 256, dilation_rate=1)
+    print(f"  After block 1: {x.shape}")
+    
+    # Block 2 - no dilation
+    x = layers.MaxPooling2D(2, strides=2, padding='same')(x)
+    for _ in range(4):
+        x = residual_block(x, 512, dilation_rate=1)
+    print(f"  After block 2: {x.shape}")
+    
+    # Block 3 - with dilation (maintain resolution)
+    for _ in range(6):
+        x = residual_block(x, 1024, dilation_rate=2)
+    print(f"  After block 3 (dilation=2): {x.shape}")
+    
+    # Block 4 - with higher dilation
+    for _ in range(3):
+        x = residual_block(x, 2048, dilation_rate=4)
+    print(f"  After block 4 (dilation=4): {x.shape}")
+    
+    model = Model(inputs, x, name='Atrous-Encoder')
+    
+    print(f"\nEncoder input shape: {model.input_shape}")
+    print(f"Encoder output shape: {model.output_shape}")
+    print(f"Encoder parameters: {model.count_params():,}")
+    
+    return model
+
+
+atrous_encoder = build_atrous_encoder()
+
+# =============================================================================
+# Section 5: Complete DeepLab-style Model
+# =============================================================================
+
+def build_deeplab_v3(input_shape=(224, 224, 3), num_classes=21):
+    """
+    Build simplified DeepLabV3 architecture.
+    
+    Architecture:
+    1. Atrous encoder (ResNet-style)
+    2. ASPP module
+    3. Decoder with bilinear upsampling
+    """
+    print("\n" + "="*60)
+    print("BUILDING DEEPLABV3 MODEL")
+    print("="*60)
+    
+    inputs = layers.Input(shape=input_shape)
+    
+    # Use pretrained backbone or custom
+    # Here we use a simpler custom backbone for demonstration
+    
+    # Encoder
+    x = layers.Conv2D(64, 7, strides=2, padding='same', use_bias=False)(inputs)
+    x = layers.BatchNormalization()(x)
+    x = layers.ReLU()(x)
+    x = layers.MaxPooling2D(3, strides=2, padding='same')(x)
+    
+    # Atrous conv blocks
+    for filters in [128, 256, 512]:
+        for _ in range(2):
+            x = layers.Conv2D(filters, 3, padding='same', dilation_rate=2, use_bias=False)(x)
+            x = layers.BatchNormalization()(x)
+            x = layers.ReLU()(x)
+        x = layers.MaxPooling2D(2, strides=2, padding='same')(x) if filters < 512 else x
+    
+    encoder_output = x
+    print(f"  Encoder output: {encoder_output.shape}")
+    
+    # ASPP module
+    aspp_out = build_aspp_module(encoder_output, num_filters=256)
+    
+    # Decoder
+    x = layers.Conv2D(256, 3, padding='same', use_bias=False)(aspp_out)
+    x = layers.BatchNormalization()(x)
+    x = layers.ReLU()(x)
+    
+    # Upsample to input size
+    x = layers.UpSampling2D(size=(8, 8), interpolation='bilinear')(x)
+    
+    # Final classification
+    outputs = layers.Conv2D(num_classes, 1, activation='softmax')(x)
+    
+    model = Model(inputs, outputs, name='DeepLabV3')
+    
+    print(f"\nDeepLabV3 input shape: {model.input_shape}")
+    print(f"DeepLabV3 output shape: {model.output_shape}")
+    print(f"DeepLabV3 parameters: {model.count_params():,}")
+    
+    return model
+
+
+deeplab = build_deeplab_v3(num_classes=21)
+
+# =============================================================================
+# Section 6: Compare with Standard CNN
+# =============================================================================
+
+def compare_receptive_fields():
+    """Compare receptive fields of standard vs atrous CNN."""
+    print("\n" + "="*60)
+    print("COMPARING RECEPTIVE FIELDS")
+    print("="*60)
+    
+    # Standard CNN
+    standard_model = keras.Sequential([
+        layers.Conv2D(64, 3, padding='same', activation='relu'),
+        layers.MaxPooling2D(2),
+        layers.Conv2D(128, 3, padding='same', activation='relu'),
+        layers.MaxPooling2D(2),
+        layers.Conv2D(256, 3, padding='same', activation='relu'),
+        layers.MaxPooling2D(2),
+        layers.Conv2D(512, 3, padding='same', activation='relu'),
+    ])
+    
+    # Atrous CNN
+    atrous_model = keras.Sequential([
+        layers.Conv2D(64, 3, padding='same', activation='relu'),
+        layers.Conv2D(128, 3, padding='same', dilation_rate=2, activation='relu'),
+        layers.Conv2D(256, 3, padding='same', dilation_rate=4, activation='relu'),
+        layers.Conv2D(512, 3, padding='same', dilation_rate=8, activation='relu'),
+    ])
+    
+    test_input = np.random.randn(1, 224, 224, 3).astype(np.float32)
+    
+    standard_out = standard_model(test_input)
+    atrous_out = atrous_model(test_input)
+    
+    print(f"Standard CNN:")
+    print(f"  Output shape: {standard_out.shape}")
+    print(f"  Receptive field: ~60x60 (estimated)")
+    print(f"  Output resolution: 28x28 (1/8 of input)")
+    
+    print(f"\nAtrous CNN:")
+    print(f"  Output shape: {atrous_out.shape}")
+    print(f"  Receptive field: ~60x60 (estimated)")
+    print(f"  Output resolution: 224x224 (same as input)")
+    
+    print("""
+    Key Advantage of Atrous Convolutions:
+    - Same receptive field as standard CNN
+    - Maintains spatial resolution
+    - No loss of fine-grained spatial information
+    """)
+
+compare_receptive_fields()
+
+# =============================================================================
+# Section 7: Exercise - Modify ASPP
+# =============================================================================
+
+def build_lightweight_aspp(input_tensor, num_filters=128):
+    """
+    Build lightweight ASPP with fewer branches.
+    
+    Useful for mobile/edge deployment.
+    """
+    print("\n" + "="*60)
+    print("BUILDING LIGHTWEIGHT ASPP")
+    print("="*60)
+    
+    # Only 3 branches instead of 5
+    conv_1x1 = layers.Conv2D(num_filters, 1, padding='same', activation='relu')(input_tensor)
+    
+    conv_r6 = layers.Conv2D(num_filters, 3, padding='same', dilation_rate=6, activation='relu')(input_tensor)
+    
+    conv_r12 = layers.Conv2D(num_filters, 3, padding='same', dilation_rate=12, activation='relu')(input_tensor)
+    
+    # Concatenate and reduce
+    concat = layers.Concatenate()([conv_1x1, conv_r6, conv_r12])
+    output = layers.Conv2D(num_filters, 1, padding='same', activation='relu')(concat)
+    
+    print(f"  Lightweight ASPP output: {output.shape}")
+    
+    return output
+
+
+# Test lightweight ASPP
+test_input = layers.Input(shape=(32, 32, 256))
+light_aspp = build_lightweight_aspp(test_input)
+light_model = Model(test_input, light_aspp)
+print(f"Lightweight ASPP parameters: {light_model.count_params():,}")
+
+print("""
+EXERCISE QUESTIONS:
+1. How would you adjust dilation rates for different input sizes?
+2. What are the trade-offs between standard conv and atrous conv?
+3. Implement separable atrous convolution for efficiency.
+""")
+
+# =============================================================================
+# Summary
+# =============================================================================
+
+print("\n" + "="*60)
+print("LAB 5.6 SUMMARY")
+print("="*60)
+print("""
+Key Takeaways:
+1. Atrous convolution increases receptive field without increasing parameters
+2. ASPP captures multi-scale context using multiple dilation rates
+3. DeepLab uses atrous convolutions to maintain spatial resolution
+4. Global pooling in ASPP captures image-level features
+5. Atrous convolutions are crucial for dense prediction tasks
+
+Next: Lab 5.7 will complete DeepLab implementation with decoder.
+""")
+```
+
+---

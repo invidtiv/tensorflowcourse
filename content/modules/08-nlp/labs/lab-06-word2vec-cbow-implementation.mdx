@@ -1,0 +1,355 @@
+---
+title: "Word2Vec CBOW Implementation"
+module: 8
+labNumber: 6
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# Word2Vec CBOW Implementation
+
+### Objectives
+- Implement CBOW (Continuous Bag of Words) model
+- Compare with Skip-gram performance
+- Understand context aggregation
+
+### Complete Implementation
+
+```python
+"""
+Lab 8.5: Word2Vec CBOW Implementation
+=====================================
+Implement the Continuous Bag of Words (CBOW) Word2Vec model.
+"""
+
+import tensorflow as tf
+import numpy as np
+import random
+from collections import Counter
+import re
+
+# ============================================================
+# PART 1: CBOW Data Generator
+# ============================================================
+
+class CBOWDataGenerator:
+    """
+    Generate training data for CBOW Word2Vec model.
+    
+    CBOW predicts the target word from context words.
+    """
+    
+    def __init__(self, texts, window_size=2, min_count=1):
+        """
+        Initialize CBOW data generator.
+        
+        Args:
+            texts: List of text strings
+            window_size: Context window size (on each side)
+            min_count: Minimum word frequency
+        """
+        self.window_size = window_size
+        
+        # Build vocabulary
+        word_counts = Counter()
+        for text in texts:
+            words = self._tokenize(text)
+            word_counts.update(words)
+        
+        # Filter by min_count
+        self.vocab = ['<PAD>', '<UNK>']
+        for word, count in word_counts.items():
+            if count >= min_count:
+                self.vocab.append(word)
+        
+        self.word_to_id = {word: idx for idx, word in enumerate(self.vocab)}
+        self.id_to_word = {idx: word for word, idx in self.word_to_id.items()}
+        self.vocab_size = len(self.vocab)
+        
+        print(f"Vocabulary size: {self.vocab_size}")
+        
+        # Generate training data
+        self.training_data = self._generate_data(texts)
+        print(f"Training samples: {len(self.training_data)}")
+    
+    def _tokenize(self, text):
+        """Simple tokenization."""
+        text = text.lower()
+        text = re.sub(r'[^a-z0-9\s]', '', text)
+        return text.split()
+    
+    def _generate_data(self, texts):
+        """Generate (context, target) pairs for CBOW."""
+        data = []
+        
+        for text in texts:
+            words = self._tokenize(text)
+            word_ids = [self.word_to_id.get(w, self.word_to_id['<UNK>']) 
+                       for w in words]
+            
+            for i in range(len(word_ids)):
+                # Get context window
+                start = max(0, i - self.window_size)
+                end = min(len(word_ids), i + self.window_size + 1)
+                
+                # Collect context words (excluding target)
+                context = []
+                for j in range(start, end):
+                    if i != j:
+                        context.append(word_ids[j])
+                
+                # Pad context to fixed size
+                while len(context) < 2 * self.window_size:
+                    context.append(self.word_to_id['<PAD>'])
+                
+                target = word_ids[i]
+                data.append((context, target))
+        
+        return data
+    
+    def generate_batch(self, batch_size):
+        """Generate a batch of training data."""
+        batch = random.sample(self.training_data, batch_size)
+        
+        contexts = np.array([item[0] for item in batch])
+        targets = np.array([item[1] for item in batch])
+        
+        return contexts, targets
+
+
+# ============================================================
+# PART 2: CBOW Model
+# ============================================================
+
+class CBOWModel(tf.keras.Model):
+    """
+    Continuous Bag of Words (CBOW) model.
+    
+    Architecture:
+    1. Embed context words
+    2. Average embeddings
+    3. Predict target word
+    """
+    
+    def __init__(self, vocab_size, embedding_dim, window_size=2):
+        super(CBOWModel, self).__init__()
+        
+        self.vocab_size = vocab_size
+        self.embedding_dim = embedding_dim
+        self.window_size = window_size
+        
+        # Embedding layer (shared for all context words)
+        self.embedding = tf.keras.layers.Embedding(
+            vocab_size, embedding_dim, name='word_embedding'
+        )
+        
+        # Output projection
+        self.output_layer = tf.keras.layers.Dense(
+            vocab_size, activation='softmax', name='output'
+        )
+    
+    def call(self, inputs):
+        """
+        Forward pass.
+        
+        Args:
+            inputs: Context word IDs (batch_size, context_size)
+            
+        Returns:
+            Predicted target word probabilities
+        """
+        # Embed context words: (batch, context_size, embed_dim)
+        embedded = self.embedding(inputs)
+        
+        # Average embeddings: (batch, embed_dim)
+        averaged = tf.reduce_mean(embedded, axis=1)
+        
+        # Predict target word
+        output = self.output_layer(averaged)
+        
+        return output
+
+
+def create_cbow_model(vocab_size, embedding_dim=100, window_size=2):
+    """Create and compile CBOW model."""
+    model = CBOWModel(vocab_size, embedding_dim, window_size)
+    
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(learning_rate=0.01),
+        loss='sparse_categorical_crossentropy',
+        metrics=['accuracy']
+    )
+    
+    return model
+
+
+# ============================================================
+# PART 3: Training
+# ============================================================
+
+print("=" * 60)
+print("CBOW WORD2VEC IMPLEMENTATION")
+print("=" * 60)
+
+# Sample corpus
+corpus = [
+    "the quick brown fox jumps over the lazy dog",
+    "machine learning is fascinating and powerful",
+    "deep learning models can understand language",
+    "natural language processing is a subset of ai",
+    "neural networks learn patterns from data",
+    "the dog was lazy and the fox was quick",
+    "ai and machine learning are transforming industries",
+    "data science combines statistics and programming",
+    "python is a popular language for machine learning",
+    "tensorflow and pytorch are deep learning frameworks",
+    "artificial intelligence powers modern applications",
+    "neural networks mimic the human brain structure",
+    "deep learning requires large amounts of training data",
+    "natural language understanding is a challenging task",
+    "machine translation converts text between languages"
+] * 100  # Repeat for more data
+
+# Create data generator
+data_gen = CBOWDataGenerator(corpus, window_size=2, min_count=1)
+
+# Create model
+embedding_dim = 50
+model = create_cbow_model(data_gen.vocab_size, embedding_dim)
+
+print(f"\nModel created with embedding dim: {embedding_dim}")
+model.summary()
+
+# Training
+batch_size = 128
+epochs = 50
+steps_per_epoch = 100
+
+print("\nTraining CBOW model...")
+for epoch in range(epochs):
+    total_loss = 0
+    total_acc = 0
+    
+    for step in range(steps_per_epoch):
+        contexts, targets = data_gen.generate_batch(batch_size)
+        loss, acc = model.train_on_batch(contexts, targets)
+        total_loss += loss
+        total_acc += acc
+    
+    if (epoch + 1) % 10 == 0:
+        print(f"Epoch {epoch+1}/{epochs}, Loss: {total_loss/steps_per_epoch:.4f}, "
+              f"Acc: {total_acc/steps_per_epoch:.4f}")
+
+
+# ============================================================
+# PART 4: Embedding Analysis
+# ============================================================
+
+print("\n" + "=" * 60)
+print("EMBEDDING ANALYSIS")
+print("=" * 60)
+
+# Get embeddings
+embeddings = model.embedding.weights[0].numpy()
+
+print(f"Embedding matrix shape: {embeddings.shape}")
+
+# Find similar words
+def find_similar_words(word, top_k=5):
+    """Find most similar words using cosine similarity."""
+    if word not in data_gen.word_to_id:
+        return []
+    
+    word_id = data_gen.word_to_id[word]
+    word_vec = embeddings[word_id]
+    
+    similarities = []
+    for i, vec in enumerate(embeddings):
+        if i != word_id and i > 1:  # Skip special tokens
+            sim = np.dot(word_vec, vec) / (np.linalg.norm(word_vec) * np.linalg.norm(vec) + 1e-8)
+            similarities.append((data_gen.id_to_word[i], sim))
+    
+    similarities.sort(key=lambda x: x[1], reverse=True)
+    return similarities[:top_k]
+
+# Test similarity
+test_words = ['learning', 'machine', 'neural', 'data']
+
+print("\nWord Similarities:")
+for word in test_words:
+    if word in data_gen.word_to_id:
+        similar = find_similar_words(word)
+        print(f"\n  Words similar to '{word}':")
+        for sim_word, sim_score in similar:
+            print(f"    {sim_word}: {sim_score:.4f}")
+
+
+# ============================================================
+# PART 5: Skip-gram vs CBOW Comparison
+# ============================================================
+
+print("\n" + "=" * 60)
+print("SKIP-GRAM VS CBOW COMPARISON")
+print("=" * 60)
+
+comparison = """
+Skip-gram:
+- Predicts context from target word
+- Works well with small datasets
+- Better for rare words
+- Slower training (more predictions)
+- More accurate for semantic relationships
+
+CBOW:
+- Predicts target word from context
+- Trains faster
+- Better for frequent words
+- Smooths over context (averaging)
+- More accurate for syntactic relationships
+
+When to use:
+- Skip-gram: Small corpus, rare words important
+- CBOW: Large corpus, speed important
+- Both: Try both and evaluate on downstream task
+"""
+
+print(comparison)
+
+
+# ============================================================
+# EXERCISES
+# ============================================================
+
+print("\n" + "=" * 60)
+print("EXERCISES")
+print("=" * 60)
+
+exercises = """
+Exercise 1: Dynamic Window Size
+-------------------------------
+Implement dynamic context windows:
+- Smaller windows for rare words
+- Larger windows for frequent words
+- Compare with fixed window
+
+Exercise 2: Context Weighting
+-----------------------------
+Add distance-based weighting:
+- Closer words have higher weight
+- Implement in CBOW averaging
+- Compare with uniform weighting
+
+Exercise 3: Evaluation on Downstream Tasks
+------------------------------------------
+Evaluate embeddings on:
+- Sentiment classification
+- Named entity recognition
+- Part-of-speech tagging
+"""
+
+print(exercises)
+```
+
+---
+
+# RNN/LSTM/GRU Labs

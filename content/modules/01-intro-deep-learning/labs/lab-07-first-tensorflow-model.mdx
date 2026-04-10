@@ -1,0 +1,138 @@
+---
+title: "Your First TensorFlow Model: Linear Regression from Scratch"
+module: 1
+labNumber: 7
+difficulty: "easy"
+estimatedTime: "45-60 minutes"
+source: "authored-by-claude-2026-04-10"
+---
+
+## Objective
+
+Build your very first TensorFlow model: a univariate linear regression trained
+with gradient descent. You will implement it twice — first using raw
+`tf.Variable` and a manual training loop, then using the high-level
+`tf.keras.Sequential` API — so you understand what Keras is doing under the
+hood.
+
+## Prerequisites
+
+- Completed Lab 01 (Vanilla GD on Rosenbrock) so you already understand the
+  gradient-descent update rule.
+- TensorFlow 2.x installed (`pip install tensorflow`).
+
+## Background
+
+Linear regression fits a line `y = w * x + b` to a set of points by minimising
+the mean squared error (MSE):
+
+$$
+\mathcal{L}(w, b) = \frac{1}{N}\sum_{i=1}^{N}\bigl(y_i - (w x_i + b)\bigr)^2
+$$
+
+The gradients are:
+
+$$
+\frac{\partial \mathcal{L}}{\partial w} = -\frac{2}{N}\sum x_i (y_i - \hat y_i),
+\quad
+\frac{\partial \mathcal{L}}{\partial b} = -\frac{2}{N}\sum (y_i - \hat y_i)
+$$
+
+In TensorFlow we don't have to compute those by hand — `tf.GradientTape` does
+it for us.
+
+## Part 1 — Manual training loop with `tf.GradientTape`
+
+```python
+import numpy as np
+import tensorflow as tf
+import matplotlib.pyplot as plt
+
+# 1. Synthetic data: y = 3x + 2 + noise
+np.random.seed(42)
+X = np.linspace(-1, 1, 200).astype(np.float32)
+y = 3.0 * X + 2.0 + np.random.normal(0, 0.3, size=X.shape).astype(np.float32)
+
+# 2. Trainable parameters
+w = tf.Variable(0.0, name="w")
+b = tf.Variable(0.0, name="b")
+
+# 3. Hyperparameters
+lr = 0.1
+epochs = 200
+history = []
+
+# 4. Training loop
+for epoch in range(epochs):
+    with tf.GradientTape() as tape:
+        y_pred = w * X + b
+        loss = tf.reduce_mean((y - y_pred) ** 2)
+    grads = tape.gradient(loss, [w, b])
+    w.assign_sub(lr * grads[0])
+    b.assign_sub(lr * grads[1])
+    history.append(loss.numpy())
+    if epoch % 20 == 0:
+        print(f"epoch {epoch:3d}  loss={loss.numpy():.4f}  w={w.numpy():.3f}  b={b.numpy():.3f}")
+
+print(f"\nFinal: w={w.numpy():.3f}, b={b.numpy():.3f} (target w=3, b=2)")
+```
+
+### What to observe
+
+- Loss should drop from ~4 to under 0.1 within ~100 epochs.
+- `w` and `b` converge close to the true values (3 and 2).
+- `tf.GradientTape` automatically derives the gradients — you never had to
+  write `-2/N * sum(...)` yourself.
+
+## Part 2 — The Keras equivalent
+
+```python
+model = tf.keras.Sequential([
+    tf.keras.layers.Dense(1, input_shape=(1,), use_bias=True)
+])
+model.compile(optimizer=tf.keras.optimizers.SGD(learning_rate=0.1),
+              loss="mse")
+model.fit(X, y, epochs=200, verbose=0)
+
+w_keras, b_keras = model.layers[0].get_weights()
+print("Keras w:", w_keras.flatten(), "b:", b_keras)
+```
+
+Both approaches should converge to essentially the same `(w, b)`. The Keras
+version is ~5 lines; the manual loop is ~15. But now you know exactly what
+`model.fit` is doing behind the scenes.
+
+## Part 3 — Plot the loss curve and the learned line
+
+```python
+fig, axes = plt.subplots(1, 2, figsize=(11, 4))
+axes[0].plot(history)
+axes[0].set_title("Training loss (manual loop)")
+axes[0].set_xlabel("epoch"); axes[0].set_ylabel("MSE")
+
+axes[1].scatter(X, y, s=12, alpha=0.6, label="data")
+xs = np.linspace(-1, 1, 100)
+axes[1].plot(xs, w.numpy() * xs + b.numpy(), "r-", lw=2, label="learned")
+axes[1].set_title("Fit")
+axes[1].legend()
+plt.tight_layout(); plt.show()
+```
+
+## Exercises
+
+1. Change the learning rate to `1.0` — does it still converge? What about
+   `2.0`? Explain in one sentence what you observed.
+2. Increase the noise std from `0.3` to `1.0`. How much does the final `w`
+   drift away from the true value `3.0`? Run 10 seeds and report mean ± std.
+3. Replace `SGD` in Part 2 with `Adam(learning_rate=0.1)` and compare the
+   loss curves. Which converges faster in the first 20 epochs? Which ends
+   with lower loss after 200?
+
+## Key takeaways
+
+- `tf.Variable` holds trainable state; `tf.GradientTape` records operations
+  and computes gradients automatically.
+- `tf.keras.Sequential` + `model.compile` + `model.fit` is a thin wrapper
+  around that same loop.
+- Even a one-neuron Dense layer is a legitimate neural network — you just
+  built one.

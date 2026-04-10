@@ -1,0 +1,136 @@
+---
+title: "High-Performance Data Pipeline"
+module: 4
+labNumber: 10
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# High-Performance Data Pipeline
+
+```python
+"""
+Lab 3.1: High-Performance Data Pipeline
+========================================
+Build and benchmark optimized tf.data pipelines.
+"""
+
+import tensorflow as tf
+import numpy as np
+import time
+import matplotlib.pyplot as plt
+
+class DataPipelineBenchmark:
+    """Benchmark different data pipeline configurations."""
+    
+    def __init__(self, x_data, y_data):
+        self.x_data = x_data
+        self.y_data = y_data
+        self.results = {}
+    
+    def benchmark_pipeline(self, name, dataset, num_batches=100):
+        print(f"\nBenchmarking: {name}")
+        
+        for batch in dataset.take(5):  # Warmup
+            pass
+        
+        times = []
+        for _ in range(3):
+            start = time.time()
+            for batch in dataset.take(num_batches):
+                tf.py_function(lambda x: x, [batch[0]], [tf.float32])
+            elapsed = time.time() - start
+            times.append(elapsed)
+        
+        avg_time = np.mean(times)
+        throughput = (num_batches * self.get_batch_size(dataset)) / avg_time
+        
+        self.results[name] = {'time': avg_time, 'throughput': throughput}
+        print(f"  Time: {avg_time:.2f}s, Throughput: {throughput:.1f} samples/sec")
+        return avg_time, throughput
+    
+    def get_batch_size(self, dataset):
+        for batch in dataset.take(1):
+            return batch[0].shape[0]
+        return 32
+    
+    def plot_results(self):
+        names = list(self.results.keys())
+        times = [self.results[n]['time'] for n in names]
+        throughputs = [self.results[n]['throughput'] for n in names]
+        
+        fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+        
+        axes[0].bar(names, times, color='skyblue', edgecolor='black')
+        axes[0].set_ylabel('Time (seconds)')
+        axes[0].set_title('Pipeline Time Comparison', fontweight='bold')
+        axes[0].tick_params(axis='x', rotation=45)
+        
+        axes[1].bar(names, throughputs, color='lightgreen', edgecolor='black')
+        axes[1].set_ylabel('Samples/sec')
+        axes[1].set_title('Pipeline Throughput Comparison', fontweight='bold')
+        axes[1].tick_params(axis='x', rotation=45)
+        
+        plt.tight_layout()
+        plt.savefig('pipeline_benchmark.png', dpi=150)
+        plt.show()
+
+def create_naive_pipeline(x, y, batch_size=32):
+    dataset = tf.data.Dataset.from_tensor_slices((x, y))
+    dataset = dataset.batch(batch_size)
+    return dataset
+
+def create_optimized_pipeline_v1(x, y, batch_size=32):
+    dataset = tf.data.Dataset.from_tensor_slices((x, y))
+    dataset = dataset.cache()
+    dataset = dataset.shuffle(buffer_size=1000)
+    dataset = dataset.batch(batch_size)
+    dataset = dataset.prefetch(tf.data.AUTOTUNE)
+    return dataset
+
+def create_optimized_pipeline_v2(x, y, batch_size=32):
+    def augment(image, label):
+        image = tf.image.random_flip_left_right(image)
+        image = tf.image.random_brightness(image, 0.1)
+        return image, label
+    
+    dataset = tf.data.Dataset.from_tensor_slices((x, y))
+    dataset = dataset.cache()
+    dataset = dataset.shuffle(buffer_size=1000)
+    dataset = dataset.map(augment, num_parallel_calls=tf.data.AUTOTUNE)
+    dataset = dataset.batch(batch_size)
+    dataset = dataset.prefetch(tf.data.AUTOTUNE)
+    return dataset
+
+def create_optimized_pipeline_v3(x, y, batch_size=32):
+    dataset = tf.data.Dataset.from_tensor_slices((x, y))
+    dataset = dataset.cache()
+    dataset = dataset.shuffle(buffer_size=10000)
+    dataset = dataset.batch(batch_size)
+    dataset = dataset.prefetch(tf.data.AUTOTUNE)
+    return dataset
+
+def run_pipeline_benchmark():
+    (x_train, y_train), _ = tf.keras.datasets.cifar10.load_data()
+    x_train = x_train.astype('float32') / 255.0
+    y_train = tf.keras.utils.to_categorical(y_train, 10)
+    
+    benchmark = DataPipelineBenchmark(x_train, y_train)
+    
+    pipelines = {
+        'Naive': create_naive_pipeline(x_train, y_train, batch_size=64),
+        'Cache + Prefetch': create_optimized_pipeline_v1(x_train, y_train, batch_size=64),
+        'Parallel Map': create_optimized_pipeline_v2(x_train, y_train, batch_size=64),
+        'Large Shuffle': create_optimized_pipeline_v3(x_train, y_train, batch_size=64),
+    }
+    
+    for name, pipeline in pipelines.items():
+        benchmark.benchmark_pipeline(name, pipeline, num_batches=50)
+    
+    benchmark.plot_results()
+    return benchmark.results
+
+results = run_pipeline_benchmark()
+```
+
+---

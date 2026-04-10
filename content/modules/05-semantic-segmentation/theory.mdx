@@ -1,0 +1,1895 @@
+---
+title: "Semantic Segmentation"
+module: 5
+moduleId: "05-semantic-segmentation"
+description: "Pixel-level prediction with FCN, U-Net, DeepLab architectures. Atrous convolution, loss functions, and post-processing."
+shortTitle: "Segmentation"
+duration: "1 week"
+difficulty: "intermediate"
+icon: "palette"
+color: "#10b981"
+prerequisites:
+  - "3"
+objectives:
+  - "Understand encoder-decoder architectures"
+  - "Implement FCN, U-Net, and DeepLab"
+  - "Master atrous/dilated convolutions"
+  - "Apply segmentation loss functions"
+  - "Post-process predictions with CRFs"
+source: "content/modules/05-semantic-segmentation/theory.md"
+generatedBy: "scripts/convert-theory.mjs"
+lastConverted: "2026-04-10T18:28:36.993Z"
+---
+## Table of Contents
+1. [Introduction to Semantic Segmentation](#1-introduction-to-semantic-segmentation)
+2. [Encoder-Decoder Architecture Theory](#2-encoder-decoder-architecture-theory)
+3. [Skip Connections and Multi-Scale Features](#3-skip-connections-and-multi-scale-features)
+4. [Atrous Convolution Mathematical Basis](#4-atrous-convolution-mathematical-basis)
+5. [Receptive Field Expansion Strategies](#5-receptive-field-expansion-strategies)
+6. [Loss Functions for Segmentation](#6-loss-functions-for-segmentation)
+7. [Class Imbalance Handling Theory](#7-class-imbalance-handling-theory)
+8. [Segmentation Paradigms: Instance, Semantic, and Panoptic](#8-segmentation-paradigms-instance-semantic-and-panoptic)
+9. [Post-Processing Techniques](#9-post-processing-techniques)
+10. [Medical Image Segmentation Considerations](#10-medical-image-segmentation-considerations)
+11. [Real-Time Segmentation Architectures](#11-real-time-segmentation-architectures)
+12. [Key Insights and Common Pitfalls](#12-key-insights-and-common-pitfalls)
+
+---
+
+## 1. Introduction to Semantic Segmentation
+
+### 1.1 The Segmentation Problem Definition
+
+Semantic segmentation represents one of the most challenging tasks in computer vision, requiring pixel-level understanding of images. Unlike image classification, which assigns a single label to an entire image, or object detection, which localizes objects with bounding boxes, semantic segmentation assigns a class label to **every pixel** in the image.
+
+**Formal Definition:**
+Given an input image $I \in \mathbb{R}^{H \times W \times C}$ where $H$ is height, $W$ is width, and $C$ is the number of channels (typically 3 for RGB), semantic segmentation produces an output map $S \in \mathbb{R}^{H \times W \times K}$ where $K$ is the number of semantic classes. Each pixel location $(i, j)$ is assigned a probability distribution over all $K$ classes:
+
+$$S_{i,j} = [p_1, p_2, ..., p_K] \quad \text{where} \quad \sum_{k=1}^{K} p_k = 1$$
+
+The final segmentation mask is obtained by taking the argmax:
+$$\hat{y}_{i,j} = \arg\max_k S_{i,j,k}$$
+
+### 1.2 Historical Evolution
+
+| Era | Key Development | Significance |
+|-----|----------------|--------------|
+| 2012 | Sliding window CNNs | First CNN-based approaches using patch classification |
+| 2014 | FCN (Fully Convolutional Networks) | End-to-end trainable, arbitrary input sizes |
+| 2015 | U-Net | Skip connections for precise localization |
+| 2015 | SegNet | Encoder-decoder with pooling indices |
+| 2016 | DeepLab v1/v2 | Atrous convolution for larger receptive fields |
+| 2017 | DeepLab v3/v3+ | Atrous Spatial Pyramid Pooling (ASPP) |
+| 2018 | PSPNet | Pyramid pooling module |
+| 2019+ | Transformers | Self-attention for global context |
+
+### 1.3 Computational Complexity Analysis
+
+For an image of size $H \times W$ with $K$ classes:
+
+- **Classification:** $O(K)$ output parameters
+- **Detection:** $O(N \times (4 + K))$ where $N$ is number of proposals
+- **Segmentation:** $O(H \times W \times K)$ output parameters
+
+This exponential increase in output dimensionality makes segmentation computationally intensive.
+
+---
+
+## 2. Encoder-Decoder Architecture Theory
+
+### 2.1 The Encoder-Decoder Paradigm
+
+The encoder-decoder architecture has emerged as the dominant paradigm for semantic segmentation, addressing the fundamental tension between **semantic information** (what) and **spatial information** (where).
+
+**Architecture Components:**
+
+```python
+Input Image (H × W × 3)
+        ↓
+    ┌─────────┐
+    │ ENCODER │ → Extracts high-level semantic features
+    │ (Down)  │   Reduces spatial dimensions
+    └────┬────┘   Increases channel depth
+         ↓
+Feature Map (H/32 × W/32 × 2048)
+         ↓
+    ┌─────────┐
+    │ DECODER │ → Recovers spatial resolution
+    │  (Up)   │   Refines segmentation boundaries
+    └────┬────┘
+         ↓
+Output Mask (H × W × K)
+```
+
+### 2.2 The Information Bottleneck Problem
+
+The core challenge in encoder-decoder architectures is the **information bottleneck**: as the encoder progressively downsamples to capture context, fine spatial details are lost. The decoder must reconstruct these details from a compressed representation.
+
+**Mathematical Formulation:**
+
+Let $f_{enc}$ be the encoder function and $f_{dec}$ be the decoder function:
+
+$$z = f_{enc}(x; \theta_{enc}) \quad \text{where} \quad z \in \mathbb{R}^{h \times w \times c}$$
+$$\hat{y} = f_{dec}(z; \theta_{dec}) \quad \text{where} \quad \hat{y} \in \mathbb{R}^{H \times W \times K}$$
+
+The compression ratio is:
+$$\rho = \frac{H \times W}{h \times w}$$
+
+For typical architectures with 5 pooling layers (stride 2 each):
+$$\rho = 2^5 \times 2^5 = 1024$$
+
+This means a 512×512 input is compressed to a 16×16 feature map—a 1024× compression!
+
+### 2.3 Encoder Design Principles
+
+**2.3.1 Backbone Networks**
+
+Common encoder backbones and their characteristics:
+
+| Backbone | Parameters | Top-1 Acc | Output Stride | FLOPs |
+|----------|-----------|-----------|---------------|-------|
+| VGG-16 | 138M | 71.5% | 32 | 15.5G |
+| ResNet-50 | 25.6M | 76.0% | 32 | 4.1G |
+| ResNet-101 | 44.5M | 77.4% | 32 | 7.8G |
+| Xception | 22.8M | 79.0% | 32 | 8.4G |
+| EfficientNet-B0 | 5.3M | 77.1% | 32 | 0.39G |
+| EfficientNet-B4 | 19.3M | 82.6% | 32 | 4.2G |
+
+**2.3.2 Feature Pyramid Hierarchy**
+
+Modern encoders produce multi-scale features at different stages:
+
+```python
+Input: 512 × 512 × 3
+  ↓
+C1: 256 × 256 × 64    (stride 2)
+  ↓
+C2: 128 × 128 × 256   (stride 4)
+  ↓
+C3: 64 × 64 × 512     (stride 8)
+  ↓
+C4: 32 × 32 × 1024    (stride 16)
+  ↓
+C5: 16 × 16 × 2048    (stride 32)
+```
+
+Each level captures different semantic concepts:
+- **Low-level (C1-C2):** Edges, textures, colors
+- **Mid-level (C3):** Parts, object components
+- **High-level (C4-C5):** Object categories, scene context
+
+### 2.4 Decoder Design Strategies
+
+**2.4.1 Transposed Convolution (Deconvolution)**
+
+Transposed convolution learns upsampling filters during training:
+
+$$y[i,j] = \sum_{m}\sum_{n} x[m,n] \cdot w[i-m, j-n]$$
+
+For a 2× upsampling with 3×3 kernel:
+- Input: $h \times w \times c$
+- Output: $2h \times 2w \times c'$
+- Learnable parameters: $3 \times 3 \times c \times c'$
+
+**Limitations:**
+- Checkerboard artifacts due to uneven overlap
+- High computational cost
+- May produce blurry outputs
+
+**2.4.2 Bilinear Upsampling + Convolution**
+
+A more stable alternative:
+
+```python
+# Theoretical illustration
+upsampled = bilinear_upsample(features, scale=2)
+refined = conv2d(upsampled, kernel_size=3)
+```
+
+This approach:
+- Eliminates checkerboard artifacts
+- Reduces parameters
+- Provides smoother transitions
+
+**2.4.3 Learned Upsampling**
+
+Recent approaches use learned upsampling modules:
+
+- **Sub-pixel Convolution:** Rearranges channel dimensions to spatial dimensions
+$$PS(F)_{x,y,c} = F_{\lfloor x/r \rfloor, \lfloor y/r \rfloor, c \cdot r^2 + (y \mod r) \cdot r + (x \mod r)}$$
+
+- **CARAFE (Content-Aware ReAssembly):** Uses input-dependent kernels
+
+### 2.5 Architectural Variants
+
+**2.5.1 FCN (Fully Convolutional Network)**
+
+The pioneering work that introduced end-to-end trainable segmentation:
+
+```python
+VGG/ResNet Backbone
+        ↓
+FC6 → Conv 1×1 (4096 filters)
+        ↓
+FC7 → Conv 1×1 (4096 filters)
+        ↓
+Score Layer → Conv 1×1 (K classes)
+        ↓
+Deconvolution (upsampling)
+        ↓
+Pixel-wise softmax
+```
+
+FCN variants:
+- **FCN-32s:** 32× upsampling from final layer
+- **FCN-16s:** 16× upsampling with skip from pool4
+- **FCN-8s:** 8× upsampling with skips from pool3 and pool4
+
+**2.5.2 SegNet**
+
+Key innovation: Use max-pooling indices for upsampling
+
+```python
+Encoder          Decoder
+Conv → Pool ──→ Unpool (using indices) → Conv
+   ↓ indices stored
+```
+
+Advantages:
+- No learnable parameters in upsampling
+- Preserves high-frequency details
+- Memory efficient
+
+**2.5.3 U-Net**
+
+The biomedical imaging standard with symmetric skip connections:
+
+```python
+Contracting Path                    Expanding Path
+  ┌─────┐                              ┌─────┐
+  │Conv │─────────────────────────────→│Concat│
+  │Block│    Skip Connection            │Conv  │
+  └──┬──┘                              └──┬──┘
+     ↓ MaxPool                            ↑ Upsample
+  ┌─────┐                              ┌─────┐
+  │Conv │─────────────────────────────→│Concat│
+  │Block│                              │Conv  │
+  └──┬──┘                              └──┬──┘
+     ↓                                     ↑
+     ...                                ...
+     ↓                                     ↑
+  ┌─────┐                              ┌─────┐
+  │Bottleneck│ ←────────────────────── │Conv  │
+  └─────┘                              └─────┘
+```
+
+---
+
+## 3. Skip Connections and Multi-Scale Features
+
+### 3.1 The Multi-Scale Challenge
+
+Objects in images appear at vastly different scales. A segmentation network must simultaneously:
+- Recognize small, fine-grained structures (requires high resolution)
+- Understand large object context (requires large receptive field)
+
+This creates an inherent tension that skip connections help resolve.
+
+### 3.2 Skip Connection Theory
+
+**3.2.1 Mathematical Formulation**
+
+Given encoder features $E_l$ at layer $l$ and decoder features $D_l$ at the corresponding level:
+
+**Concatenation Skip:**
+$$D_l' = \text{Conv}([D_l; E_l])$$
+
+where $[\cdot; \cdot]$ denotes channel-wise concatenation.
+
+**Addition Skip (ResNet-style):**
+$$D_l' = D_l + \text{Project}(E_l)$$
+
+**3.2.2 Information Flow Analysis**
+
+Skip connections provide:
+1. **Gradient Highway:** Direct paths for gradient flow during backpropagation
+2. **Detail Recovery:** High-resolution features for boundary refinement
+3. **Multi-Scale Fusion:** Combining features at different abstraction levels
+
+The effective receptive field at skip level $l$:
+$$\text{ERF}_l = k \cdot s^l$$
+
+where $k$ is kernel size and $s$ is stride.
+
+### 3.3 U-Net Skip Architecture Deep Dive
+
+**3.3.1 Symmetric Design**
+
+U-Net's symmetric design ensures spatial correspondence:
+
+```python
+Level 1: 572×572  →  568×568 (skip)  →  572×572
+Level 2: 284×284  →  280×280 (skip)  →  284×284
+Level 3: 140×140  →  136×136 (skip)  →  140×140
+Level 4: 68×68    →  64×64   (skip)  →  68×68
+Level 5: 32×32    →  28×28   (bottleneck)
+```
+
+**3.3.2 Skip Connection Implementation**
+
+```python
+# Theoretical illustration of U-Net skip connection
+def u_net_skip(encoder_features, decoder_features):
+    """
+    encoder_features: [B, C_enc, H, W] from contracting path
+    decoder_features: [B, C_dec, H, W] from expanding path
+    """
+    # Crop encoder features to match decoder size (due to valid convolution)
+    cropped = crop_center(encoder_features, decoder_features.shape[2:])
+
+    # Concatenate along channel dimension
+    merged = concatenate([cropped, decoder_features], axis=1)
+
+    # Apply convolution to fuse information
+    output = conv_block(merged, filters=C_dec)
+
+    return output
+```
+
+### 3.4 Feature Pyramid Networks (FPN) for Segmentation
+
+**3.4.1 Top-Down Pathway**
+
+FPN creates a feature pyramid with rich semantics at all levels:
+
+```python
+C5 ─────────────────────────────→ P5
+  ↓ 1×1 conv + upsample
+C4 ──→ lateral ──→ add ─────────→ P4
+  ↓ 1×1 conv + upsample
+C3 ──→ lateral ──→ add ─────────→ P3
+  ↓ 1×1 conv + upsample
+C2 ──→ lateral ──→ add ─────────→ P2
+```
+
+**3.4.2 Mathematical Formulation**
+
+$$P_l = \begin{cases}
+\text{Conv}_{1\times 1}(C_5) & l = 5 \\
+\text{Conv}_{3\times 3}(\text{Upsample}(P_{l+1}) + \text{Conv}_{1\times 1}(C_l)) & l < 5
+\end{cases}$$
+
+### 3.5 Advanced Skip Connection Strategies
+
+**3.5.1 Attention-Guided Skip Connections**
+
+Not all skip features are equally important. Attention mechanisms can weight them:
+
+$$\alpha_l = \sigma(W_a \cdot [E_l; D_l])$$
+$$D_l' = \text{Conv}([\alpha_l \odot E_l; D_l])$$
+
+**3.5.2 Gated Skip Connections**
+
+Learn to suppress irrelevant skip information:
+
+$$g_l = \sigma(W_g \ast D_l)$$
+$$D_l' = \text{Conv}([g_l \odot E_l; (1-g_l) \odot D_l])$$
+
+### 3.6 Multi-Scale Feature Fusion
+
+**3.6.1 Pyramid Pooling**
+
+PSPNet's pyramid pooling module captures multi-scale context:
+
+```python
+Input Features
+      ↓
+  ┌───┴───┬───────┬───────┐
+  ↓       ↓       ↓       ↓
+GAP    2×2     3×3     6×6
+Pool   Pool    Pool    Pool
+  ↓       ↓       ↓       ↓
+Conv   Conv    Conv    Conv
+  ↓       ↓       ↓       ↓
+Upsample to original size
+  ↓       ↓       ↓       ↓
+  └───┬───┴───────┴───────┘
+      ↓
+   Concatenate
+      ↓
+   Conv 1×1
+```
+
+**3.6.2 Atrous Spatial Pyramid Pooling (ASPP)**
+
+DeepLab's ASPP uses multiple atrous rates:
+
+```python
+Input
+  ↓
+  ┌───┬───┬───┬───┬───┐
+  ↓   ↓   ↓   ↓   ↓
+ 1×1 3×3 3×3 3×3 Image
+     r=6 r=12 r=18 Pooling
+  ↓   ↓   ↓   ↓   ↓
+  └───┴───┴───┴───┘
+        ↓
+     Concat
+        ↓
+      Conv 1×1
+```
+
+---
+
+## 4. Atrous Convolution Mathematical Basis
+
+### 4.1 The Downsampling Dilemma
+
+Standard CNNs use strided convolutions/pooling to increase receptive field, but this:
+- Reduces spatial resolution
+- Loses fine-grained details
+- Makes precise localization difficult
+
+**Atrous (Dilated) Convolution** provides an elegant solution.
+
+### 4.2 Mathematical Definition
+
+**Standard 2D Convolution:**
+$$y[i,j] = \sum_{m=0}^{k-1}\sum_{n=0}^{k-1} x[i+m, j+n] \cdot w[m,n]$$
+
+**Atrous Convolution with rate r:**
+$$y[i,j] = \sum_{m=0}^{k-1}\sum_{n=0}^{k-1} x[i + r \cdot m, j + r \cdot n] \cdot w[m,n]$$
+
+The rate $r$ controls the spacing between kernel weights.
+
+### 4.3 Visual Illustration
+
+**Standard 3×3 Convolution (r=1):**
+```python
+● ─ ● ─ ●
+│   │   │
+● ─ ● ─ ●
+│   │   │
+● ─ ● ─ ●
+
+Receptive Field: 3×3
+```
+
+**Atrous 3×3 Convolution (r=2):**
+```python
+● ─ ─ ● ─ ─ ●
+│       │
+│   ●   │
+│       │
+● ─ ─ ● ─ ─ ●
+│       │
+│   ●   │
+│       │
+● ─ ─ ● ─ ─ ●
+
+Receptive Field: 7×7 (with only 9 parameters!)
+```
+
+**Atrous 3×3 Convolution (r=4):**
+```python
+● ─ ─ ─ ─ ● ─ ─ ─ ─ ●
+│               │
+│       ●       │
+│               │
+│   ●       ●   │
+│               │
+● ─ ─ ─ ─ ● ─ ─ ─ ─ ●
+│               │
+│       ●       │
+│               │
+│   ●       ●   │
+│               │
+● ─ ─ ─ ─ ● ─ ─ ─ ─ ●
+
+Receptive Field: 15×15 (with only 9 parameters!)
+```
+
+### 4.4 Receptive Field Growth
+
+For a $k \times k$ kernel with atrous rate $r$:
+
+$$\text{RF}_{atrous} = k + (k-1) \times (r-1)$$
+
+**Comparison Table:**
+
+| Kernel Size | Rate | Parameters | Receptive Field | RF/Param Ratio |
+|-------------|------|------------|-----------------|----------------|
+| 3×3 | 1 | 9 | 3×3 | 1.0 |
+| 3×3 | 2 | 9 | 7×7 | 5.4 |
+| 3×3 | 4 | 9 | 15×15 | 25.0 |
+| 3×3 | 8 | 9 | 31×31 | 106.8 |
+| 7×7 | 1 | 49 | 7×7 | 1.0 |
+| 5×5 | 2 | 25 | 13×13 | 6.8 |
+
+### 4.5 Gridding Effect and Solutions
+
+**4.5.1 The Gridding Problem**
+
+When using the same atrous rate throughout, the convolution samples only a subset of pixels:
+
+```python
+r=2 applied twice:
+Layer 1: ● ○ ● ○ ● ○ ●
+         ○ ○ ○ ○ ○ ○ ○
+         ● ○ ● ○ ● ○ ●
+
+Layer 2: ● ○ ○ ○ ● ○ ○ ○ ●
+         ○ ○ ○ ○ ○ ○ ○ ○ ○
+         ○ ○ ○ ○ ○ ○ ○ ○ ○
+         ○ ○ ○ ○ ○ ○ ○ ○ ○
+         ● ○ ○ ○ ● ○ ○ ○ ●
+
+Many pixels never contribute! (marked as ○)
+```
+
+**4.5.2 Hybrid Atrous Rates**
+
+DeepLab v3 uses multiple rates in ASPP to mitigate gridding:
+
+```python
+# Theoretical illustration
+aspp_rates = [6, 12, 18]
+# Each branch captures different pixel subsets
+# Combined, they cover the full receptive field
+```
+
+**4.5.3 Atrous Rate Scheduling**
+
+Progressive increase of rates through layers:
+
+```python
+Layer 1: r=1 (standard)
+Layer 2: r=2
+Layer 3: r=4
+Layer 4: r=8
+```
+
+This ensures all pixels contribute to the output.
+
+### 4.6 Output Stride Control
+
+**4.6.1 Definition**
+
+Output stride (OS) is the ratio of input resolution to output resolution:
+
+$$\text{OS} = \frac{H_{input}}{H_{output}} = \frac{W_{input}}{W_{output}}$$
+
+**4.6.2 Atrous Convolution for Arbitrary OS**
+
+Replace strided convolutions with atrous convolutions to control OS:
+
+| Configuration | OS | Final Feature Resolution |
+|--------------|-----|-------------------------|
+| All stride-2 | 32 | H/32 × W/32 |
+| Last block r=2 | 16 | H/16 × W/16 |
+| Last 2 blocks r=2,4 | 8 | H/8 × W/8 |
+
+**4.6.3 Memory-Accuracy Trade-off**
+
+Lower OS (higher resolution features):
+- ✓ Better boundary localization
+- ✓ Finer detail preservation
+- ✗ Higher memory usage
+- ✗ Slower computation
+
+### 4.7 Atrous Convolution in Backbones
+
+**4.7.1 ResNet with Atrous Convolution**
+
+```python
+# Theoretical illustration: Modifying ResNet for segmentation
+class AtrousResNet:
+    def __init__(self, output_stride=16):
+        # Standard convolutions for early layers
+        self.layer1 = standard_conv_block(stride=2)
+        self.layer2 = standard_conv_block(stride=2)
+        self.layer3 = standard_conv_block(stride=2)
+
+        # Atrous convolutions for later layers
+        if output_stride == 16:
+            self.layer4 = atrous_conv_block(rate=2)
+        elif output_stride == 8:
+            self.layer3 = atrous_conv_block(rate=2)
+            self.layer4 = atrous_conv_block(rate=4)
+```
+
+**4.7.2 Xception with Depthwise Separable Atrous Conv**
+
+DeepLab v3+ uses modified Xception:
+- All max pooling → depthwise separable conv with stride 2
+- All 3×3 depthwise conv → atrous depthwise conv
+- Additional batch normalization and ReLU
+
+---
+
+## 5. Receptive Field Expansion Strategies
+
+### 5.1 The Receptive Field Challenge
+
+Semantic segmentation requires understanding both local details and global context. The receptive field must be large enough to capture object context while maintaining spatial precision.
+
+### 5.2 Receptive Field Fundamentals
+
+**5.2.1 Definition**
+
+The receptive field of a neuron is the region of the input that affects its output.
+
+**5.2.2 Receptive Field Calculation**
+
+For a sequence of layers:
+
+$$RF_{l} = RF_{l-1} + (k_l - 1) \times \prod_{i=1}^{l-1} s_i$$
+
+where:
+- $RF_l$: receptive field at layer $l$
+- $k_l$: kernel size at layer $l$
+- $s_i$: stride at layer $i$
+
+**5.2.3 Effective Receptive Field**
+
+Not all pixels in the theoretical RF contribute equally. The effective receptive field follows a Gaussian distribution:
+
+$$\text{ERF}(x,y) \propto \exp\left(-\frac{x^2 + y^2}{2\sigma^2}\right)$$
+
+### 5.3 Strategies for Receptive Field Expansion
+
+**5.3.1 Strategy 1: Deeper Networks**
+
+Stack more layers with small kernels:
+
+| Architecture | Layers | 3×3 Convolutions | Theoretical RF |
+|--------------|--------|------------------|----------------|
+| VGG-16 | 16 | 13 | 308×308 |
+| ResNet-50 | 50 | 48 | 483×483 |
+| ResNet-101 | 101 | 99 | 1027×1027 |
+
+Limitations:
+- Vanishing gradients
+- Computational cost
+- Diminishing returns
+
+**5.3.2 Strategy 2: Larger Kernels**
+
+Directly use larger convolutional kernels:
+
+| Kernel Size | Parameters | RF per Layer |
+|-------------|------------|--------------|
+| 3×3 | 9 | 3×3 |
+| 5×5 | 25 | 5×5 |
+| 7×7 | 49 | 7×7 |
+
+Limitations:
+- Quadratic parameter growth
+- Overfitting risk
+- Computational inefficiency
+
+**5.3.3 Strategy 3: Atrous Convolution**
+
+As detailed in Section 4, atrous convolution exponentially expands RF without increasing parameters.
+
+**5.3.4 Strategy 4: Global Context Modules**
+
+**Global Average Pooling:**
+$$z_c = \frac{1}{H \times W} \sum_{i=1}^{H} \sum_{j=1}^{W} x_{c,i,j}$$
+
+Captures global context but loses all spatial information.
+
+**Pyramid Pooling:**
+Combines multiple scales:
+
+```python
+Input Feature Map
+      ↓
+  ┌───┴───┬───────┬───────┬───────┐
+  ↓       ↓       ↓       ↓       ↓
+ 1×1     2×2     3×3     6×6    Global
+ Pool    Pool    Pool    Pool    Pool
+  ↓       ↓       ↓       ↓       ↓
+ Conv    Conv    Conv    Conv    Conv
+  ↓       ↓       ↓       ↓       ↓
+Upsample to input size
+  ↓       ↓       ↓       ↓       ↓
+  └───┬───┴───────┴───────┴───────┘
+      ↓
+   Concatenate → Global + Local context
+```
+
+**5.3.5 Strategy 5: Self-Attention**
+
+Transformers and attention mechanisms provide global receptive field:
+
+$$\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)V$$
+
+Computational complexity: $O(N^2)$ where $N = H \times W$
+
+### 5.4 Receptive Field Analysis for Segmentation
+
+**5.4.1 RF Requirements by Task**
+
+| Object Size | Typical RF Needed | Example |
+|-------------|-------------------|---------|
+| Small (<32px) | 64-128 px | Pedestrians, small objects |
+| Medium (32-96px) | 128-256 px | Cars, animals |
+| Large (>96px) | 256-512 px | Buildings, landscapes |
+| Scene context | Full image | Sky, road, background |
+
+**5.4.2 Multi-Scale Receptive Fields**
+
+Effective segmentation networks combine multiple RF sizes:
+
+```python
+Small RF (r=1):   Fine details, edges, textures
+Medium RF (r=4):  Object parts, medium structures
+Large RF (r=8):   Full objects, large regions
+Global RF:        Scene context, background
+```
+
+### 5.5 Architecture-Specific RF Strategies
+
+**5.5.1 DeepLab v3+ Decoder**
+
+```python
+Encoder (OS=16) → [ASPP with r=6,12,18] → Concat → Conv 1×1
+                          ↓
+                     Low-level features (OS=4)
+                          ↓
+                     Conv 1×1 (48 filters)
+                          ↓
+                     Upsample by 4
+                          ↓
+                     Concat with ASPP output
+                          ↓
+                     3×3 Conv → Upsample by 4 → Output
+```
+
+**5.5.2 HRNet (High-Resolution Network)**
+
+Maintains high-resolution representations throughout:
+
+```python
+Parallel multi-resolution streams:
+Stream 1: H × W (full resolution)
+Stream 2: H/2 × W/2
+Stream 3: H/4 × W/4
+Stream 4: H/8 × W/8
+
+Repeated fusion across streams maintains both local and global information.
+```
+
+---
+
+## 6. Loss Functions for Segmentation
+
+### 6.1 Pixel-wise Cross-Entropy
+
+The standard classification loss applied per-pixel:
+
+$$\mathcal{L}_{CE} = -\frac{1}{N} \sum_{i=1}^{N} \sum_{c=1}^{C} y_{i,c} \log(\hat{y}_{i,c})$$
+
+where:
+- $N = H \times W$ (number of pixels)
+- $C$ = number of classes
+- $y_{i,c}$ = one-hot ground truth
+- $\hat{y}_{i,c}$ = predicted probability
+
+**Limitations:**
+- Treats all pixels equally
+- Struggles with class imbalance
+- Ignores spatial relationships
+
+### 6.2 Weighted Cross-Entropy
+
+Addresses class imbalance with per-class weights:
+
+$$\mathcal{L}_{WCE} = -\frac{1}{N} \sum_{i=1}^{N} \sum_{c=1}^{C} w_c \cdot y_{i,c} \log(\hat{y}_{i,c})$$
+
+**Weight Calculation:**
+
+| Method | Formula | Use Case |
+|--------|---------|----------|
+| Inverse frequency | $w_c = \frac{N}{N_c \cdot C}$ | Severe imbalance |
+| Median frequency | $w_c = \frac{\text{median}(N_c)}{N_c}$ | Moderate imbalance |
+| Effective samples | $w_c = \frac{1-\beta}{1-\beta^{N_c}}$ | Long-tail distribution |
+
+### 6.3 Dice Loss
+
+Based on the Dice coefficient (F1 score):
+
+$$\text{Dice} = \frac{2|X \cap Y|}{|X| + |Y|} = \frac{2\sum_{i} x_i y_i}{\sum_{i} x_i + \sum_{i} y_i}$$
+
+**Dice Loss:**
+$$\mathcal{L}_{Dice} = 1 - \frac{2\sum_{i} \hat{y}_i y_i}{\sum_{i} \hat{y}_i^2 + \sum_{i} y_i^2}$$
+
+For multi-class:
+$$\mathcal{L}_{Dice} = 1 - \frac{1}{C} \sum_{c=1}^{C} \frac{2\sum_{i} \hat{y}_{i,c} y_{i,c}}{\sum_{i} \hat{y}_{i,c}^2 + \sum_{i} y_{i,c}^2}$$
+
+**Properties:**
+- Directly optimizes for overlap
+- Handles class imbalance naturally
+- Smooth gradients
+- Range: [0, 1]
+
+### 6.4 IoU Loss (Jaccard Loss)
+
+Based on Intersection over Union:
+
+$$\text{IoU} = \frac{|X \cap Y|}{|X \cup Y|} = \frac{\sum_{i} x_i y_i}{\sum_{i} x_i + \sum_{i} y_i - \sum_{i} x_i y_i}$$
+
+**IoU Loss:**
+$$\mathcal{L}_{IoU} = 1 - \frac{\sum_{i} \hat{y}_i y_i}{\sum_{i} \hat{y}_i + \sum_{i} y_i - \sum_{i} \hat{y}_i y_i}$$
+
+**Comparison: Dice vs IoU**
+
+| Aspect | Dice Loss | IoU Loss |
+|--------|-----------|----------|
+| Gradient magnitude | Larger | Smaller |
+| Optimization focus | Balanced precision/recall | Strict overlap |
+| Small object handling | Better | Good |
+| Convergence speed | Faster | Slower |
+
+### 6.5 Tversky Loss
+
+Generalization of Dice and IoU with controllable weights:
+
+$$\mathcal{L}_{Tversky} = 1 - \frac{\sum_{i} \hat{y}_i y_i}{\sum_{i} \hat{y}_i y_i + \alpha \sum_{i} \hat{y}_i (1-y_i) + \beta \sum_{i} (1-\hat{y}_i) y_i}$$
+
+**Special Cases:**
+- $\alpha = \beta = 0.5$: Dice loss
+- $\alpha = \beta = 1$: IoU loss
+- $\alpha < \beta$: Penalize false negatives more (recall-focused)
+- $\alpha > \beta$: Penalize false positives more (precision-focused)
+
+**Applications:**
+- Medical imaging: $\alpha = 0.3, \beta = 0.7$ (recall-critical)
+- Precision-critical: $\alpha = 0.7, \beta = 0.3$
+
+### 6.6 Focal Loss
+
+Addresses class imbalance by down-weighting easy examples:
+
+$$\mathcal{L}_{Focal} = -\frac{1}{N} \sum_{i} (1 - \hat{y}_{i,t})^{\gamma} \log(\hat{y}_{i,t})$$
+
+where $t$ is the true class and $\gamma$ is the focusing parameter.
+
+**Behavior:**
+- $\gamma = 0$: Standard cross-entropy
+- $\gamma = 2$: Strong focus on hard examples
+- Easy examples ($\hat{y} \approx 1$): Loss → 0 quickly
+- Hard examples ($\hat{y} \ll 1$): Full loss maintained
+
+**Focal Loss for Segmentation:**
+
+$$\mathcal{L}_{Focal} = -\frac{1}{N} \sum_{i} \sum_{c} \alpha_c (1 - \hat{y}_{i,c})^{\gamma} y_{i,c} \log(\hat{y}_{i,c})$$
+
+### 6.7 Boundary Loss
+
+Explicitly optimizes for boundary quality:
+
+$$\mathcal{L}_{Boundary} = \frac{1}{N_{boundary}} \sum_{i \in \text{boundary}} |\hat{y}_i - y_i|$$
+
+**Combined Loss:**
+$$\mathcal{L}_{total} = \mathcal{L}_{region} + \lambda \mathcal{L}_{boundary}$$
+
+### 6.8 Lovász-Softmax Loss
+
+Directly optimizes for IoU using convex Lovász extension:
+
+$$\mathcal{L}_{Lov\acute{a}sz} = \overline{\Delta_{J_c}}(m_c)$$
+
+where $m_c$ are the sorted errors for class $c$.
+
+**Advantages:**
+- Direct IoU optimization
+- Handles empty predictions
+- Better for small batches
+
+### 6.9 Loss Function Selection Guide
+
+| Scenario | Recommended Loss | Rationale |
+|----------|-----------------|-----------|
+| Balanced classes | Cross-entropy | Simple, stable |
+| Moderate imbalance | Weighted CE + Dice | Balanced approach |
+| Severe imbalance | Focal + Dice | Handle imbalance + overlap |
+| Medical imaging | Tversky (α<β) | Recall-critical |
+| Small objects | Dice or Lovász | Better gradient flow |
+| Boundary-critical | Dice + Boundary | Explicit boundary optimization |
+
+### 6.10 Combined Loss Strategies
+
+**Common Combinations:**
+
+```python
+# Theoretical illustration: Combined loss
+def combined_loss(predictions, targets):
+    ce_loss = cross_entropy(predictions, targets)
+    dice_loss = dice_coefficient(predictions, targets)
+
+    # Weighted combination
+    total_loss = 0.5 * ce_loss + 0.5 * dice_loss
+
+    return total_loss
+```
+
+**Adaptive Weighting:**
+
+$$\mathcal{L}_{total} = w_{CE}(t) \cdot \mathcal{L}_{CE} + w_{Dice}(t) \cdot \mathcal{L}_{Dice}$$
+
+where weights can change during training (e.g., more CE early, more Dice late).
+
+---
+
+## 7. Class Imbalance Handling Theory
+
+### 7.1 The Imbalance Problem
+
+Semantic segmentation datasets exhibit extreme class imbalance:
+
+| Dataset | Background | Dominant Classes | Rare Classes | Ratio |
+|---------|------------|------------------|--------------|-------|
+| PASCAL VOC | ~70% | Person, Car | Boat, Sofa | 100:1 |
+| Cityscapes | ~40% | Road, Building | Pole, Traffic Light | 50:1 |
+| Medical | ~95% | Background | Lesion | 1000:1 |
+
+### 7.2 Sources of Imbalance
+
+1. **Natural frequency:** Some classes naturally appear more
+2. **Object size:** Small objects have fewer pixels
+3. **Image coverage:** Background dominates most images
+4. **Task definition:** Some classes are inherently rare
+
+### 7.3 Sampling-Based Approaches
+
+**7.3.1 Oversampling**
+
+Duplicate rare class examples:
+
+$$P(\text{sample class } c) \propto \frac{1}{N_c^{\alpha}}$$
+
+where $\alpha \in [0, 1]$ controls oversampling strength.
+
+**7.3.2 Undersampling**
+
+Remove common class examples (risky for segmentation).
+
+**7.3.3 Patch-Based Sampling**
+
+Sample patches containing rare classes:
+
+```python
+# Theoretical illustration
+def balanced_patch_sampling(image, mask, patch_size, rare_classes):
+    """Sample patches with higher probability for rare classes"""
+    if contains_any(mask, rare_classes):
+        return sample_patch(image, mask, patch_size)
+    else:
+        # 50% chance to reject background-only patches
+        if random() < 0.5:
+            return None
+        return sample_patch(image, mask, patch_size)
+```
+
+### 7.4 Weighting Approaches
+
+**7.4.1 Inverse Frequency Weighting**
+
+$$w_c = \frac{N_{total}}{N_c \cdot C}$$
+
+**7.4.2 Median Frequency Balancing**
+
+$$w_c = \frac{\text{median}(\{N_1, N_2, ..., N_C\})}{N_c}$$
+
+More stable than inverse frequency.
+
+**7.4.3 Effective Number of Samples**
+
+From Class-Balanced Loss paper:
+
+$$E_n = \frac{1 - \beta^n}{1 - \beta}$$
+
+$$w_c = \frac{1}{E_{n_c}} = \frac{1 - \beta}{1 - \beta^{n_c}}$$
+
+where $\beta \in [0, 1)$ and $n_c$ is the number of samples for class $c$.
+
+### 7.5 Data Augmentation for Rare Classes
+
+**7.5.1 Copy-Paste Augmentation**
+
+Copy rare class instances and paste onto other images:
+
+```python
+1. Extract rare class masks from training set
+2. Randomly paste onto training images
+3. Blend edges for realism
+```
+
+**7.5.2 Geometric Augmentation**
+
+Aggressive augmentation for rare classes:
+- Higher rotation probability
+- Larger scale variations
+- More elastic deformations
+
+### 7.6 Architectural Solutions
+
+**7.6.1 Hard Example Mining**
+
+Focus training on difficult pixels:
+
+$$\mathcal{L}_{hard} = \frac{1}{N_{hard}} \sum_{i \in \text{hard}} \mathcal{L}_i$$
+
+where hard pixels are those with highest loss.
+
+**7.6.2 Online Hard Example Mining (OHEM)**
+
+```python
+# Theoretical illustration
+def ohem_loss(predictions, targets, keep_ratio=0.5):
+    """Keep only the hardest examples"""
+    pixel_losses = compute_pixel_loss(predictions, targets)
+
+    # Sort and keep top-k hardest
+    k = int(keep_ratio * num_pixels)
+    hard_losses = top_k(pixel_losses, k)
+
+    return mean(hard_losses)
+```
+
+### 7.7 Evaluation Considerations
+
+**7.7.1 Per-Class Metrics**
+
+Always report per-class metrics, not just mIoU:
+
+| Class | IoU | Frequency |
+|-------|-----|-----------|
+| Background | 95% | 70% |
+| Road | 92% | 20% |
+| Person | 65% | 5% |
+| Pole | 35% | 0.5% |
+| **mIoU** | **72%** | - |
+
+**7.7.2 Frequency-Weighted IoU**
+
+$$\text{fwIoU} = \frac{1}{\sum_c N_c} \sum_c N_c \cdot \text{IoU}_c$$
+
+More representative of practical performance.
+
+---
+
+## 8. Segmentation Paradigms: Instance, Semantic, and Panoptic
+
+### 8.1 Three Levels of Segmentation
+
+```python
+┌─────────────────────────────────────────────────────────────┐
+│                    INPUT IMAGE                              │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+        ┌─────────────────────┼─────────────────────┐
+        ↓                     ↓                     ↓
+   ┌─────────┐          ┌─────────┐          ┌─────────┐
+   │ SEMANTIC │          │ INSTANCE │          │ PANOPTIC │
+   │          │          │          │          │          │
+   │ "This is │          │ "Object 1│          │ "Object 1│
+   │  a road, │          │  is a    │          │  is car  │
+   │  that is │          │  car,    │          │  A,      │
+   │  a car"  │          │  Object 2│          │  Object 2│
+   │          │          │  is a    │          │  is car  │
+   │          │          │  car"    │          │  B"      │
+   └─────────┘          └─────────┘          └─────────┘
+        ↓                     ↓                     ↓
+   ┌─────────┐          ┌─────────┐          ┌─────────┐
+   │ Class   │          │ Object  │          │ Unified │
+   │ labels  │          │ IDs     │          │ IDs     │
+   │ per     │          │ per     │          │ (stuff+ │
+   │ pixel   │          │ pixel   │          │ things) │
+   └─────────┘          └─────────┘          └─────────┘
+```
+
+### 8.2 Semantic Segmentation
+
+**Definition:** Assign a class label to each pixel without distinguishing instances.
+
+**Classes:**
+- **Stuff:** Background, amorphous regions (sky, road, grass)
+- **Things:** Countable objects (person, car, dog)
+
+**Output:** $S \in \{0, 1, ..., K-1\}^{H \times W}$
+
+### 8.3 Instance Segmentation
+
+**Definition:** Identify and segment each individual object instance.
+
+**Output:**
+- Class label for each instance
+- Binary mask for each instance
+- Instance ID assignment
+
+**Two-Stage Approaches:**
+1. Detect objects (Faster R-CNN, YOLO)
+2. Segment each detection (Mask R-CNN)
+
+**Single-Stage Approaches:**
+- Instance embeddings (discriminative loss)
+- Instance centers + offsets
+
+### 8.4 Panoptic Segmentation
+
+**Definition:** Unified task combining semantic and instance segmentation.
+
+**Output:**
+- Each pixel assigned to:
+  - A semantic class (for stuff)
+  - A semantic class + instance ID (for things)
+
+**Panoptic Quality Metric:**
+
+$$PQ = \underbrace{\frac{\sum_{(p,g) \in TP} \text{IoU}(p,g)}{|TP|}}_{\text{Segmentation Quality (SQ)}} \times \underbrace{\frac{|TP|}{|TP| + \frac{1}{2}|FP| + \frac{1}{2}|FN|}}_{\text{Recognition Quality (RQ)}}$$
+
+### 8.5 Architecture Comparison
+
+| Aspect | Semantic | Instance | Panoptic |
+|--------|----------|----------|----------|
+| Output | Class map | Instance masks | Unified map |
+| Backbone | FCN, U-Net | Mask R-CNN | UPSNet, Panoptic FPN |
+| Post-processing | Argmax | NMS | Conflict resolution |
+| Metrics | mIoU, PA | AP | PQ |
+
+### 8.6 Panoptic Architecture Designs
+
+**8.6.1 Two-Branch Approach**
+
+```python
+Input
+  ↓
+Shared Backbone
+  ↓
+┌─────────────┬─────────────┐
+↓             ↓
+Semantic    Instance
+Branch      Branch
+  ↓             ↓
+Class map   Instance masks
+  ↓             ↓
+  └──────┬──────┘
+         ↓
+   Fusion Module
+         ↓
+   Panoptic Output
+```
+
+**8.6.2 Single-Branch Approach**
+
+```python
+Input
+  ↓
+Backbone
+  ↓
+Panoptic Head
+  ↓
+Unified Output (class + instance embedding)
+  ↓
+Clustering → Final Panoptic Map
+```
+
+---
+
+## 9. Post-Processing Techniques
+
+### 9.1 Why Post-Processing?
+
+Neural network outputs often have:
+- Noisy boundaries
+- Small holes in regions
+- Disconnected components
+- Inconsistent labels
+
+Post-processing refines these outputs.
+
+### 9.2 Conditional Random Fields (CRF)
+
+**9.2.1 Motivation**
+
+CRFs model pixel relationships to enforce spatial consistency.
+
+**9.2.2 Energy Function**
+
+$$E(x) = \sum_{i} \psi_u(x_i) + \sum_{i<j} \psi_p(x_i, x_j)$$
+
+- **Unary potential:** $\psi_u(x_i) = -\log P(x_i | I)$ (from CNN)
+- **Pairwise potential:** Encourages similar labels for similar pixels
+
+**9.2.3 Pairwise Potential**
+
+$$\psi_p(x_i, x_j) = \mu(x_i, x_j) \sum_{m=1}^{K} w^{(m)} k^{(m)}(f_i, f_j)$$
+
+where:
+- $\mu(x_i, x_j) = [x_i \neq x_j]$ (Potts model)
+- $k^{(m)}$ are Gaussian kernels
+
+**9.2.4 Bilateral Filter Kernel**
+
+$$k(f_i, f_j) = \exp\left(-\frac{|p_i - p_j|^2}{2\sigma_\alpha^2} - \frac{|I_i - I_j|^2}{2\sigma_\beta^2}\right)$$
+
+Enforces:
+- Spatial smoothness (positions $p$)
+- Color consistency (intensities $I$)
+
+**9.2.5 Mean Field Approximation**
+
+Iterative inference:
+
+$$Q_i(x_i = l) = \frac{1}{Z_i} \exp\left\{-\psi_u(x_i) - \sum_{l'} \mu(l, l') \sum_{m} w^{(m)} \sum_{j \neq i} k^{(m)}(f_i, f_j) Q_j(l')\right\}$$
+
+Typically 5-10 iterations suffice.
+
+### 9.3 Watershed Transform
+
+**9.3.1 Concept**
+
+Treats image as topographic surface and finds watershed lines.
+
+**9.3.2 Algorithm**
+
+```text
+1. Compute gradient magnitude (edges)
+2. Identify local minima (markers)
+3. Flood from markers
+4. Build dams where floods meet
+5. Dams = segmentation boundaries
+```
+
+**9.3.3 Application to Segmentation**
+
+```python
+# Theoretical illustration
+def watershed_postprocessing(probability_map, markers):
+    """
+    probability_map: Network output [H, W, C]
+    markers: Initial seeds for watershed
+    """
+    # Convert probability to elevation (high prob = low elevation)
+    elevation = 1 - max_probability
+
+    # Apply watershed
+    labels = watershed(elevation, markers)
+
+    return labels
+```
+
+### 9.4 Morphological Operations
+
+**9.4.1 Basic Operations**
+
+| Operation | Effect | Use Case |
+|-----------|--------|----------|
+| Erosion | Shrinks regions | Remove small noise |
+| Dilation | Expands regions | Fill small holes |
+| Opening | Erosion + Dilation | Clean boundaries |
+| Closing | Dilation + Erosion | Close gaps |
+
+**9.4.2 Mathematical Definition**
+
+**Erosion:**
+$$(A \ominus B)(x) = \min_{b \in B} A(x + b)$$
+
+**Dilation:**
+$$(A \oplus B)(x) = \max_{b \in B} A(x - b)$$
+
+### 9.5 Connected Components Analysis
+
+**9.5.1 Purpose**
+
+Remove small, disconnected regions that are likely noise.
+
+**9.5.2 Algorithm**
+
+```python
+1. Find all connected components
+2. Compute component sizes
+3. Remove components below threshold
+4. Optionally: keep only largest N components
+```
+
+**9.5.3 Size Filtering**
+
+$$S'_i = \begin{cases} S_i & \text{if } |S_i| > T \\ 0 & \text{otherwise} \end{cases}$$
+
+### 9.6 Boundary Refinement
+
+**9.6.1 Active Contours (Snakes)**
+
+Refine boundaries by minimizing energy:
+
+$$E = \int_0^1 \left[\alpha|C'(s)|^2 + \beta|C''(s)|^2 - \gamma|\nabla I(C(s))|^2\right] ds$$
+
+**9.6.2 Graph Cut**
+
+Formulate as min-cut problem:
+- Nodes: Pixels
+- Edges: Pixel similarities
+- Source/Sink: Foreground/Background seeds
+
+### 9.7 Post-Processing Pipeline
+
+```python
+Raw Network Output
+        ↓
+   ┌────────────┐
+   │  CRF Refinement │ ← Optional, computationally expensive
+   └────────────┘
+        ↓
+   ┌────────────┐
+   │  Argmax    │
+   └────────────┘
+        ↓
+   ┌────────────┐
+   │  Morphological │ ← Remove noise, fill holes
+   │  Operations    │
+   └────────────┘
+        ↓
+   ┌────────────┐
+   │  Connected   │ ← Remove small components
+   │  Components  │
+   └────────────┘
+        ↓
+   ┌────────────┐
+   │  Watershed   │ ← Optional, for instance separation
+   └────────────┘
+        ↓
+   Final Segmentation
+```
+
+---
+
+## 10. Medical Image Segmentation Considerations
+
+### 10.1 Unique Challenges in Medical Imaging
+
+**10.1.1 Data Characteristics**
+
+| Aspect | Natural Images | Medical Images |
+|--------|---------------|----------------|
+| Resolution | Variable | Often very high |
+| Contrast | High | Often low |
+| Modality | RGB | Grayscale, multi-modal |
+| Annotation | Crowdsourced | Expert-only |
+| Dataset size | Large | Small to medium |
+| Class imbalance | Moderate | Extreme |
+
+**10.1.2 Clinical Requirements**
+
+- **High precision:** False positives costly
+- **High recall:** Missing pathology critical
+- **Boundary accuracy:** Measurement precision
+- **Interpretability:** Clinical trust
+
+### 10.2 3D Segmentation
+
+**10.2.1 Volumetric Data**
+
+Medical images are often 3D (CT, MRI):
+
+$$V \in \mathbb{R}^{D \times H \times W}$$
+
+**10.2.2 3D U-Net**
+
+```python
+3D Input [D, H, W, 1]
+    ↓
+3D Conv + 3D Pool
+    ↓
+... (contracting path)
+    ↓
+Bottleneck
+    ↓
+... (expanding path)
+    ↓
+3D Output [D, H, W, K]
+```
+
+**10.2.3 Memory Considerations**
+
+3D convolutions are memory-intensive:
+
+| Patch Size | 2D Memory | 3D Memory | Ratio |
+|------------|-----------|-----------|-------|
+| 128×128 | 64KB | - | - |
+| 128×128×128 | - | 8MB | 128× |
+
+**Solutions:**
+- Patch-based training
+- Gradient checkpointing
+- Mixed precision training
+
+### 10.3 Multi-Modal Fusion
+
+**10.3.1 Common Modalities**
+
+| Modality | Information | Typical Use |
+|----------|-------------|-------------|
+| T1-weighted MRI | Anatomy | Brain structure |
+| T2-weighted MRI | Fluid | Tumor detection |
+| FLAIR | Edema | MS lesions |
+| CT | Bone, tissue | Trauma, cancer |
+| PET | Metabolism | Cancer staging |
+
+**10.3.2 Fusion Strategies**
+
+```python
+Early Fusion:    Concatenate modalities → Single network
+Mid Fusion:      Separate encoders → Concatenate features → Decoder
+Late Fusion:     Separate networks → Combine predictions
+```
+
+### 10.4 Annotation Efficiency
+
+**10.4.1 Semi-Supervised Learning**
+
+Leverage unlabeled data:
+
+$$\mathcal{L}_{total} = \mathcal{L}_{supervised} + \lambda \mathcal{L}_{unsupervised}$$
+
+**10.4.2 Active Learning**
+
+Iteratively select most informative samples for annotation:
+
+```python
+1. Train on small labeled set
+2. Predict on unlabeled pool
+3. Select uncertain samples
+4. Annotate selected samples
+5. Repeat
+```
+
+**Uncertainty Measures:**
+- Entropy: $H = -\sum_c p_c \log p_c$
+- Margin: $1 - (p_{max} - p_{second})$
+
+### 10.5 Domain Adaptation
+
+**10.5.1 Cross-Institution Variability**
+
+Different scanners, protocols → domain shift.
+
+**10.5.2 Domain Adaptation Techniques**
+
+| Approach | Method | Use Case |
+|----------|--------|----------|
+| Fine-tuning | Adapt last layers | Small domain gap |
+| Adversarial | Domain discriminator | Large domain gap |
+| Normalization | Instance/Batch norm | Style transfer |
+
+### 10.6 Evaluation in Medical Context
+
+**10.6.1 Clinical Metrics**
+
+| Metric | Formula | Clinical Relevance |
+|--------|---------|-------------------|
+| Dice Score | $\frac{2|X \cap Y|}{|X|+|Y|}$ | Volume overlap |
+| Hausdorff Distance | $\max(d(X,Y), d(Y,X))$ | Boundary accuracy |
+| Surface Distance | Mean surface distance | Boundary quality |
+| Volume Difference | $\frac{|V_{pred} - V_{gt}|}{V_{gt}}$ | Measurement accuracy |
+
+**10.6.2 Hausdorff Distance**
+
+$$d_H(X, Y) = \max\left(\max_{x \in X} \min_{y \in Y} d(x,y), \max_{y \in Y} \min_{x \in X} d(x,y)\right)$$
+
+Sensitive to outliers; often use 95th percentile (HD95).
+
+---
+
+## 11. Real-Time Segmentation Architectures
+
+### 11.1 The Real-Time Challenge
+
+Requirements for real-time applications:
+- **Speed:** ≥ 30 FPS for video
+- **Accuracy:** Acceptable mIoU
+- **Efficiency:** Low power, mobile-friendly
+
+### 11.2 Efficiency Metrics
+
+| Metric | Definition | Target |
+|--------|-----------|--------|
+| FLOPs | Floating point operations | < 10G |
+| Parameters | Model size | < 10M |
+| Latency | Inference time | < 33ms |
+| Memory | RAM usage | < 500MB |
+
+### 11.3 Efficient Design Principles
+
+**11.3.1 Lightweight Backbones**
+
+| Backbone | Params | FLOPs | Top-1 Acc | Speedup vs ResNet-101 |
+|----------|--------|-------|-----------|----------------------|
+| MobileNet v2 | 3.5M | 300M | 72.0% | 5.5× |
+| MobileNet v3 | 5.4M | 219M | 75.2% | 6.5× |
+| ShuffleNet v2 | 3.5M | 299M | 74.9% | 5.8× |
+| EfficientNet-B0 | 5.3M | 390M | 77.1% | 4.2× |
+
+**11.3.2 Depthwise Separable Convolution**
+
+Standard convolution: $k \times k \times c_{in} \times c_{out}$
+
+Depthwise separable:
+- Depthwise: $k \times k \times c_{in}$ (per channel)
+- Pointwise: $1 \times 1 \times c_{in} \times c_{out}$
+
+**Cost reduction:**
+$$\text{Ratio} = \frac{k \times k + c_{out}}{k \times k \times c_{out}} \approx \frac{1}{c_{out}} \text{ (for large } c_{out})$$
+
+### 11.4 Real-Time Architectures
+
+**11.4.1 ENet (Efficient Neural Network)**
+
+```python
+Input (512×512)
+    ↓
+Initial Block (downsample)
+    ↓
+Bottleneck 1.0 (downsample)
+Bottleneck 1.x × 4
+    ↓
+Bottleneck 2.0 (downsample)
+Bottleneck 2.x × 6
+    ↓
+Bottleneck 3.x × 6 (dilated)
+    ↓
+Bottleneck 4.x × 3
+    ↓
+Bottleneck 5.0 (upsample)
+Bottleneck 5.x × 2
+    ↓
+Full Convolution
+    ↓
+Output (512×512 × C)
+```
+
+**Characteristics:**
+- Early downsampling (reduces computation)
+- Asymmetric encoder-decoder
+- Dilated convolutions in bottleneck
+- **Speed:** 135 FPS on GTX Titan X
+
+**11.4.2 ICNet (Image Cascade Network)**
+
+Multi-resolution cascade:
+
+```python
+Full Resolution (1.0)
+    ↓
+  ┌─────────────┐
+  ↓             ↓
+Low Res (0.5)  Medium Res (0.5)
+  ↓             ↓
+Fast Network   Medium Network
+  ↓             ↓
+  └──────┬──────┘
+         ↓
+     CFF Unit
+         ↓
+      Fusion
+         ↓
+      Output
+```
+
+**Cascade Feature Fusion (CFF):**
+
+```python
+# Theoretical illustration
+def cff_unit(low_res_features, high_res_features):
+    """Fuse features from different resolutions"""
+    # Upsample low-res features
+    upsampled = bilinear_upsample(low_res_features, scale=2)
+
+    # Project high-res features
+    projected = conv1x1(high_res_features)
+
+    # Attention-based fusion
+    attention = sigmoid(conv1x1(upsampled))
+
+    fused = attention * upsampled + (1 - attention) * projected
+
+    return fused
+```
+
+**11.4.3 BiSeNet (Bilateral Segmentation Network)**
+
+Two-pathway design:
+
+```python
+Input
+  ↓
+  ┌──────────────┬──────────────┐
+  ↓              ↓
+Spatial Path    Context Path
+(Full Res)      (Downsampled)
+  ↓              ↓
+3×3 Conv        Lightweight
+3×3 Conv        Backbone
+3×3 Conv        (e.g., Xception)
+  ↓              ↓
+  └──────┬───────┘
+         ↓
+    ARM + FFM
+         ↓
+      Output
+```
+
+**Attention Refinement Module (ARM):**
+
+```python
+# Theoretical illustration
+def arm_module(features):
+    """Refine features with global attention"""
+    # Global average pooling
+    global_context = global_avg_pool(features)
+
+    # Compute attention
+    attention = sigmoid(conv1x1(global_context))
+
+    # Apply attention
+    refined = features * attention
+
+    return refined
+```
+
+**11.4.4 DDRNet (Deep Dual-Resolution Networks)**
+
+Dual-resolution parallel branches:
+
+```python
+Input
+  ↓
+  ┌──────────────────┬──────────────────┐
+  ↓                  ↓
+High-Res Branch    Low-Res Branch
+(1/8 resolution)   (1/32 resolution)
+  ↓                  ↓
+  │                  │
+  │←─── Bidirectional ───→│
+  │     Fusion           │
+  ↓                  ↓
+  │                  │
+  │←─── Bidirectional ───→│
+  │     Fusion           │
+  ↓                  ↓
+  └────────┬─────────┘
+           ↓
+       Segmentation Head
+```
+
+### 11.5 Knowledge Distillation for Segmentation
+
+**11.5.1 Teacher-Student Framework**
+
+```python
+Large Teacher Network (e.g., DeepLab v3+)
+              ↓
+     ┌────────┴────────┐
+     ↓                 ↓
+Soft Targets      Hard Labels
+     ↓                 ↓
+     └────────┬────────┘
+              ↓
+    Small Student Network (e.g., ENet)
+```
+
+**11.5.2 Distillation Loss**
+
+$$\mathcal{L}_{distill} = \lambda_{CE} \mathcal{L}_{CE}(y_{student}, y_{gt}) + \lambda_{KL} \mathcal{L}_{KL}(y_{student}, y_{teacher})$$
+
+### 11.6 Hardware-Specific Optimization
+
+**11.6.1 Quantization**
+
+| Precision | Model Size | Speedup | Accuracy Drop |
+|-----------|-----------|---------|---------------|
+| FP32 | 100% | 1× | 0% |
+| FP16 | 50% | 1.5-2× | <0.5% |
+| INT8 | 25% | 2-4× | 1-2% |
+
+**11.6.2 TensorRT Optimization**
+
+- Layer fusion
+- Kernel auto-tuning
+- Mixed precision
+- Dynamic tensor memory
+
+### 11.7 Performance Comparison
+
+| Model | Backbone | mIoU (Cityscapes) | FPS (1024×2048) | Params |
+|-------|----------|-------------------|-----------------|--------|
+| DeepLab v3+ | Xception-65 | 79.1% | 2.4 | 43.5M |
+| PSPNet | ResNet-101 | 78.4% | 1.6 | 65.7M |
+| BiSeNet v2 | - | 75.3% | 47.7 | 3.4M |
+| DDRNet-23 | - | 77.8% | 56.3 | 5.7M |
+| STDC1 | - | 74.5% | 127.5 | 8.4M |
+
+---
+
+## 12. Key Insights and Common Pitfalls
+
+### 12.1 Key Insights
+
+**12.1.1 The Resolution-Semantics Trade-off**
+
+```python
+High Resolution          ←→          High Semantics
+(Fine details)                        (Global context)
+     ↓                                    ↓
+  Shallow                              Deep
+  Layers                               Layers
+     ↓                                    ↓
+  Better                               Better
+  Boundaries                           Classification
+```
+
+**Solution:** Multi-scale architectures with skip connections.
+
+**12.1.2 Receptive Field is Critical**
+
+The receptive field must be larger than the largest object:
+
+$$\text{RF} > \max(\text{object sizes})$$
+
+Use atrous convolution or global pooling to achieve this without excessive downsampling.
+
+**12.1.3 Skip Connections are Essential**
+
+Skip connections provide:
+- Gradient flow for deep networks
+- High-resolution features for boundaries
+- Multi-scale information fusion
+
+**12.1.4 Loss Function Matters**
+
+| Problem | Loss Choice |
+|---------|-------------|
+| Class imbalance | Dice + Focal |
+| Small objects | Lovász or Dice |
+| Boundary quality | Dice + Boundary |
+| Medical imaging | Tversky (recall-focused) |
+
+**12.1.5 Post-Processing Can Significantly Improve Results**
+
+- CRF: +2-5% mIoU on most datasets
+- Morphological operations: Cleaner outputs
+- Connected components: Remove noise
+
+### 12.2 Common Pitfalls
+
+**12.2.1 Pitfall 1: Ignoring Class Imbalance**
+
+❌ **Wrong:** Using standard cross-entropy on imbalanced datasets
+
+```python
+# BAD: Standard cross-entropy
+loss = tf.keras.losses.SparseCategoricalCrossentropy()
+```
+
+✅ **Correct:** Use weighted or specialized losses
+
+```python
+# GOOD: Combined loss for imbalance
+loss = 0.5 * weighted_cross_entropy + 0.5 * dice_loss
+```
+
+**12.2.2 Pitfall 2: Excessive Downsampling**
+
+❌ **Wrong:** Output stride of 32 with no recovery
+
+Results in: Poor boundary localization, loss of small objects
+
+✅ **Correct:** Use OS=16 or OS=8 with appropriate decoders
+
+**12.2.3 Pitfall 3: Ignoring Receptive Field**
+
+❌ **Wrong:** Small receptive field for large objects
+
+Results in: Incomplete object segmentation
+
+✅ **Correct:** Calculate required RF and use atrous convolution
+
+**12.2.4 Pitfall 4: Over-reliance on Post-Processing**
+
+❌ **Wrong:** Poor network design, "fix it in post"
+
+Results in: Brittle solutions, slow inference
+
+✅ **Correct:** Design network to produce good outputs, use post-processing for refinement
+
+**12.2.5 Pitfall 5: Not Validating on Appropriate Metrics**
+
+❌ **Wrong:** Only reporting pixel accuracy
+
+```python
+Pixel Accuracy: 95%
+But: Background is 90% of pixels!
+```
+
+✅ **Correct:** Report mIoU, per-class metrics, boundary metrics
+
+**12.2.6 Pitfall 6: Inadequate Data Augmentation**
+
+❌ **Wrong:** Only basic flips and rotations
+
+✅ **Correct:** Use geometric and photometric augmentation:
+- Random scaling (0.5-2.0×)
+- Random cropping
+- Color jittering
+- Gaussian noise
+- Elastic deformations (medical)
+
+**12.2.7 Pitfall 7: Mismatched Input-Output Sizes**
+
+❌ **Wrong:** Training and testing at different resolutions
+
+Results in: Performance degradation at test time
+
+✅ **Correct:** Use multi-scale training and testing
+
+### 12.3 Best Practices Summary
+
+| Aspect | Recommendation |
+|--------|----------------|
+| Architecture | Encoder-decoder with skip connections |
+| Output stride | 16 or 8 for best accuracy/speed trade-off |
+| Receptive field | Larger than largest expected object |
+| Loss function | Dice + Cross-entropy for most cases |
+| Class imbalance | Weighted loss + data augmentation |
+| Post-processing | CRF for accuracy, skip for speed |
+| Evaluation | mIoU + per-class metrics |
+| Augmentation | Aggressive geometric + photometric |
+
+### 12.4 Future Directions
+
+**12.4.1 Vision Transformers for Segmentation**
+
+- **SETR:** Pure transformer encoder
+- **Segmenter:** Transformer decoder
+- **MaskFormer:** Universal segmentation
+
+**12.4.2 Self-Supervised Learning**
+
+Pre-training on unlabeled data:
+- Contrastive learning
+- Masked image modeling
+- Multi-task pre-training
+
+**12.4.3 Neural Architecture Search**
+
+Automated design of segmentation architectures:
+- Cell-based search
+- Multi-scale search
+- Hardware-aware search
+
+---
+
+## References and Further Reading
+
+1. Long, J., Shelhamer, E., & Darrell, T. (2015). Fully convolutional networks for semantic segmentation. CVPR.
+
+2. Ronneberger, O., Fischer, P., & Brox, T. (2015). U-Net: Convolutional networks for biomedical image segmentation. MICCAI.
+
+3. Chen, L. C., Papandreou, G., Kokkinos, I., Murphy, K., & Yuille, A. L. (2017). DeepLab: Semantic image segmentation with deep convolutional nets, atrous convolution, and fully connected CRFs. TPAMI.
+
+4. Chen, L. C., Zhu, Y., Papandreou, G., Schroff, F., & Adam, H. (2018). Encoder-decoder with atrous separable convolution for semantic image segmentation. ECCV.
+
+5. Zhao, H., Shi, J., Qi, X., Wang, X., & Jia, J. (2017). Pyramid scene parsing network. CVPR.
+
+6. Paszke, A., Chaurasia, A., Kim, S., & Culurciello, E. (2016). ENet: A deep neural network architecture for real-time semantic segmentation. arXiv.
+
+7. Yu, C., Wang, J., Peng, C., Gao, C., Yu, G., & Sang, N. (2018). Bisenet: Bilateral segmentation network for real-time semantic segmentation. ECCV.
+
+8. Kirillov, A., He, K., Girshick, R., Rother, C., & Dollár, P. (2019). Panoptic segmentation. CVPR.
+
+---
+
+*End of Module 5 Theoretical Content*

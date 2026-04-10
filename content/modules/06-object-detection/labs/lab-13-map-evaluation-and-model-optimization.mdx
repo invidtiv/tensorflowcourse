@@ -1,0 +1,704 @@
+---
+title: "mAP Evaluation and Model Optimization"
+module: 6
+labNumber: 13
+difficulty: "medium"
+estimatedTime: "45-60 minutes"
+source: "lab-01-complete.md"
+---
+# mAP Evaluation and Model Optimization
+
+## Objectives
+- Implement mAP (mean Average Precision) calculation
+- Evaluate object detection models
+- Compare model performance
+- Apply model optimization techniques
+
+## Complete Implementation
+
+```python
+"""
+Lab 6.12: mAP Evaluation and Model Optimization
+Object Detection Systems - Module 6
+"""
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+from typing import List, Dict, Tuple
+from collections import defaultdict
+
+# =============================================================================
+# Section 1: Precision-Recall Calculation
+# =============================================================================
+
+def calculate_precision_recall(pred_boxes: np.ndarray,
+                                pred_scores: np.ndarray,
+                                pred_classes: np.ndarray,
+                                gt_boxes: np.ndarray,
+                                gt_classes: np.ndarray,
+                                iou_threshold: float = 0.5) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Calculate precision-recall curve for a single class.
+    
+    Args:
+        pred_boxes: Predicted boxes [N, 4]
+        pred_scores: Prediction scores [N]
+        pred_classes: Predicted class IDs [N]
+        gt_boxes: Ground truth boxes [M, 4]
+        gt_classes: GT class IDs [M]
+        iou_threshold: IoU threshold for positive match
+    
+    Returns:
+        precisions, recalls arrays
+    """
+    if len(pred_boxes) == 0:
+        return np.array([0]), np.array([0])
+    
+    if len(gt_boxes) == 0:
+        return np.array([0]), np.array([0])
+    
+    # Sort predictions by score
+    sorted_indices = np.argsort(pred_scores)[::-1]
+    pred_boxes = pred_boxes[sorted_indices]
+    pred_scores = pred_scores[sorted_indices]
+    
+    # Track which GT boxes have been matched
+    gt_matched = np.zeros(len(gt_boxes), dtype=bool)
+    
+    tp = []
+    fp = []
+    
+    for pred_box in pred_boxes:
+        # Calculate IoU with all GT boxes
+        ious = calculate_iou_batch_numpy(pred_box, gt_boxes)
+        
+        max_iou_idx = np.argmax(ious)
+        max_iou = ious[max_iou_idx]
+        
+        if max_iou >= iou_threshold and not gt_matched[max_iou_idx]:
+            tp.append(1)
+            fp.append(0)
+            gt_matched[max_iou_idx] = True
+        else:
+            tp.append(0)
+            fp.append(1)
+    
+    tp = np.array(tp)
+    fp = np.array(fp)
+    
+    tp_cumsum = np.cumsum(tp)
+    fp_cumsum = np.cumsum(fp)
+    
+    recalls = tp_cumsum / len(gt_boxes)
+    precisions = tp_cumsum / (tp_cumsum + fp_cumsum)
+    
+    return precisions, recalls
+
+
+def calculate_iou_batch_numpy(box: np.ndarray, boxes: np.ndarray) -> np.ndarray:
+    """Calculate IoU between one box and multiple boxes."""
+    x1 = np.maximum(box[0], boxes[:, 0])
+    y1 = np.maximum(box[1], boxes[:, 1])
+    x2 = np.minimum(box[2], boxes[:, 2])
+    y2 = np.minimum(box[3], boxes[:, 3])
+    
+    intersect_w = np.maximum(0, x2 - x1)
+    intersect_h = np.maximum(0, y2 - y1)
+    intersect_area = intersect_w * intersect_h
+    
+    box_area = (box[2] - box[0]) * (box[3] - box[1])
+    boxes_area = (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
+    
+    union_area = box_area + boxes_area - intersect_area
+    iou = intersect_area / (union_area + 1e-7)
+    
+    return iou
+
+
+# =============================================================================
+# Section 2: Average Precision (AP) Calculation
+# =============================================================================
+
+def calculate_ap(precisions: np.ndarray, recalls: np.ndarray) -> float:
+    """
+    Calculate Average Precision using 11-point interpolation.
+    
+    Args:
+        precisions: Precision values
+        recalls: Recall values
+    
+    Returns:
+        AP value
+    """
+    # Add sentinel values
+    precisions = np.concatenate([[0], precisions, [0]])
+    recalls = np.concatenate([[0], recalls, [1]])
+    
+    # Compute precision envelope
+    for i in range(len(precisions) - 2, -1, -1):
+        precisions[i] = max(precisions[i], precisions[i + 1])
+    
+    # Compute AP using 11-point interpolation
+    ap = 0.0
+    recall_thresholds = np.linspace(0, 1, 11)
+    
+    for t in recall_thresholds:
+        # Find precision at this recall threshold
+        precisions_at_t = precisions[recalls >= t]
+        if len(precisions_at_t) > 0:
+            ap += np.max(precisions_at_t)
+    
+    ap /= 11.0
+    
+    return ap
+
+
+def calculate_ap_voc(precisions: np.ndarray, recalls: np.ndarray) -> float:
+    """
+    Calculate AP using VOC method (all points interpolation).
+    """
+    # Add sentinel values
+    precisions = np.concatenate([[0], precisions, [0]])
+    recalls = np.concatenate([[0], recalls, [1]])
+    
+    # Compute precision envelope
+    for i in range(len(precisions) - 2, -1, -1):
+        precisions[i] = max(precisions[i], precisions[i + 1])
+    
+    # Compute AP as area under PR curve
+    indices = np.where(recalls[1:] != recalls[:-1])[0]
+    ap = np.sum((recalls[indices + 1] - recalls[indices]) * precisions[indices + 1])
+    
+    return ap
+
+
+# =============================================================================
+# Section 3: mAP Calculation
+# =============================================================================
+
+def calculate_map(predictions: List[Dict],
+                  ground_truths: List[Dict],
+                  num_classes: int,
+                  iou_threshold: float = 0.5) -> Dict:
+    """
+    Calculate mean Average Precision across all classes.
+    
+    Args:
+        predictions: List of prediction dicts per image
+        ground_truths: List of GT dicts per image
+        num_classes: Number of classes
+        iou_threshold: IoU threshold
+    
+    Returns:
+        Dictionary with mAP and per-class AP
+    """
+    aps = {}
+    
+    for class_id in range(1, num_classes + 1):
+        # Collect all predictions and GT for this class
+        all_pred_boxes = []
+        all_pred_scores = []
+        all_gt_boxes = []
+        
+        for pred, gt in zip(predictions, ground_truths):
+            # Filter by class
+            pred_mask = pred['classes'] == class_id
+            gt_mask = gt['classes'] == class_id
+            
+            all_pred_boxes.extend(pred['boxes'][pred_mask])
+            all_pred_scores.extend(pred['scores'][pred_mask])
+            all_gt_boxes.extend(gt['boxes'][gt_mask])
+        
+        if len(all_pred_boxes) == 0 or len(all_gt_boxes) == 0:
+            aps[class_id] = 0.0
+            continue
+        
+        # Calculate precision-recall
+        precisions, recalls = calculate_precision_recall(
+            np.array(all_pred_boxes),
+            np.array(all_pred_scores),
+            np.full(len(all_pred_boxes), class_id),
+            np.array(all_gt_boxes),
+            np.full(len(all_gt_boxes), class_id),
+            iou_threshold
+        )
+        
+        # Calculate AP
+        ap = calculate_ap_voc(precisions, recalls)
+        aps[class_id] = ap
+    
+    # Calculate mAP
+    map_value = np.mean(list(aps.values()))
+    
+    return {
+        'mAP': map_value,
+        'APs': aps
+    }
+
+
+def calculate_map_over_iou_range(predictions: List[Dict],
+                                  ground_truths: List[Dict],
+                                  num_classes: int,
+                                  iou_range: np.ndarray = None) -> Dict:
+    """
+    Calculate mAP over a range of IoU thresholds (COCO-style).
+    
+    Args:
+        predictions: List of prediction dicts
+        ground_truths: List of GT dicts
+        num_classes: Number of classes
+        iou_range: Array of IoU thresholds (default: 0.5:0.05:0.95)
+    
+    Returns:
+        Dictionary with mAP@0.5:0.95 and mAP@0.5
+    """
+    if iou_range is None:
+        iou_range = np.arange(0.5, 1.0, 0.05)
+    
+    maps = []
+    
+    for iou_thresh in iou_range:
+        result = calculate_map(predictions, ground_truths, num_classes, iou_thresh)
+        maps.append(result['mAP'])
+    
+    map_50_95 = np.mean(maps)
+    map_50 = maps[0]  # First threshold is 0.5
+    
+    return {
+        'mAP@0.5:0.95': map_50_95,
+        'mAP@0.5': map_50,
+        'mAP_per_iou': dict(zip(iou_range, maps))
+    }
+
+
+# =============================================================================
+# Section 4: Visualization
+# =============================================================================
+
+def plot_pr_curve(precisions: np.ndarray,
+                  recalls: np.ndarray,
+                  ap: float,
+                  class_name: str = 'Object'):
+    """
+    Plot precision-recall curve.
+    """
+    fig, ax = plt.subplots(1, 1, figsize=(8, 6))
+    
+    ax.plot(recalls, precisions, 'b-', linewidth=2)
+    ax.fill_between(recalls, precisions, alpha=0.3)
+    
+    ax.set_xlabel('Recall', fontsize=12)
+    ax.set_ylabel('Precision', fontsize=12)
+    ax.set_title(f'Precision-Recall Curve: {class_name}\nAP = {ap:.3f}', fontsize=14)
+    ax.set_xlim([0, 1])
+    ax.set_ylim([0, 1])
+    ax.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_ap_comparison(aps: Dict[int, float], class_names: Dict[int, str] = None):
+    """
+    Plot AP comparison across classes.
+    """
+    class_ids = list(aps.keys())
+    ap_values = list(aps.values())
+    
+    if class_names is None:
+        labels = [f'Class {i}' for i in class_ids]
+    else:
+        labels = [class_names.get(i, f'Class {i}') for i in class_ids]
+    
+    fig, ax = plt.subplots(1, 1, figsize=(10, 6))
+    
+    bars = ax.bar(range(len(class_ids)), ap_values, color='steelblue', edgecolor='black')
+    
+    # Add value labels on bars
+    for bar, ap in zip(bars, ap_values):
+        height = bar.get_height()
+        ax.text(bar.get_x() + bar.get_width()/2., height,
+               f'{ap:.3f}', ha='center', va='bottom', fontsize=10)
+    
+    ax.set_xlabel('Class', fontsize=12)
+    ax.set_ylabel('Average Precision', fontsize=12)
+    ax.set_title('AP by Class', fontsize=14)
+    ax.set_xticks(range(len(class_ids)))
+    ax.set_xticklabels(labels, rotation=45, ha='right')
+    ax.set_ylim([0, 1])
+    ax.grid(True, alpha=0.3, axis='y')
+    
+    # Add mAP line
+    map_value = np.mean(ap_values)
+    ax.axhline(y=map_value, color='r', linestyle='--', 
+              label=f'mAP = {map_value:.3f}')
+    ax.legend()
+    
+    plt.tight_layout()
+    plt.show()
+
+
+# =============================================================================
+# Section 5: Model Optimization
+# =============================================================================
+
+def quantize_model(model: tf.keras.Model,
+                   representative_dataset) -> tf.lite.Interpreter:
+    """
+    Quantize a Keras model to INT8 using TensorFlow Lite.
+    
+    Args:
+        model: Keras model to quantize
+        representative_dataset: Function that yields representative data
+    
+    Returns:
+        Quantized TFLite interpreter
+    """
+    converter = tf.lite.TFLiteConverter.from_keras_model(model)
+    
+    # Enable optimization
+    converter.optimizations = [tf.lite.Optimize.DEFAULT]
+    
+    # Set representative dataset for full integer quantization
+    converter.representative_dataset = representative_dataset
+    
+    # Ensure input/output is float
+    converter.target_spec.supported_ops = [
+        tf.lite.OpsSet.TFLITE_BUILTINS_INT8
+    ]
+    converter.inference_input_type = tf.float32
+    converter.inference_output_type = tf.float32
+    
+    # Convert
+    tflite_model = converter.convert()
+    
+    # Create interpreter
+    interpreter = tf.lite.Interpreter(model_content=tflite_model)
+    interpreter.allocate_tensors()
+    
+    return interpreter
+
+
+def prune_model(model: tf.keras.Model,
+                sparsity: float = 0.5,
+                begin_step: int = 0,
+                end_step: int = 1000) -> tf.keras.Model:
+    """
+    Apply magnitude-based pruning to a model.
+    
+    Args:
+        model: Keras model to prune
+        sparsity: Target sparsity (fraction of weights to prune)
+        begin_step: Step to begin pruning
+        end_step: Step to end pruning
+    
+    Returns:
+        Pruned model
+    """
+    import tensorflow_model_optimization as tfmot
+    
+    # Create pruning schedule
+    pruning_schedule = tfmot.sparsity.keras.PolynomialDecay(
+        initial_sparsity=0.0,
+        final_sparsity=sparsity,
+        begin_step=begin_step,
+        end_step=end_step
+    )
+    
+    # Apply pruning
+    pruning_params = {
+        'pruning_schedule': pruning_schedule
+    }
+    
+    pruned_model = tfmot.sparsity.keras.prune_low_magnitude(
+        model, **pruning_params
+    )
+    
+    return pruned_model
+
+
+def benchmark_model_speed(model: tf.keras.Model,
+                          input_shape: Tuple[int, ...],
+                          num_runs: int = 100) -> Dict:
+    """
+    Benchmark model inference speed.
+    
+    Args:
+        model: Model to benchmark
+        input_shape: Input shape (without batch dimension)
+        num_runs: Number of inference runs
+    
+    Returns:
+        Dictionary with benchmark results
+    """
+    import time
+    
+    # Create dummy input
+    dummy_input = np.random.rand(1, *input_shape).astype(np.float32)
+    
+    # Warm-up
+    for _ in range(10):
+        _ = model(dummy_input)
+    
+    # Benchmark
+    times = []
+    for _ in range(num_runs):
+        start = time.time()
+        _ = model(dummy_input)
+        times.append((time.time() - start) * 1000)  # ms
+    
+    results = {
+        'mean_ms': np.mean(times),
+        'std_ms': np.std(times),
+        'min_ms': np.min(times),
+        'max_ms': np.max(times),
+        'fps': 1000 / np.mean(times)
+    }
+    
+    return results
+
+
+# =============================================================================
+# Section 6: Complete Evaluation Pipeline
+# =============================================================================
+
+def evaluate_detection_model(model: tf.keras.Model,
+                              test_dataset,
+                              num_classes: int,
+                              class_names: Dict[int, str] = None):
+    """
+    Complete evaluation pipeline for object detection model.
+    
+    Args:
+        model: Detection model
+        test_dataset: Test dataset
+        num_classes: Number of classes
+        class_names: Dictionary mapping class IDs to names
+    
+    Returns:
+        Evaluation results dictionary
+    """
+    print("\n" + "=" * 60)
+    print("Running Model Evaluation")
+    print("=" * 60)
+    
+    # Collect predictions and ground truths
+    predictions = []
+    ground_truths = []
+    
+    for images, targets in test_dataset:
+        # Run inference
+        preds = model(images, training=False)
+        
+        # Process predictions (simplified)
+        for i in range(len(images)):
+            pred_dict = {
+                'boxes': np.random.rand(5, 4),  # Placeholder
+                'scores': np.random.rand(5),
+                'classes': np.random.randint(1, num_classes + 1, 5)
+            }
+            predictions.append(pred_dict)
+            
+            gt_dict = {
+                'boxes': targets[i]['boxes'].numpy(),
+                'classes': targets[i]['classes'].numpy()
+            }
+            ground_truths.append(gt_dict)
+    
+    # Calculate mAP
+    map_results = calculate_map_over_iou_range(
+        predictions, ground_truths, num_classes
+    )
+    
+    print(f"\nEvaluation Results:")
+    print(f"  mAP@0.5:0.95: {map_results['mAP@0.5:0.95']:.4f}")
+    print(f"  mAP@0.5: {map_results['mAP@0.5']:.4f}")
+    
+    # Benchmark speed
+    print("\nBenchmarking inference speed...")
+    benchmark = benchmark_model_speed(model, (416, 416, 3))
+    
+    print(f"\nSpeed Benchmark:")
+    print(f"  Mean: {benchmark['mean_ms']:.2f} ms")
+    print(f"  FPS: {benchmark['fps']:.1f}")
+    
+    return {
+        'map': map_results,
+        'benchmark': benchmark
+    }
+
+
+# =============================================================================
+# Main Execution
+# =============================================================================
+
+if __name__ == "__main__":
+    print("\n" + "=" * 70)
+    print("Lab 6.12: mAP Evaluation and Model Optimization")
+    print("=" * 70)
+    
+    # Generate synthetic evaluation data
+    print("\n" + "-" * 60)
+    print("Generating synthetic evaluation data")
+    print("-" * 60)
+    
+    num_images = 10
+    num_classes = 3
+    
+    predictions = []
+    ground_truths = []
+    
+    np.random.seed(42)
+    
+    for i in range(num_images):
+        # Generate predictions
+        num_preds = np.random.randint(3, 8)
+        pred_dict = {
+            'boxes': np.random.rand(num_preds, 4),
+            'scores': np.random.uniform(0.3, 0.95, num_preds),
+            'classes': np.random.randint(1, num_classes + 1, num_preds)
+        }
+        predictions.append(pred_dict)
+        
+        # Generate ground truth
+        num_gts = np.random.randint(2, 6)
+        gt_dict = {
+            'boxes': np.random.rand(num_gts, 4),
+            'classes': np.random.randint(1, num_classes + 1, num_gts)
+        }
+        ground_truths.append(gt_dict)
+    
+    print(f"Generated {num_images} evaluation samples")
+    
+    # Calculate mAP
+    print("\n" + "-" * 60)
+    print("Calculating mAP")
+    print("-" * 60)
+    
+    map_results = calculate_map_over_iou_range(
+        predictions, ground_truths, num_classes
+    )
+    
+    print(f"\nmAP@0.5:0.95: {map_results['mAP@0.5:0.95']:.4f}")
+    print(f"mAP@0.5: {map_results['mAP@0.5']:.4f}")
+    
+    # Calculate per-class AP at IoU=0.5
+    class_results = calculate_map(predictions, ground_truths, num_classes, 0.5)
+    
+    print("\nPer-class AP@0.5:")
+    for class_id, ap in class_results['APs'].items():
+        print(f"  Class {class_id}: {ap:.4f}")
+    
+    # Visualize
+    print("\nGenerating visualizations...")
+    
+    # Sample PR curve for class 1
+    class_1_preds = []
+    class_1_gts = []
+    
+    for pred, gt in zip(predictions, ground_truths):
+        mask = pred['classes'] == 1
+        class_1_preds.extend(pred['boxes'][mask])
+        
+        gt_mask = gt['classes'] == 1
+        class_1_gts.extend(gt['boxes'][gt_mask])
+    
+    if len(class_1_preds) > 0 and len(class_1_gts) > 0:
+        precisions, recalls = calculate_precision_recall(
+            np.array(class_1_preds),
+            np.random.uniform(0.3, 0.95, len(class_1_preds)),
+            np.ones(len(class_1_preds)),
+            np.array(class_1_gts),
+            np.ones(len(class_1_gts)),
+            0.5
+        )
+        
+        ap = calculate_ap_voc(precisions, recalls)
+        plot_pr_curve(precisions, recalls, ap, 'Class 1')
+    
+    # Plot AP comparison
+    plot_ap_comparison(class_results['APs'])
+    
+    print("\n" + "=" * 70)
+    print("Lab 6.12 Complete!")
+    print("=" * 70)
+```
+
+---
+
+# Summary and Additional Resources
+
+## Module 6 Summary
+
+This module covered:
+
+1. **IoU Calculation (Labs 6.1-6.2)**
+   - Basic IoU implementation
+   - Advanced metrics: GIoU, DIoU, CIoU
+   - Loss functions using IoU metrics
+
+2. **Anchor Generation (Labs 6.3-6.4)**
+   - Base anchor generation
+   - Multi-scale FPN anchors
+   - K-means anchor optimization
+
+3. **NMS (Labs 6.5-6.6)**
+   - Standard NMS implementation
+   - Soft-NMS variants
+   - DIoU-NMS
+
+4. **YOLO Detector (Labs 6.7-6.9)**
+   - Detection head architecture
+   - Complete training pipeline
+   - Inference and post-processing
+
+5. **TF Object Detection API (Labs 6.10-6.12)**
+   - API setup and model zoo
+   - Custom detector training
+   - mAP evaluation and optimization
+
+## Additional Exercises
+
+### Exercise 1: Implement FCOS-style Anchor-Free Detection
+Create an anchor-free detector using center-ness prediction.
+
+### Exercise 2: Implement RetinaNet Focal Loss
+Implement focal loss for handling class imbalance in object detection.
+
+### Exercise 3: Multi-GPU Training
+Extend the YOLO training pipeline to support distributed training.
+
+### Exercise 4: TensorRT Optimization
+Optimize a trained model using TensorRT for deployment.
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Out of Memory during Training**
+   - Reduce batch size
+   - Use gradient checkpointing
+   - Use mixed precision training
+
+2. **Poor Detection Performance**
+   - Check anchor sizes match your objects
+   - Verify data augmentation is appropriate
+   - Increase training iterations
+
+3. **Slow Inference**
+   - Use quantization
+   - Prune the model
+   - Use TensorRT or ONNX Runtime
+
+## References
+
+1. YOLO Paper: "You Only Look Once: Unified, Real-Time Object Detection"
+2. GIoU Paper: "Generalized Intersection over Union"
+3. DIoU/CIoU Paper: "Distance-IoU Loss: Faster and Better Learning for Bounding Box Regression"
+4. Soft-NMS Paper: "Improving Object Detection With One Line of Code"
+5. TensorFlow Object Detection API Documentation
+
+---
+
+**End of Module 6: Object Detection Systems**
