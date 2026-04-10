@@ -18,7 +18,7 @@ objectives:
   - "Apply normalization and custom training loops"
 source: "content/modules/02-neural-network-fundamentals/theory.md"
 generatedBy: "scripts/convert-theory.mjs"
-lastConverted: "2026-04-10T18:28:36.954Z"
+lastConverted: "2026-04-10T19:38:38.457Z"
 ---
 ## Module Overview
 
@@ -132,10 +132,11 @@ Define $R = \max_i \|\mathbf{x}^{(i)}\|$. After $t$ updates:
 
 Therefore, the number of updates is bounded by $\frac{R^2}{\gamma^2}$.
 
-<div class="my-6 rounded-xl border border-white/[0.08] bg-surface-1/30 px-4 py-3 callout callout-tip" data-callout-type="tip" data-callout-label="Key Insight">
-  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neon-cyan mb-1">Key Insight</div>
-  <div class="text-text-secondary leading-relaxed">The convergence rate depends inversely on the square of the margin. Better-separated data converges faster.</div>
-</div>
+<Callout type="tip" title="Key Insight">
+
+The convergence rate depends inversely on the square of the margin. Better-separated data converges faster.
+
+</Callout>
 
 ### 2.1.4 Limitations and the XOR Problem
 
@@ -184,7 +185,7 @@ This contradicts $w_1 + w_2 + 2b \geq 0$. ∎
 | Continuous | Temperature, price, height | Real-valued scalars |
 | Discrete | Count of items, age in years | Integer values |
 | Categorical | Color, country, product type | One-hot encoding |
-| Binary | Yes/no, true/false | {0, 1} values |
+| Binary | Yes/no, true/false | &#123;0, 1&#125; values |
 | Ordinal | Rating (1-5 stars), education level | Integer with order |
 
 **One-Hot Encoding:**
@@ -193,10 +194,11 @@ For a categorical variable with $k$ categories:
 
 $$\text{category}_i \rightarrow \mathbf{e}_i = [0, ..., 0, \underbrace{1}_{i\text{th position}}, 0, ..., 0]^T \in \mathbb{R}^k$$
 
-<div class="my-6 rounded-xl border border-white/[0.08] bg-surface-1/30 px-4 py-3 callout callout-note" data-callout-type="note" data-callout-label="Example">
-  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neon-cyan mb-1">Example</div>
-  <div class="text-text-secondary leading-relaxed">Color encoding - Red → [1, 0, 0] - Green → [0, 1, 0]   - Blue → [0, 0, 1]</div>
-</div>
+<Callout type="note" title="Example">
+
+Color encoding - Red → [1, 0, 0] - Green → [0, 1, 0]   - Blue → [0, 0, 1]
+
+</Callout>
 
 ### 2.2.2 Feature Normalization
 
@@ -344,10 +346,11 @@ $$|F(\mathbf{x}) - f(\mathbf{x})| < \epsilon \quad \forall \mathbf{x} \in I_d$$
 | Optimization | Not addressed | Local minima, saddle points |
 | Generalization | Not guaranteed | Overfitting is common |
 
-<div class="my-6 rounded-xl border border-white/[0.08] bg-surface-1/30 px-4 py-3 callout callout-tip" data-callout-type="tip" data-callout-label="Key Insight">
-  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neon-cyan mb-1">Key Insight</div>
-  <div class="text-text-secondary leading-relaxed">The theorem guarantees existence of a solution but says nothing about: - How to find the weights (optimization) - How many neurons are needed (capacity) - Whether the solution generalizes (statistical learning theory)</div>
-</div>
+<Callout type="tip" title="Key Insight">
+
+The theorem guarantees existence of a solution but says nothing about: - How to find the weights (optimization) - How many neurons are needed (capacity) - Whether the solution generalizes (statistical learning theory)
+
+</Callout>
 
 ### 2.4.4 Proof Sketch (Simplified)
 
@@ -613,10 +616,11 @@ $$= \left(-\frac{y}{\hat{y}} + \frac{1-y}{1-\hat{y}}\right) \cdot \hat{y}(1-\hat
 
 $$= -y(1-\hat{y}) + (1-y)\hat{y} = \hat{y} - y$$
 
-<div class="my-6 rounded-xl border border-white/[0.08] bg-surface-1/30 px-4 py-3 callout callout-tip" data-callout-type="tip" data-callout-label="Key Insight">
-  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neon-cyan mb-1">Key Insight</div>
-  <div class="text-text-secondary leading-relaxed">The gradient is simply the prediction error, making optimization efficient.</div>
-</div>
+<Callout type="tip" title="Key Insight">
+
+The gradient is simply the prediction error, making optimization efficient.
+
+</Callout>
 
 ### 2.6.6 Categorical Cross-Entropy
 
@@ -646,10 +650,11 @@ $$f(\lambda \mathbf{x} + (1-\lambda)\mathbf{y}) \leq \lambda f(\mathbf{x}) + (1-
 | Huber | Convex | Smooth approximation of MAE |
 | Cross-Entropy | Convex (linear models) | Non-convex with neural networks |
 
-<div class="my-6 rounded-xl border border-white/[0.08] bg-surface-1/30 px-4 py-3 callout callout-warning" data-callout-type="warning" data-callout-label="Important">
-  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neon-cyan mb-1">Important</div>
-  <div class="text-text-secondary leading-relaxed">While individual loss functions may be convex, the composition with a neural network is generally non-convex due to: - Non-linear activations - Multiple layers - Weight interactions</div>
-</div>
+<Callout type="warning" title="Important">
+
+While individual loss functions may be convex, the composition with a neural network is generally non-convex due to: - Non-linear activations - Multiple layers - Weight interactions
+
+</Callout>
 
 ### 2.6.8 Loss Function Selection Guide
 
@@ -745,10 +750,11 @@ for l = L down to 1:
 
 Backpropagation can be understood through computational graphs:
 
-<div class="my-6 rounded-xl border border-white/[0.08] bg-surface-1/30 px-4 py-3 callout callout-note" data-callout-type="note" data-callout-label="Example">
-  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neon-cyan mb-1">Example</div>
-  <div class="text-text-secondary leading-relaxed">Compute $f(x, y, z) = (x + y) \cdot z$</div>
-</div>
+<Callout type="note" title="Example">
+
+Compute $f(x, y, z) = (x + y) \cdot z$
+
+</Callout>
 
 Forward:
 - $q = x + y$
@@ -1012,10 +1018,11 @@ This is a non-linear transformation that progressively disentangles factors of v
 
 **Goal:** Learn representations where each dimension corresponds to an independent factor of variation.
 
-<div class="my-6 rounded-xl border border-white/[0.08] bg-surface-1/30 px-4 py-3 callout callout-note" data-callout-type="note" data-callout-label="Example">
-  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neon-cyan mb-1">Example</div>
-  <div class="text-text-secondary leading-relaxed">For faces, separate: - Identity - Pose - Expression - Lighting</div>
-</div>
+<Callout type="note" title="Example">
+
+For faces, separate: - Identity - Pose - Expression - Lighting
+
+</Callout>
 
 **Benefits:**
 - Better generalization
@@ -1257,10 +1264,10 @@ $$\text{Accuracy} = \frac{\text{correct predictions}}{\text{total predictions}}$
 - Single input, single output
 - Simple feedforward networks
 
-<div class="my-6 rounded-xl border border-white/[0.08] bg-surface-1/30 px-4 py-3 callout callout-note" data-callout-type="note" data-callout-label="Example">
-  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neon-cyan mb-1">Example</div>
-  <div class="text-text-secondary leading-relaxed"></div>
-</div>
+<Callout type="note" title="Example">
+
+</Callout>
+
 ```python
 from tensorflow import keras
 
@@ -1284,10 +1291,10 @@ model = keras.Sequential([
 - Residual connections
 - Directed acyclic graphs
 
-<div class="my-6 rounded-xl border border-white/[0.08] bg-surface-1/30 px-4 py-3 callout callout-note" data-callout-type="note" data-callout-label="Example">
-  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neon-cyan mb-1">Example</div>
-  <div class="text-text-secondary leading-relaxed"></div>
-</div>
+<Callout type="note" title="Example">
+
+</Callout>
+
 ```python
 from tensorflow import keras
 

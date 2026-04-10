@@ -64,22 +64,64 @@ export default function CodeBlock({
         </button>
       </div>
 
-      {/* Code content */}
+      {/* Code content.
+          CRITICAL layout decision: the code body is rendered as a SINGLE
+          raw text node inside <pre><code>. No per-line <div> wrapping.
+          Per-line divs in a flex layout caused sub-pixel drift between
+          rows because each div independently computed its content width,
+          and any per-glyph font fallback for box-drawing characters
+          (U+2500–257F) compounded across rows.
+          Line numbers live in a SEPARATE parallel column outside the
+          <pre>, so the pre contains nothing but the original text and
+          `white-space: pre` is the single source of truth for layout. */}
       <div className="overflow-x-auto">
-        <pre className="p-4 text-sm leading-relaxed !bg-transparent !border-0 !m-0">
-          <code className="font-code">
-            {lines.map((line, i) => (
-              <div key={i} className="flex">
-                {showLineNumbers && (
-                  <span className="select-none text-text-muted/30 w-10 shrink-0 text-right pr-4 text-xs leading-relaxed">
-                    {i + 1}
-                  </span>
-                )}
-                <span className="text-text-secondary">{line}</span>
-              </div>
-            ))}
-          </code>
-        </pre>
+        <div className="flex">
+          {showLineNumbers && (
+            <div
+              aria-hidden
+              className="select-none shrink-0 py-4 pl-4 pr-4 text-right text-xs leading-relaxed text-text-muted/30"
+              style={{
+                fontFamily:
+                  "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'DejaVu Sans Mono', 'Cascadia Mono', monospace",
+              }}
+            >
+              {lines.map((_, i) => (
+                <div key={i}>{i + 1}</div>
+              ))}
+            </div>
+          )}
+          <pre
+            className="p-4 pl-0 text-sm leading-relaxed !bg-transparent !border-0 !m-0 min-w-max"
+            style={{
+              // Force a single, system-provided monospace font that has ASCII
+              // + box-drawing at identical advance widths. Tailwind v4's
+              // preflight sets `code, kbd, samp, pre { font-family: var(--font-code) !important }`,
+              // so we also set --font-code in globals.css to this same stack;
+              // having both inline and var in sync means the effective font
+              // is deterministic whichever wins the cascade.
+              fontFamily:
+                "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'DejaVu Sans Mono', 'Cascadia Mono', monospace",
+              fontVariantLigatures: "none",
+              fontVariantNumeric: "tabular-nums",
+              fontFeatureSettings: "'calt' 0, 'liga' 0, 'clig' 0, 'dlig' 0, 'kern' 0",
+              fontKerning: "none",
+              textRendering: "geometricPrecision",
+              whiteSpace: "pre",
+              tabSize: 4,
+            }}
+          >
+            <code
+              className="text-text-secondary"
+              style={{
+                fontFamily: "inherit",
+                background: "transparent",
+                padding: 0,
+              }}
+            >
+              {children.replace(/\n+$/, "")}
+            </code>
+          </pre>
+        </div>
       </div>
     </div>
   );

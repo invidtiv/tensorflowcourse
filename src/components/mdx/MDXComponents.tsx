@@ -66,13 +66,44 @@ export const mdxComponents: MDXComponentsType = {
     );
   },
 
-  // Override tables with better styling
+  // Override tables with dark-theme styling.
+  // GFM pipe tables (from remark-gfm) are parsed into real <table> elements,
+  // so we style the full set of table children — without these, rows render
+  // as borderless space-separated text and look like broken ASCII art.
   table: ({ children, ...props }: React.ComponentPropsWithoutRef<"table">) => (
-    <div className="overflow-x-auto my-6 rounded-lg border border-white/[0.06]">
-      <table className="w-full" {...props}>
+    <div className="overflow-x-auto my-6 rounded-lg border border-white/[0.08] bg-surface-1/30">
+      <table className="w-full text-sm border-collapse" {...props}>
         {children}
       </table>
     </div>
+  ),
+  thead: ({ children, ...props }: React.ComponentPropsWithoutRef<"thead">) => (
+    <thead className="bg-surface-2/60 border-b border-white/[0.08]" {...props}>
+      {children}
+    </thead>
+  ),
+  tbody: ({ children, ...props }: React.ComponentPropsWithoutRef<"tbody">) => (
+    <tbody className="divide-y divide-white/[0.05]" {...props}>
+      {children}
+    </tbody>
+  ),
+  tr: ({ children, ...props }: React.ComponentPropsWithoutRef<"tr">) => (
+    <tr className="hover:bg-white/[0.02] transition-colors" {...props}>
+      {children}
+    </tr>
+  ),
+  th: ({ children, ...props }: React.ComponentPropsWithoutRef<"th">) => (
+    <th
+      className="px-4 py-3 text-left font-semibold text-text-primary whitespace-nowrap"
+      {...props}
+    >
+      {children}
+    </th>
+  ),
+  td: ({ children, ...props }: React.ComponentPropsWithoutRef<"td">) => (
+    <td className="px-4 py-3 text-text-secondary align-top" {...props}>
+      {children}
+    </td>
   ),
 
   // Override blockquotes

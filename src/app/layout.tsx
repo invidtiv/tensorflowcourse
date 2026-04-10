@@ -1,9 +1,28 @@
 import type { Metadata } from "next";
+import { Inter } from "next/font/google";
 import Navbar from "@/components/layout/Navbar";
 import Sidebar from "@/components/layout/Sidebar";
 import ReadingProgress from "@/components/layout/ReadingProgress";
 import Footer from "@/components/layout/Footer";
 import "./globals.css";
+
+// Body font only. We deliberately do NOT load JetBrains Mono via next/font
+// because Google's `latin` subset of JetBrains Mono does NOT include the
+// box-drawing Unicode block (U+2500–257F). That caused every ─│┌┐└┘ glyph
+// to fall back per-glyph to the system monospace font with a different
+// advance width than JetBrains Mono, producing sub-pixel drift that
+// compounded across 66-character rows and visibly broke ASCII diagrams.
+//
+// The code font is instead set via CSS `--font-code` as a `ui-monospace`
+// stack, which on every modern OS maps to a single system font that has
+// *both* ASCII and box-drawing glyphs at identical advance widths — no
+// per-glyph fallback, so no drift.
+const inter = Inter({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-body",
+  weight: ["400", "500", "600", "700"],
+});
 
 export const metadata: Metadata = {
   title: {
@@ -35,7 +54,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="h-full antialiased">
+    <html lang="en" className={`h-full antialiased ${inter.variable}`}>
       <body className="min-h-full flex flex-col">
         <Navbar />
         <ReadingProgress />

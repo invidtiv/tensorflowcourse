@@ -18,7 +18,7 @@ objectives:
   - "Use pretrained embeddings for NLP tasks"
 source: "content/modules/08-nlp/theory.md"
 generatedBy: "scripts/convert-theory.mjs"
-lastConverted: "2026-04-10T18:28:37.030Z"
+lastConverted: "2026-04-10T19:38:38.541Z"
 ---
 ## Course Overview
 
@@ -74,10 +74,11 @@ Given a vocabulary $V = \{w_1, w_2, ..., w_{|V|}\}$, the one-hot vector for word
 
 $$\mathbf{e}_{w_i} = [0, 0, ..., \underbrace{1}_{\text{position } i}, ..., 0]^T \in \mathbb{R}^{|V|}$$
 
-<div class="my-6 rounded-xl border border-white/[0.08] bg-surface-1/30 px-4 py-3 callout callout-note" data-callout-type="note" data-callout-label="Example">
-  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neon-cyan mb-1">Example</div>
-  <div class="text-text-secondary leading-relaxed">For vocabulary $V = \{\text{cat}, \text{dog}, \text{fish}, \text{run}, \text{jump}\}$:</div>
-</div>
+<Callout type="note" title="Example">
+
+For vocabulary $V = \{\text{cat}, \text{dog}, \text{fish}, \text{run}, \text{jump}\}$:
+
+</Callout>
 
 | Word | One-Hot Vector |
 |------|----------------|
@@ -184,10 +185,10 @@ where $\oplus$ denotes string concatenation (possibly with spacing).
 
 **Approach:** Split on whitespace and punctuation.
 
-<div class="my-6 rounded-xl border border-white/[0.08] bg-surface-1/30 px-4 py-3 callout callout-note" data-callout-type="note" data-callout-label="Example">
-  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neon-cyan mb-1">Example</div>
-  <div class="text-text-secondary leading-relaxed"></div>
-</div>
+<Callout type="note" title="Example">
+
+</Callout>
+
 ```python
 Input: "Hello, world! How are you?"
 Output: ["Hello", ",", "world", "!", "How", "are", "you", "?"]
@@ -210,10 +211,10 @@ Output: ["Hello", ",", "world", "!", "How", "are", "you", "?"]
 
 **Approach:** Use individual characters as tokens.
 
-<div class="my-6 rounded-xl border border-white/[0.08] bg-surface-1/30 px-4 py-3 callout callout-note" data-callout-type="note" data-callout-label="Example">
-  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neon-cyan mb-1">Example</div>
-  <div class="text-text-secondary leading-relaxed"></div>
-</div>
+<Callout type="note" title="Example">
+
+</Callout>
+
 ```python
 Input: "hello"
 Output: ["h", "e", "l", "l", "o"]
@@ -440,10 +441,11 @@ $$\mathcal{L}_{Skip-gram} = -\frac{1}{T} \sum_{t=1}^{T} \sum_{-c \leq j \leq c, 
 | Small Corpora | Better | May overfit |
 | Representation | Smoother | More distinct |
 
-<div class="my-6 rounded-xl border border-white/[0.08] bg-surface-1/30 px-4 py-3 callout callout-tip" data-callout-type="tip" data-callout-label="Key Insight">
-  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neon-cyan mb-1">Key Insight</div>
-  <div class="text-text-secondary leading-relaxed">Skip-gram creates better representations for rare words because each occurrence generates multiple training examples (one per context word).</div>
-</div>
+<Callout type="tip" title="Key Insight">
+
+Skip-gram creates better representations for rare words because each occurrence generates multiple training examples (one per context word).
+
+</Callout>
 
 ### 2.2.5 Hierarchical Softmax
 
@@ -536,10 +538,11 @@ Ratios of co-occurrence probabilities encode meaning:
 
 $$\frac{P(w_k | w_i)}{P(w_k | w_j)}$$
 
-<div class="my-6 rounded-xl border border-white/[0.08] bg-surface-1/30 px-4 py-3 callout callout-note" data-callout-type="note" data-callout-label="Example">
-  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neon-cyan mb-1">Example</div>
-  <div class="text-text-secondary leading-relaxed">| Ratio | $w_k$ = solid | $w_k$ = gas | $w_k$ = water | $w_k$ = fashion | |-------|---------------|-------------|---------------|-----------------| | $P(w_k \| \text{ice})$ | large | small | large | small | | $P(w_k \| \text{steam})$ | small | large | large | small | | Ratio | large | small | ~1 | ~1 |</div>
-</div>
+<Callout type="note" title="Example">
+
+| Ratio | $w_k$ = solid | $w_k$ = gas | $w_k$ = water | $w_k$ = fashion | |-------|---------------|-------------|---------------|-----------------| | $P(w_k \| \text{ice})$ | large | small | large | small | | $P(w_k \| \text{steam})$ | small | large | large | small | | Ratio | large | small | ~1 | ~1 |
+
+</Callout>
 
 **Model Formulation:**
 
@@ -851,7 +854,7 @@ Where $\odot$ denotes element-wise multiplication.
 
 **Input Gate Analysis:**
 - $\mathbf{i}_t \approx 0$: Ignore new input
-- $\mathbf{i}_t \approx 1**: Incorporate new input fully
+- $\mathbf&#123;i&#125;_t \approx 1**: Incorporate new input fully
 - Combined with candidate: Controls what enters memory
 
 **Output Gate Analysis:**
@@ -969,10 +972,11 @@ $$\mathbf{h}_t = (1 - \mathbf{z}_t) \odot \mathbf{h}_{t-1} + \mathbf{z}_t \odot 
 - Cannot see future words
 - Language understanding often requires full context
 
-<div class="my-6 rounded-xl border border-white/[0.08] bg-surface-1/30 px-4 py-3 callout callout-note" data-callout-type="note" data-callout-label="Example">
-  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neon-cyan mb-1">Example</div>
-  <div class="text-text-secondary leading-relaxed">"The bank **was**..." → Need to see if "river" or "account" follows to understand "bank".</div>
-</div>
+<Callout type="note" title="Example">
+
+"The bank **was**..." → Need to see if "river" or "account" follows to understand "bank".
+
+</Callout>
 
 ### 3.5.2 Bidirectional Architecture
 
@@ -1049,20 +1053,22 @@ Decoder RNN → y_1, y_2, ..., y_m
 - Information bottleneck for long sequences
 - No direct access to relevant source positions
 
-<div class="my-6 rounded-xl border border-white/[0.08] bg-surface-1/30 px-4 py-3 callout callout-note" data-callout-type="note" data-callout-label="Example">
-  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neon-cyan mb-1">Example</div>
-  <div class="text-text-secondary leading-relaxed">In translation, generating word 50 should directly attend to relevant source words, not struggle through 50 steps of RNN state.</div>
-</div>
+<Callout type="note" title="Example">
+
+In translation, generating word 50 should directly attend to relevant source words, not struggle through 50 steps of RNN state.
+
+</Callout>
 
 ### 4.1.2 The Intuition of Attention
 
 **Human Attention Analogy:**
 When translating a sentence, you don't read the entire source text for each output word. You focus on the relevant parts.
 
-<div class="my-6 rounded-xl border border-white/[0.08] bg-surface-1/30 px-4 py-3 callout callout-tip" data-callout-type="tip" data-callout-label="Key Idea">
-  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neon-cyan mb-1">Key Idea</div>
-  <div class="text-text-secondary leading-relaxed">Allow decoder to "look back" at source hidden states and selectively focus on relevant ones.</div>
-</div>
+<Callout type="tip" title="Key Idea">
+
+Allow decoder to "look back" at source hidden states and selectively focus on relevant ones.
+
+</Callout>
 
 ---
 
@@ -1153,10 +1159,11 @@ tapis   0.0  0.0  0.0  0.0  0.2  0.8
 
 ### 4.3.1 The Concept
 
-<div class="my-6 rounded-xl border border-white/[0.08] bg-surface-1/30 px-4 py-3 callout callout-tip" data-callout-type="tip" data-callout-label="Key Insight">
-  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neon-cyan mb-1">Key Insight</div>
-  <div class="text-text-secondary leading-relaxed">Instead of attending from decoder to encoder, let each position attend to all positions in the same sequence.</div>
-</div>
+<Callout type="tip" title="Key Insight">
+
+Instead of attending from decoder to encoder, let each position attend to all positions in the same sequence.
+
+</Callout>
 
 **Self-Attention:**
 $$\text{SelfAttn}(\mathbf{X}) = \text{Attention}(\mathbf{X}, \mathbf{X}, \mathbf{X})$$
@@ -1286,18 +1293,18 @@ Input Tokens
     ↓
 ┌─────────────────────────────────────┐
 │           Encoder Stack             │
-│  ┌─────┐ ┌─────┐     ┌─────┐       │
-│  │Block│→│Block│→...→│Block│  × N  │
-│  └─────┘ └─────┘     └─────┘       │
+│  ┌─────┐ ┌─────┐     ┌─────┐        │
+│  │Block│→│Block│→...→│Block│  × N   │
+│  └─────┘ └─────┘     └─────┘        │
 └─────────────────────────────────────┘
     ↓
 Encoder Output
     ↓
 ┌─────────────────────────────────────┐
 │           Decoder Stack             │
-│  ┌─────┐ ┌─────┐     ┌─────┐       │
-│  │Block│→│Block│→...→│Block│  × N  │
-│  └─────┘ └─────┘     └─────┘       │
+│  ┌─────┐ ┌─────┐     ┌─────┐        │
+│  │Block│→│Block│→...→│Block│  × N   │
+│  └─────┘ └─────┘     └─────┘        │
 └─────────────────────────────────────┘
     ↓
 Output Tokens
@@ -1810,10 +1817,10 @@ Joint embedding of images and text:
 
 **Solution:** Fine-tune on instruction-following datasets.
 
-<div class="my-6 rounded-xl border border-white/[0.08] bg-surface-1/30 px-4 py-3 callout callout-note" data-callout-type="note" data-callout-label="Example">
-  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neon-cyan mb-1">Example</div>
-  <div class="text-text-secondary leading-relaxed"></div>
-</div>
+<Callout type="note" title="Example">
+
+</Callout>
+
 ```python
 Instruction: Summarize the following article in 3 sentences.
 Input: [article text]

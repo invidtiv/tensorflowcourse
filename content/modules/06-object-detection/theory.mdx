@@ -18,7 +18,7 @@ objectives:
   - "Apply Feature Pyramid Networks"
 source: "content/modules/06-object-detection/theory.md"
 generatedBy: "scripts/convert-theory.mjs"
-lastConverted: "2026-04-10T18:28:37.008Z"
+lastConverted: "2026-04-10T19:38:38.512Z"
 ---
 ## Table of Contents
 1. [Introduction to Object Detection](#1-introduction-to-object-detection)
@@ -175,12 +175,12 @@ The cascade classifier addresses computational cost by:
 3. Most windows rejected in early stages
 
 Cascade structure:
-$$F(x) = \begin{cases}
-f_1(x) & \text{if } f_1(x) < \theta_1 \\
-f_2(x) & \text{else if } f_2(x) < \theta_2 \\
+$$F(x) = \begin&#123;cases&#125;
+f_1(x) & \text&#123;if &#125; f_1(x) &lt; \theta_1 \\
+f_2(x) & \text&#123;else if &#125; f_2(x) &lt; \theta_2 \\
 ... \\
-f_K(x) & \text{final decision}
-\end{cases}$$
+f_K(x) & \text&#123;final decision&#125;
+\end&#123;cases&#125;$$
 
 **Key Insight**: 90% of windows are negative; reject them quickly with cheap classifiers.
 
@@ -327,7 +327,7 @@ $$x = (i + 0.5) \times s, \quad y = (j + 0.5) \times s$$
 
 **Positive/Negative Labeling**:
 - Positive: IoU > 0.7 with any ground truth OR highest IoU for a GT box
-- Negative: IoU < 0.3 with all ground truth
+- Negative: IoU &lt; 0.3 with all ground truth
 - Ignored: 0.3 ≤ IoU ≤ 0.7
 
 **Multi-task Loss**:
@@ -415,17 +415,17 @@ $$s_k = s_{min} \cdot \left(\frac{s_{max}}{s_{min}}\right)^{\frac{k-1}{m-1}}$$
 
 | Detector | Scales (relative to image) | Number |
 |----------|---------------------------|--------|
-| Faster R-CNN | {128², 256², 512²} | 3 |
-| SSD300 | {0.2, 0.34, 0.48, 0.62, 0.76, 0.9} | 6 |
-| YOLOv3 | {116, 156, 373} / 416 | 3 per level |
-| RetinaNet | {2⁰, 2^(1/3), 2^(2/3)} × base | 3 per level |
+| Faster R-CNN | &#123;128², 256², 512²&#125; | 3 |
+| SSD300 | &#123;0.2, 0.34, 0.48, 0.62, 0.76, 0.9&#125; | 6 |
+| YOLOv3 | &#123;116, 156, 373&#125; / 416 | 3 per level |
+| RetinaNet | &#123;2⁰, 2^(1/3), 2^(2/3)&#125; × base | 3 per level |
 
 #### 4.2.2 Aspect Ratio Design
 
 Common aspect ratio sets:
-- **Square-focused**: {1:1, 1:2, 2:1}
-- **Comprehensive**: {1:1, 1:2, 2:1, 1:3, 3:1}
-- **Extreme**: {1:1, 1:2, 2:1, 1:3, 3:1, 1:5, 5:1}
+- **Square-focused**: &#123;1:1, 1:2, 2:1&#125;
+- **Comprehensive**: &#123;1:1, 1:2, 2:1, 1:3, 3:1&#125;
+- **Extreme**: &#123;1:1, 1:2, 2:1, 1:3, 3:1, 1:5, 5:1&#125;
 
 **Data-Driven Design**:
 
@@ -434,7 +434,7 @@ Optimal aspect ratios can be learned via k-means clustering on ground truth boxe
 $$d(box, centroid) = 1 - IoU(box, centroid)$$
 
 YOLOv2 applied this to COCO:
-- k=5 clusters: {(0.5727, 0.6774), (1.8745, 2.0625), (3.3384, 5.4743), (7.8828, 3.5278), (9.7705, 9.1683)}
+- k=5 clusters: &#123;(0.5727, 0.6774), (1.8745, 2.0625), (3.3384, 5.4743), (7.8828, 3.5278), (9.7705, 9.1683)&#125;
 
 ### 4.3 Multi-Level Anchor Assignment
 
@@ -528,7 +528,7 @@ $$IoU = \frac{|A \cap B|}{|A \cup B|} = \frac{Intersection}{Union}$$
 |----------|-----------|-------|
 | No overlap | 0 | Gradient vanishes |
 | Partial overlap | (0, 1) | Non-linear with distance |
-| Complete containment | < 1 | Doesn't distinguish containment vs. overlap |
+| Complete containment | &lt; 1 | Doesn't distinguish containment vs. overlap |
 
 **Critical Issue**: When boxes don't overlap, IoU = 0 regardless of distance, providing no gradient for optimization.
 
@@ -1576,15 +1576,15 @@ Where $C$ is the number of classes.
 | AP | AP@IoU=0.50:0.05:0.95 (primary challenge metric) |
 | AP50 | AP@IoU=0.50 |
 | AP75 | AP@IoU=0.75 |
-| AP_small | AP for small objects (area < 32²) |
-| AP_medium | AP for medium objects (32² < area < 96²) |
+| AP_small | AP for small objects (area &lt; 32²) |
+| AP_medium | AP for medium objects (32² &lt; area &lt; 96²) |
 | AP_large | AP for large objects (area > 96²) |
 
 #### 11.5.2 Object Size Definitions
 
 | Size | Pixel Area | Example |
 |------|-----------|---------|
-| Small | < 32² | ~30×30 pixels |
+| Small | &lt; 32² | ~30×30 pixels |
 | Medium | 32² - 96² | ~64×64 pixels |
 | Large | > 96² | ~100×100+ pixels |
 

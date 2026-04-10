@@ -18,7 +18,7 @@ objectives:
   - "Use mixed precision and distributed training"
 source: "content/modules/04-advanced-training/theory.md"
 generatedBy: "scripts/convert-theory.mjs"
-lastConverted: "2026-04-10T18:28:36.980Z"
+lastConverted: "2026-04-10T19:38:38.484Z"
 ---
 ## Table of Contents
 1. [Introduction to Optimization in Deep Learning](#1-introduction)
@@ -61,7 +61,7 @@ $$\theta^* = \arg\min_{\theta} L(\theta) = \arg\min_{\theta} \frac{1}{N} \sum_{i
 For a critical point θ* where ∇L(θ*) = 0, examine the Hessian H = ∇²L(θ*):
 
 - **Local Minimum**: All eigenvalues λᵢ > 0
-- **Local Maximum**: All eigenvalues λᵢ < 0
+- **Local Maximum**: All eigenvalues λᵢ &lt; 0
 - **Saddle Point**: Mixed signs of eigenvalues
 - **Degenerate Point**: At least one λᵢ = 0
 
@@ -458,7 +458,7 @@ def hvp(loss, params, v):
 
 | Scenario | Recommendation |
 |----------|---------------|
-| Small networks (< 10K params) | Full Newton or BFGS |
+| Small networks (&lt; 10K params) | Full Newton or BFGS |
 | Medium networks (10K-1M) | L-BFGS with careful tuning |
 | Large networks (> 1M) | First-order with good initialization |
 | Deterministic objectives | Second-order more effective |
@@ -490,7 +490,7 @@ changes as θ^(1), ..., θ^(l-1) are updated.
 
 **Transformation:**
 
-For a mini-batch B = {x₁, ..., xₘ}:
+For a mini-batch B = &#123;x₁, ..., xₘ&#125;:
 
 **Step 1: Normalize**
 $$\hat{x}_i = \frac{x_i - \mu_B}{\sqrt{\sigma_B^2 + \epsilon}}$$
@@ -622,7 +622,7 @@ ln_layer = tf.keras.layers.LayerNormalization(
 
 ### 6.8 Key Insights on Normalization
 
-1. **BatchNorm is not always best**: For small batches (< 32), GroupNorm often outperforms BatchNorm
+1. **BatchNorm is not always best**: For small batches (&lt; 32), GroupNorm often outperforms BatchNorm
 
 2. **Position matters**:
    - Pre-activation: Normalization → Activation → Convolution
@@ -850,7 +850,7 @@ Where:
 - T_compute: Forward/backward passes
 - T_sync: Gradient synchronization (distributed)
 
-**Goal:** T_data < T_compute (pipeline never starves)
+**Goal:** T_data &lt; T_compute (pipeline never starves)
 
 ### 9.2 Prefetching and Parallelism
 
@@ -966,7 +966,7 @@ message Feature {
 | CPU utilization | > 80% | Increase parallelism |
 | GPU utilization | > 90% | Pipeline is optimal |
 | Buffer occupancy | > 50% | Increase prefetch |
-| Disk I/O | < Bandwidth | Add caching |
+| Disk I/O | &lt; Bandwidth | Add caching |
 
 **TensorFlow Profiler:**
 
@@ -1370,10 +1370,11 @@ This module covered the theoretical foundations of advanced training methodologi
 8. **Mixed precision training** for performance acceleration
 9. **Distributed training** strategies for scaling
 
-<div class="my-6 rounded-xl border border-white/[0.08] bg-surface-1/30 px-4 py-3 callout callout-tip" data-callout-type="tip" data-callout-label="Key Takeaways">
-  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neon-cyan mb-1">Key Takeaways</div>
-  <div class="text-text-secondary leading-relaxed">- Understanding theory enables better hyperparameter tuning - No single approach works for all problems - Modern training combines multiple techniques - Always validate on held-out data</div>
-</div>
+<Callout type="tip" title="Key Takeaways">
+
+- Understanding theory enables better hyperparameter tuning - No single approach works for all problems - Modern training combines multiple techniques - Always validate on held-out data
+
+</Callout>
 
 ---
 

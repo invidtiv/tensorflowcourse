@@ -18,7 +18,7 @@ objectives:
   - "Post-process predictions with CRFs"
 source: "content/modules/05-semantic-segmentation/theory.md"
 generatedBy: "scripts/convert-theory.mjs"
-lastConverted: "2026-04-10T18:28:36.993Z"
+lastConverted: "2026-04-10T19:38:38.496Z"
 ---
 ## Table of Contents
 1. [Introduction to Semantic Segmentation](#1-introduction-to-semantic-segmentation)
@@ -354,10 +354,10 @@ C2 ──→ lateral ──→ add ─────────→ P2
 
 **3.4.2 Mathematical Formulation**
 
-$$P_l = \begin{cases}
-\text{Conv}_{1\times 1}(C_5) & l = 5 \\
-\text{Conv}_{3\times 3}(\text{Upsample}(P_{l+1}) + \text{Conv}_{1\times 1}(C_l)) & l < 5
-\end{cases}$$
+$$P_l = \begin&#123;cases&#125;
+\text&#123;Conv&#125;_&#123;1\times 1&#125;(C_5) & l = 5 \\
+\text&#123;Conv&#125;_&#123;3\times 3&#125;(\text&#123;Upsample&#125;(P_&#123;l+1&#125;) + \text&#123;Conv&#125;_&#123;1\times 1&#125;(C_l)) & l &lt; 5
+\end&#123;cases&#125;$$
 
 ### 3.5 Advanced Skip Connection Strategies
 
@@ -447,9 +447,9 @@ The rate $r$ controls the spacing between kernel weights.
 **Standard 3×3 Convolution (r=1):**
 ```python
 ● ─ ● ─ ●
-│   │   │
+│   │              │
 ● ─ ● ─ ●
-│   │   │
+│   │              │
 ● ─ ● ─ ●
 
 Receptive Field: 3×3
@@ -458,13 +458,13 @@ Receptive Field: 3×3
 **Atrous 3×3 Convolution (r=2):**
 ```python
 ● ─ ─ ● ─ ─ ●
-│       │
-│   ●   │
-│       │
+│                                            │
+│   ●                                        │
+│                                            │
 ● ─ ─ ● ─ ─ ●
-│       │
-│   ●   │
-│       │
+│                                            │
+│   ●                                        │
+│                                            │
 ● ─ ─ ● ─ ─ ●
 
 Receptive Field: 7×7 (with only 9 parameters!)
@@ -473,17 +473,17 @@ Receptive Field: 7×7 (with only 9 parameters!)
 **Atrous 3×3 Convolution (r=4):**
 ```python
 ● ─ ─ ─ ─ ● ─ ─ ─ ─ ●
-│               │
-│       ●       │
-│               │
-│   ●       ●   │
-│               │
+│                                              │
+│       ●                                      │
+│                                              │
+│   ●       ●                                  │
+│                                              │
 ● ─ ─ ─ ─ ● ─ ─ ─ ─ ●
-│               │
-│       ●       │
-│               │
-│   ●       ●   │
-│               │
+│                                              │
+│       ●                                      │
+│                                              │
+│   ●       ●                                  │
+│                                              │
 ● ─ ─ ─ ─ ● ─ ─ ─ ─ ●
 
 Receptive Field: 15×15 (with only 9 parameters!)
@@ -713,7 +713,7 @@ Computational complexity: $O(N^2)$ where $N = H \times W$
 
 | Object Size | Typical RF Needed | Example |
 |-------------|-------------------|---------|
-| Small (<32px) | 64-128 px | Pedestrians, small objects |
+| Small (&lt;32px) | 64-128 px | Pedestrians, small objects |
 | Medium (32-96px) | 128-256 px | Cars, animals |
 | Large (>96px) | 256-512 px | Buildings, landscapes |
 | Scene context | Full image | Sky, road, background |
@@ -895,7 +895,7 @@ where $m_c$ are the sorted errors for class $c$.
 | Balanced classes | Cross-entropy | Simple, stable |
 | Moderate imbalance | Weighted CE + Dice | Balanced approach |
 | Severe imbalance | Focal + Dice | Handle imbalance + overlap |
-| Medical imaging | Tversky (α<β) | Recall-critical |
+| Medical imaging | Tversky (α&lt;β) | Recall-critical |
 | Small objects | Dice or Lovász | Better gradient flow |
 | Boundary-critical | Dice + Boundary | Explicit boundary optimization |
 
@@ -1497,10 +1497,10 @@ Requirements for real-time applications:
 
 | Metric | Definition | Target |
 |--------|-----------|--------|
-| FLOPs | Floating point operations | < 10G |
-| Parameters | Model size | < 10M |
-| Latency | Inference time | < 33ms |
-| Memory | RAM usage | < 500MB |
+| FLOPs | Floating point operations | &lt; 10G |
+| Parameters | Model size | &lt; 10M |
+| Latency | Inference time | &lt; 33ms |
+| Memory | RAM usage | &lt; 500MB |
 
 ### 11.3 Efficient Design Principles
 
@@ -1692,7 +1692,7 @@ $$\mathcal{L}_{distill} = \lambda_{CE} \mathcal{L}_{CE}(y_{student}, y_{gt}) + \
 | Precision | Model Size | Speedup | Accuracy Drop |
 |-----------|-----------|---------|---------------|
 | FP32 | 100% | 1× | 0% |
-| FP16 | 50% | 1.5-2× | <0.5% |
+| FP16 | 50% | 1.5-2× | &lt;0.5% |
 | INT8 | 25% | 2-4× | 1-2% |
 
 **11.6.2 TensorRT Optimization**

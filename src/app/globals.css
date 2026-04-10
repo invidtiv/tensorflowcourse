@@ -1,5 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
+/* KaTeX styles for rendered math on theory pages (remark-math + rehype-katex). */
+@import "katex/dist/katex.min.css";
 
 :root {
   /* Background layers */
@@ -33,10 +35,20 @@
   --glow-purple: 0 0 20px rgba(139, 92, 246, 0.3);
   --glow-orange: 0 0 20px rgba(249, 115, 22, 0.3);
 
-  /* Fonts */
-  --font-body: 'Inter', system-ui, -apple-system, sans-serif;
+  /* Fonts.
+     --font-body is injected by next/font in layout.tsx (Inter) as a CSS
+     variable on <html>; this value is a cold-start fallback.
+     --font-code uses the OS `ui-monospace` stack (SF Mono on macOS,
+     Cascadia/Consolas on Windows, DejaVu Sans Mono on Linux). Those fonts
+     contain *both* ASCII and box-drawing glyphs (U+2500–257F) at identical
+     advance widths, so ┌─┐│└┘ columns stay aligned. We intentionally do
+     not list JetBrains Mono here because Google's `latin` subset of it
+     lacks box-drawing glyphs, triggering per-glyph font fallback with
+     mismatched advance widths. */
+  --font-body: system-ui, -apple-system, sans-serif;
   --font-heading: 'Space Grotesk', system-ui, sans-serif;
-  --font-code: 'JetBrains Mono', 'Fira Code', monospace;
+  --font-code: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas,
+               'DejaVu Sans Mono', 'Cascadia Mono', monospace;
 }
 
 @theme inline {

@@ -17,7 +17,7 @@ objectives:
   - "Implement gradient descent optimization from scratch"
 source: "content/modules/01-intro-deep-learning/theory.md"
 generatedBy: "scripts/convert-theory.mjs"
-lastConverted: "2026-04-10T18:28:36.921Z"
+lastConverted: "2026-04-10T19:38:38.421Z"
 ---
 # Chapter 1: Foundations of Artificial Intelligence and Deep Learning
 
@@ -102,10 +102,11 @@ The 1970s-1980s saw the rise of symbolic AI:
 
 The publication of "Learning representations by back-propagating errors" by Rumelhart, Hinton, and Williams revolutionized neural network training:
 
-<div class="my-6 rounded-xl border border-white/[0.08] bg-surface-1/30 px-4 py-3 callout callout-tip" data-callout-type="tip" data-callout-label="Key Insight">
-  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neon-cyan mb-1">Key Insight</div>
-  <div class="text-text-secondary leading-relaxed">Multi-layer networks with non-linear activation functions can approximate any continuous function (Universal Approximation Theorem), and backpropagation provides an efficient way to train them.</div>
-</div>
+<Callout type="tip" title="Key Insight">
+
+Multi-layer networks with non-linear activation functions can approximate any continuous function (Universal Approximation Theorem), and backpropagation provides an efficient way to train them.
+
+</Callout>
 
 **Backpropagation Algorithm:**
 
@@ -187,16 +188,16 @@ AlexNet's victory in the ImageNet Large Scale Visual Recognition Challenge (ILSV
 **The Three Pillars of Deep Learning Success:**
 
 ```python
-┌─────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────┐
 │                    DEEP LEARNING SUCCESS                     │
 ├─────────────────┬──────────────────┬────────────────────────┤
-│    BIG DATA     │    ALGORITHMS    │     COMPUTATION        │
+│    BIG DATA     │    ALGORITHMS    │     COMPUTATION         │
 ├─────────────────┼──────────────────┼────────────────────────┤
-│ • ImageNet      │ • ReLU           │ • GPU parallelization  │
-│ • Web data      │ • Batch Norm     │ • CUDA/cuDNN           │
-│ • User data     │ • Residual nets  │ • Cloud computing      │
-│ • Synthetic     │ • Attention      │ • TPU acceleration     │
-│   data          │ • Transformers   │ • Distributed training │
+│ • ImageNet      │ • ReLU           │ • GPU parallelization   │
+│ • Web data      │ • Batch Norm     │ • CUDA/cuDNN            │
+│ • User data     │ • Residual nets  │ • Cloud computing       │
+│ • Synthetic     │ • Attention      │ • TPU acceleration      │
+│   data          │ • Transformers   │ • Distributed training  │
 └─────────────────┴──────────────────┴────────────────────────┘
 ```
 
@@ -251,7 +252,7 @@ AlexNet's victory in the ImageNet Large Scale Visual Recognition Challenge (ILSV
 
 AI is the broad field of creating machines that can perform tasks requiring human intelligence. Formally:
 
-> AI = {Systems that perceive, reason, learn, and act autonomously}
+> AI = &#123;Systems that perceive, reason, learn, and act autonomously&#125;
 
 **Machine Learning (ML)**
 
@@ -263,8 +264,8 @@ Traditional Programming:    Machine Learning:
       │                          │
       ▼                          ▼
 ┌───────────┐              ┌───────────┐
-│  Rules    │              │  Model    │
-│(hand-coded)│              │(learned)  │
+│  Rules    │              │  Model         │
+│(hand-coded)│              │(learned)      │
 └─────┬─────┘              └─────┬─────┘
       │                          │
       ▼                          ▼
@@ -304,7 +305,7 @@ Input → Layer 1 → Layer 2 → ... → Layer L → Output
 
 **Supervised Learning**
 
-Given labeled dataset D = {(x₁, y₁), (x₂, y₂), ..., (xₙ, yₙ)}, learn function f: X → Y
+Given labeled dataset D = &#123;(x₁, y₁), (x₂, y₂), ..., (xₙ, yₙ)&#125;, learn function f: X → Y
 
 ```python
 Types:
@@ -318,7 +319,7 @@ Objective: minimize expected loss
 
 **Unsupervised Learning**
 
-Given unlabeled dataset D = {x₁, x₂, ..., xₙ}, discover patterns
+Given unlabeled dataset D = &#123;x₁, x₂, ..., xₙ&#125;, discover patterns
 
 ```python
 Types:
@@ -397,7 +398,7 @@ where:
 
 **Singular Value Decomposition (SVD)**
 
-Any matrix A ∈ ℝ^{m×n} can be decomposed as:
+Any matrix A ∈ ℝ^&#123;m×n&#125; can be decomposed as:
 
 ```python
 A = UΣV^T
@@ -438,7 +439,7 @@ The gradient is the vector of partial derivatives:
 
 **Jacobian Matrix**
 
-For f: ℝⁿ → ℝᵐ, the Jacobian J ∈ ℝ^{m×n}:
+For f: ℝⁿ → ℝᵐ, the Jacobian J ∈ ℝ^&#123;m×n&#125;:
 
 ```python
 J = [∂fᵢ/∂xⱼ] = [∇f₁^T
@@ -497,12 +498,12 @@ Var(X) = E[(X - E[X])²] = E[X²] - E[X]²    (variance)
 |--------------|---------|----------|
 | Gaussian | p(x) = (1/√(2πσ²)) exp(-(x-μ)²/(2σ²)) | Noise, priors |
 | Bernoulli | p(x) = p^x(1-p)^(1-x) | Binary outcomes |
-| Categorical | p(x) = Πᵢ pᵢ^{xᵢ} | Multi-class |
+| Categorical | p(x) = Πᵢ pᵢ^&#123;xᵢ&#125; | Multi-class |
 | Uniform | p(x) = 1/(b-a) | Initialization |
 
 **Maximum Likelihood Estimation**
 
-Given data D = {x₁, ..., xₙ} and model p(x; θ):
+Given data D = &#123;x₁, ..., xₙ&#125; and model p(x; θ):
 
 ```python
 θ_MLE = argmax_θ Πᵢ p(xᵢ; θ)
@@ -1094,10 +1095,11 @@ end for
 
 ### 2.6.1 Local Minima in High Dimensions
 
-<div class="my-6 rounded-xl border border-white/[0.08] bg-surface-1/30 px-4 py-3 callout callout-tip" data-callout-type="tip" data-callout-label="Key Insight">
-  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neon-cyan mb-1">Key Insight</div>
-  <div class="text-text-secondary leading-relaxed">In high dimensions, most critical points are saddle points, not local minima.</div>
-</div>
+<Callout type="tip" title="Key Insight">
+
+In high dimensions, most critical points are saddle points, not local minima.
+
+</Callout>
 
 ```python
 Intuition from random matrix theory:
@@ -1175,20 +1177,20 @@ NumPy's ndarray is the fundamental data structure for numerical computing:
 
 ```python
 ndarray structure:
-┌─────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────┐
 │                    PyObject_HEAD (16 bytes)                  │
-├─────────────────────────────────────────────────────────────┤
-│  data pointer ───────► ┌──────────────────────────────┐     │
-│                        │  Raw data buffer (C array)   │     │
-│                        │  [0.0, 1.0, 2.0, 3.0, ...]  │     │
-│                        └──────────────────────────────┘     │
-├─────────────────────────────────────────────────────────────┤
-│  ndim: number of dimensions (int)                           │
-│  shape: size of each dimension (tuple of ints)              │
-│  strides: bytes to step in each dimension (tuple)           │
+├──────────────────────────────────────────────────────────────┤
+│  data pointer ───────► ┌──────────────────────────────┐      │
+│                        │  Raw data buffer (C array)   │      │
+│                        │  [0.0, 1.0, 2.0, 3.0, ...]  │       │
+│                        └──────────────────────────────┘      │
+├──────────────────────────────────────────────────────────────┤
+│  ndim: number of dimensions (int)                            │
+│  shape: size of each dimension (tuple of ints)               │
+│  strides: bytes to step in each dimension (tuple)            │
 │  dtype: data type descriptor                                 │
 │  flags: memory layout flags                                  │
-└─────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ### 3.1.2 Memory Layout: C-order vs F-order
@@ -1285,10 +1287,9 @@ Rule 2: Dimensions are compatible if they are equal or one is 1
 Rule 3: Arrays can be broadcast together if all dimensions are compatible
 ```
 
-<div class="my-6 rounded-xl border border-white/[0.08] bg-surface-1/30 px-4 py-3 callout callout-note" data-callout-type="note" data-callout-label="Example">
-  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neon-cyan mb-1">Example</div>
-  <div class="text-text-secondary leading-relaxed"></div>
-</div>
+<Callout type="note" title="Example">
+
+</Callout>
 
 ```python
 Array A: shape (3, 1, 4)
@@ -1395,13 +1396,13 @@ Python Loop:                    NumPy Vectorized:
 
 ```python
 ┌─────────────────────────────────────────────────────────────┐
-│  Level      │  Size      │  Latency  │  Bandwidth          │
+│  Level      │  Size      │  Latency  │  Bandwidth           │
 ├─────────────────────────────────────────────────────────────┤
-│  Registers  │  ~1 KB     │  0.3 ns   │  Very high          │
-│  L1 Cache   │  32-64 KB  │  0.9 ns   │  ~100 GB/s          │
-│  L2 Cache   │  256-512 KB│  2.8 ns   │  ~50 GB/s           │
-│  L3 Cache   │  8-32 MB   │  12 ns    │  ~25 GB/s           │
-│  RAM        │  8-64 GB   │  100 ns   │  ~10 GB/s           │
+│  Registers  │  ~1 KB     │  0.3 ns   │  Very high           │
+│  L1 Cache   │  32-64 KB  │  0.9 ns   │  ~100 GB/s           │
+│  L2 Cache   │  256-512 KB│  2.8 ns   │  ~50 GB/s            │
+│  L3 Cache   │  8-32 MB   │  12 ns    │  ~25 GB/s            │
+│  RAM        │  8-64 GB   │  100 ns   │  ~10 GB/s            │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -1446,36 +1447,36 @@ def col_sum_fast(a):
 ### 4.1.1 High-Level Architecture
 
 ```python
-┌─────────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────────┐
 │                    TensorFlow Ecosystem                          │
-├─────────────────────────────────────────────────────────────────┤
-│  High-Level APIs                                                │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐           │
+├──────────────────────────────────────────────────────────────────┤
+│  High-Level APIs                                                 │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐             │
 │  │ Keras    │ │ Estimator│ │ TensorFlow│ │ TensorFlow│           │
-│  │          │ │          │ │  Lite    │ │  JS      │           │
-│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘           │
+│  │          │ │          │ │  Lite    │ │  JS      │             │
+│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘             │
 ├───────┼────────────┼────────────┼────────────┼─────────────────┤
-│       └────────────┴────────────┴────────────┘                 │
-│                         │                                       │
-│  Core API (Python/C++)  │                                       │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │  • Graph Construction    • Variable Management          │   │
-│  │  • Session Management    • Control Flow Ops             │   │
-│  └─────────────────────────────────────────────────────────┘   │
-│                         │                                       │
-│  Runtime                │                                       │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │  • Graph Executor        • Kernel Implementations       │   │
-│  │  • Memory Management     • Device Placement             │   │
-│  └─────────────────────────────────────────────────────────┘   │
-│                         │                                       │
-│  Hardware Abstraction   ▼                                       │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐           │
-│  │ CPU      │ │ GPU      │ │ TPU      │ │ XLA      │           │
-│  │ (x86,    │ │ (CUDA,   │ │ (Tensor  │ │ (JIT     │           │
-│  │  ARM)    │ │  ROCm)   │ │  Cores)  │ │  Compile)│           │
-│  └──────────┘ └──────────┘ └──────────┘ └──────────┘           │
-└─────────────────────────────────────────────────────────────────┘
+│       └────────────┴────────────┴────────────┘                   │
+│                         │                                        │
+│  Core API (Python/C++)  │                                        │
+│  ┌─────────────────────────────────────────────────────────┐     │
+│  │  • Graph Construction    • Variable Management          │     │
+│  │  • Session Management    • Control Flow Ops             │     │
+│  └─────────────────────────────────────────────────────────┘     │
+│                         │                                        │
+│  Runtime                │                                        │
+│  ┌─────────────────────────────────────────────────────────┐     │
+│  │  • Graph Executor        • Kernel Implementations       │     │
+│  │  • Memory Management     • Device Placement             │     │
+│  └─────────────────────────────────────────────────────────┘     │
+│                         │                                        │
+│  Hardware Abstraction   ▼                                        │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐             │
+│  │ CPU      │ │ GPU      │ │ TPU      │ │ XLA      │             │
+│  │ (x86,    │ │ (CUDA,   │ │ (Tensor  │ │ (JIT     │             │
+│  │  ARM)    │ │  ROCm)   │ │  Cores)  │ │  Compile)│             │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘             │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ### 4.1.2 Core Components
@@ -1736,62 +1737,62 @@ tf.config.set_soft_device_placement(True)
 
 ```python
 CPU Execution Flow:
-┌─────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────┐
 │  Eigen Library (C++ template library)                        │
 │  ├─ Matrix operations                                        │
 │  ├─ Element-wise operations                                  │
 │  └─ Optimized for various CPU architectures                  │
-├─────────────────────────────────────────────────────────────┤
+├──────────────────────────────────────────────────────────────┤
 │  Thread Pool                                                 │
 │  ├─ Parallelizes operations across CPU cores                 │
-│  └─ Configurable: tf.config.threading                       │
-├─────────────────────────────────────────────────────────────┤
+│  └─ Configurable: tf.config.threading                        │
+├──────────────────────────────────────────────────────────────┤
 │  SIMD Instructions (AVX, AVX2, AVX-512)                      │
 │  └─ Vectorized operations on CPU                             │
-└─────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ### 4.5.3 GPU Execution
 
 ```python
 GPU Execution Flow:
-┌─────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────┐
 │  CUDA/cuDNN Libraries                                        │
 │  ├─ cuBLAS: Matrix operations                                │
 │  ├─ cuDNN: Deep neural network primitives                    │
 │  └─ cuFFT, cuRAND: Specialized operations                    │
-├─────────────────────────────────────────────────────────────┤
+├──────────────────────────────────────────────────────────────┤
 │  CUDA Kernel Launch                                          │
 │  ├─ TensorFlow op → CUDA kernel                              │
 │  ├─ Memory allocation on GPU                                 │
 │  └─ Asynchronous execution                                   │
-├─────────────────────────────────────────────────────────────┤
+├──────────────────────────────────────────────────────────────┤
 │  GPU Memory Management                                       │
 │  ├─ BFC Allocator (Best-Fit with Coalescing)                 │
 │  ├─ Memory pools reduce allocation overhead                  │
-│  └─ Memory growth: tf.config.experimental.set_memory_growth │
-└─────────────────────────────────────────────────────────────┘
+│  └─ Memory growth: tf.config.experimental.set_memory_growth  │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ### 4.5.4 TPU Execution
 
 ```python
 TPU Architecture:
-┌─────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────┐
 │  TPU Pod                                                     │
 │  └─ Multiple TPU boards connected via high-speed interconnect│
-├─────────────────────────────────────────────────────────────┤
+├──────────────────────────────────────────────────────────────┤
 │  TPU Board (4 chips)                                         │
 │  └─ Each chip has 2 cores                                    │
-├─────────────────────────────────────────────────────────────┤
+├──────────────────────────────────────────────────────────────┤
 │  TPU Core                                                    │
 │  ├─ Vector Processing Unit (VPU)                             │
 │  ├─ Matrix Multiply Unit (MXU) - systolic array              │
 │  └─ High-bandwidth memory (HBM)                              │
-├─────────────────────────────────────────────────────────────┤
+├──────────────────────────────────────────────────────────────┤
 │  XLA Compilation                                             │
-│  └─ TensorFlow graph → XLA HLO → TPU binary                 │
-└─────────────────────────────────────────────────────────────┘
+│  └─ TensorFlow graph → XLA HLO → TPU binary                  │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 **TPU Programming:**
@@ -1868,10 +1869,9 @@ Operations on dual numbers:
     (u, ú) × (v, v̇) = (uv, úv + uv̇)
 ```
 
-<div class="my-6 rounded-xl border border-white/[0.08] bg-surface-1/30 px-4 py-3 callout callout-note" data-callout-type="note" data-callout-label="Example">
-  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neon-cyan mb-1">Example</div>
-  <div class="text-text-secondary leading-relaxed"></div>
-</div>
+<Callout type="note" title="Example">
+
+</Callout>
 
 ```python
 Compute y = x² at x = 3
@@ -1905,10 +1905,9 @@ Two phases:
 2. Reverse pass: Propagate gradients from output to inputs
 ```
 
-<div class="my-6 rounded-xl border border-white/[0.08] bg-surface-1/30 px-4 py-3 callout callout-note" data-callout-type="note" data-callout-label="Example">
-  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neon-cyan mb-1">Example</div>
-  <div class="text-text-secondary leading-relaxed"></div>
-</div>
+<Callout type="note" title="Example">
+
+</Callout>
 
 ```python
 Compute y = x₁ × x₂ + sin(x₁) at x₁=2, x₂=3
@@ -2089,10 +2088,11 @@ end for
 | Element-wise | O(n) | O(n) | O(2n) |
 | Activation | O(n) | O(n) | O(2n) |
 
-<div class="my-6 rounded-xl border border-white/[0.08] bg-surface-1/30 px-4 py-3 callout callout-tip" data-callout-type="tip" data-callout-label="Key insight">
-  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neon-cyan mb-1">Key insight</div>
-  <div class="text-text-secondary leading-relaxed">Backward pass is approximately the same cost as forward pass!</div>
-</div>
+<Callout type="tip" title="Key insight">
+
+Backward pass is approximately the same cost as forward pass!
+
+</Callout>
 
 ---
 
@@ -2397,9 +2397,9 @@ def check_initialization(model, input_shape):
 ### 7.1.1 Pipeline Overview
 
 ```python
-┌─────────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────────┐
 │                    ML Pipeline                                   │
-├─────────────────────────────────────────────────────────────────┤
+├──────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │  1. PROBLEM DEFINITION                                           │
 │     └─ Understand business problem, define success metrics       │
@@ -2422,7 +2422,7 @@ def check_initialization(model, input_shape):
 │  7. DEPLOYMENT                                                   │
 │     └─ Serve model, monitor, maintain                            │
 │                                                                  │
-└─────────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ### 7.1.2 Problem Formulation

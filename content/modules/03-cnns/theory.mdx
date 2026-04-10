@@ -18,7 +18,7 @@ objectives:
   - "Build image classifiers on real datasets"
 source: "content/modules/03-cnns/theory.md"
 generatedBy: "scripts/convert-theory.mjs"
-lastConverted: "2026-04-10T18:28:36.967Z"
+lastConverted: "2026-04-10T19:38:38.471Z"
 ---
 ## Module Overview
 
@@ -158,10 +158,11 @@ Since $K$ is learned, the network automatically learns the appropriate orientati
 | Signal processing applications | Critical for phase preservation |
 | Standard CNN training | Negligible - learned weights compensate |
 
-<div class="my-6 rounded-xl border border-white/[0.08] bg-surface-1/30 px-4 py-3 callout callout-tip" data-callout-type="tip" data-callout-label="Key Insight">
-  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neon-cyan mb-1">Key Insight</div>
-  <div class="text-text-secondary leading-relaxed">The distinction becomes important when: - Using hand-crafted filters (e.g., edge detectors) - Analyzing filter responses theoretically - Implementing specific signal processing operations</div>
-</div>
+<Callout type="tip" title="Key Insight">
+
+The distinction becomes important when: - Using hand-crafted filters (e.g., edge detectors) - Analyzing filter responses theoretically - Implementing specific signal processing operations
+
+</Callout>
 
 ---
 
@@ -372,11 +373,11 @@ CNN → [Translate] → Output     CNN → [Same Output]
 Let $T_{\Delta}$ be a translation operator: $(T_{\Delta}I)[i,j] = I[i-\Delta_i, j-\Delta_j]$
 
 Then:
-$$\begin{aligned}
-(\text{Conv}(T_{\Delta}I))[i,j] &= \sum_{m,n} (T_{\Delta}I)[i+m, j+n] \cdot K[m,n] \\
-&= \sum_{m,n} I[i+m-\Delta_i, j+n-\Delta_j] \cdot K[m,n] \\
-&= (T_{\Delta}(\text{Conv}(I)))[i,j]
-\end{aligned}$$
+$$\begin&#123;aligned&#125;
+(\text&#123;Conv&#125;(T_&#123;\Delta&#125;I))[i,j] &= \sum_&#123;m,n&#125; (T_&#123;\Delta&#125;I)[i+m, j+n] \cdot K[m,n] \\
+&= \sum_&#123;m,n&#125; I[i+m-\Delta_i, j+n-\Delta_j] \cdot K[m,n] \\
+&= (T_&#123;\Delta&#125;(\text&#123;Conv&#125;(I)))[i,j]
+\end&#123;aligned&#125;$$
 
 **Q.E.D.**
 
@@ -591,10 +592,11 @@ Input: 224×224 RGB
 
 ### 5.4.1 The VGG Principle
 
-<div class="my-6 rounded-xl border border-white/[0.08] bg-surface-1/30 px-4 py-3 callout callout-tip" data-callout-type="tip" data-callout-label="Key Insight">
-  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neon-cyan mb-1">Key Insight</div>
-  <div class="text-text-secondary leading-relaxed">Use only 3×3 convolutions, but stack many of them.</div>
-</div>
+<Callout type="tip" title="Key Insight">
+
+Use only 3×3 convolutions, but stack many of them.
+
+</Callout>
 
 **Why 3×3?**
 - Two 3×3 layers = 5×5 receptive field
@@ -1181,11 +1183,11 @@ Example: CvT, CoAtNet, Swin Transformer
 ```python
 Layer l:              Layer l+1 (shifted):
 ┌─┬─┬─┬─┐            ┌───┬───┐
-│ │ │ │ │            │   │   │
+│ │ │ │ │            │   │               │
 ├─┼─┼─┼─┤     →      ├───┼───┤
-│ │ │ │ │            │   │   │
+│ │ │ │ │            │   │               │
 ├─┼─┼─┼─┤            └───┴───┘
-│ │ │ │ │
+│ │ │ │                                  │
 └─┴─┴─┴─┘
 ```
 
