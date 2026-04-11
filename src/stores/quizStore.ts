@@ -7,6 +7,7 @@ interface QuizStore {
   // Current quiz state
   currentModuleId: string | null;
   questions: QuizQuestion[];
+  passingScore: number;
   currentIndex: number;
   answers: Record<string, number>;
   showResult: boolean;
@@ -15,7 +16,7 @@ interface QuizStore {
   isCorrect: boolean | null;
 
   // Actions
-  startQuiz: (moduleId: string, questions: QuizQuestion[]) => void;
+  startQuiz: (moduleId: string, questions: QuizQuestion[], passingScore?: number) => void;
   selectOption: (optionIndex: number) => void;
   submitAnswer: () => void;
   nextQuestion: () => void;
@@ -27,9 +28,12 @@ interface QuizStore {
   isComplete: () => boolean;
 }
 
+const DEFAULT_PASSING_SCORE = 80;
+
 export const useQuizStore = create<QuizStore>()((set, get) => ({
   currentModuleId: null,
   questions: [],
+  passingScore: DEFAULT_PASSING_SCORE,
   currentIndex: 0,
   answers: {},
   showResult: false,
@@ -37,10 +41,11 @@ export const useQuizStore = create<QuizStore>()((set, get) => ({
   selectedOption: null,
   isCorrect: null,
 
-  startQuiz: (moduleId, questions) =>
+  startQuiz: (moduleId, questions, passingScore = DEFAULT_PASSING_SCORE) =>
     set({
       currentModuleId: moduleId,
       questions,
+      passingScore,
       currentIndex: 0,
       answers: {},
       showResult: false,
@@ -79,7 +84,7 @@ export const useQuizStore = create<QuizStore>()((set, get) => ({
   },
 
   finishQuiz: () => {
-    const { currentModuleId, questions, answers } = get();
+    const { currentModuleId, questions, answers, passingScore } = get();
     let correct = 0;
     questions.forEach((q) => {
       const answerIdx = answers[q.id];
@@ -87,12 +92,14 @@ export const useQuizStore = create<QuizStore>()((set, get) => ({
         correct++;
       }
     });
+    const total = questions.length;
+    const percent = total > 0 ? (correct / total) * 100 : 0;
     return {
       moduleId: currentModuleId || "",
       answers,
       score: correct,
-      total: questions.length,
-      passed: (correct / questions.length) * 100 >= 70,
+      total,
+      passed: percent >= passingScore,
       completedAt: new Date().toISOString(),
     };
   },
@@ -101,6 +108,7 @@ export const useQuizStore = create<QuizStore>()((set, get) => ({
     set({
       currentModuleId: null,
       questions: [],
+      passingScore: DEFAULT_PASSING_SCORE,
       currentIndex: 0,
       answers: {},
       showResult: false,

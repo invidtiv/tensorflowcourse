@@ -46,13 +46,13 @@ export default function Quiz({ moduleId, questions, passingScore, accentColor = 
 
   // (Re)seed the store whenever the route or source data changes.
   useEffect(() => {
-    startQuiz(moduleId, questions);
+    startQuiz(moduleId, questions, passingScore);
     return () => {
       // Clear when unmounting so the next module starts fresh.
       resetQuiz();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [moduleId, questions]);
+  }, [moduleId, questions, passingScore]);
 
   // Compute current state from the store's snapshot.
   const active = currentModuleId === moduleId && storeQuestions.length === questions.length;
@@ -97,7 +97,7 @@ export default function Quiz({ moduleId, questions, passingScore, accentColor = 
         correct={correct}
         total={total}
         passingScore={passingScore}
-        onRetry={() => startQuiz(moduleId, questions)}
+        onRetry={() => startQuiz(moduleId, questions, passingScore)}
       />
     );
   }
