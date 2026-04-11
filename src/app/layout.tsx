@@ -25,6 +25,10 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
+  // Localhost-only deployment. metadataBase resolves relative OG/Twitter
+  // image URLs against the local dev/Docker host so they don't throw
+  // build-time warnings. No public domain exists for this project.
+  metadataBase: new URL("http://localhost:3000"),
   title: {
     default: "Deep Learning with TensorFlow — Free Course",
     template: "%s | TensorFlow Course",
