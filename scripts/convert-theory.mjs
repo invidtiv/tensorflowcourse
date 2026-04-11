@@ -12,14 +12,14 @@
  *      looks like weight-update math)
  *   3. Callout conversion — lines that start with **Note:** / **Warning:** /
  *      **Tip:** / **Important:** / **Pitfall:** / **Example:** / **Key ...:**
- *      are wrapped in HTML <div class="callout callout-..."> blocks that the
- *      current TheoryContentRenderer passes through verbatim. The same
- *      classes render as real <Callout /> components once MDX compilation
- *      lands in Phase 4.
- *   4. KaTeX-ready math — $$ ... $$ blocks are wrapped in
- *      <div class="math-block"> so the existing renderer doesn't mangle them
- *      and a future KaTeX rehype plugin can pick them up. Inline $...$ is
- *      left untouched.
+ *      are rewritten into real MDX <Callout type="..." title="..."> JSX
+ *      elements. The Callout component lives in
+ *      src/components/content/Callout.tsx and is registered in the MDX
+ *      components map consumed by the theory page.
+ *   4. Math is left completely alone. remark-math (enabled in the theory
+ *      page's MDXRemote options) parses both `$...$` inline and `$$...$$`
+ *      display math natively; rehype-katex then renders them. Do NOT wrap
+ *      math in HTML divs — that escapes it from the math parser.
  *   5. Bookkeeping — source path, a `generatedBy` tag, and a `lastConverted`
  *      timestamp are written into the frontmatter so future re-runs are
  *      auditable.
@@ -213,8 +213,13 @@ function normalizeCodeFences(body) {
  *   continuation line belonging to the callout
  *   (blank line terminates)
  *
- * into an HTML block the existing regex renderer passes through, and that
- * a real MDX compiler can later re-parse into <Callout /> via class hook.
+ * into a real MDX <Callout type="..." title="..."> element. The Callout
+ * component is registered in src/components/mdx/MDXComponents.tsx and
+ * passed to <MDXRemote /> on the theory page.
+ *
+ * Callout content is plain text with inline markdown preserved. For safety
+ * we escape `{` and `}` (which MDX would interpret as JSX expressions) and
+ * we close the tag on its own line so remark-mdx parses it cleanly.
  */
 const CALLOUT_TYPES = {
   note: "note",
@@ -233,6 +238,30 @@ const CALLOUT_TYPES = {
 };
 
 const CALLOUT_RE = /^\*\*([A-Z][A-Za-z ]{1,20}):\*\*\s*(.*)$/;
+
+/**
+ * Escape characters that would break when passed through an MDX JSX attribute
+ * or expression. JSX eats `{` and `}` as expression markers, so we replace
+ * them with their HTML entities. Double quotes in the title attribute become
+ * single quotes.
+ */
+function escapeForJsxAttr(s) {
+  return s.replace(/"/g, "'");
+}
+
+function escapeForMdxBody(s) {
+  // Keep markdown as-is, but neutralize stray `{` / `}` which MDX would
+  // otherwise try to parse as JSX expressions. We split the string on
+  // math spans (`$...$`) and only escape the prose regions — this way
+  // LaTeX like `\begin{cases}` inside inline math survives untouched.
+  const parts = s.split(/(\$\$[^$]+\$\$|\$[^$\n]+\$)/g);
+  return parts
+    .map((part, i) => {
+      if (i % 2 === 1) return part; // math — leave alone
+      return part.replace(/\{/g, "&#123;").replace(/\}/g, "&#125;");
+    })
+    .join("");
+}
 
 function convertCallouts(body) {
   const src = body.split("\n");
@@ -274,32 +303,41 @@ function convertCallouts(body) {
       j += 1;
     }
     i = j - 1;
-    const inner = bodyLines.join(" ").trim();
-    // HTML block that the regex renderer won't wrap in <p>.
-    out.push(
-      `<div class="my-6 rounded-xl border border-white/[0.08] bg-surface-1/30 px-4 py-3 callout callout-${type}" data-callout-type="${type}" data-callout-label="${label}">`
-    );
-    out.push(
-      `  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neon-cyan mb-1">${label}</div>`
-    );
-    out.push(`  <div class="text-text-secondary leading-relaxed">${inner}</div>`);
-    out.push(`</div>`);
+    const inner = escapeForMdxBody(bodyLines.join(" ").trim());
+    const title = escapeForJsxAttr(label);
+    // Emit as an MDX JSX block. Blank lines around it make sure remark-mdx
+    // parses the tag as a block-level element rather than folding it into
+    // surrounding prose.
+    out.push("");
+    out.push(`<Callout type="${type}" title="${title}">`);
+    out.push("");
+    out.push(inner);
+    out.push("");
+    out.push("</Callout>");
+    out.push("");
   }
   return out.join("\n");
 }
 
 /**
- * Wrap $$ display math blocks in a styled HTML div so (a) the regex renderer
- * doesn't mangle them, and (b) a future remark-math/rehype-katex pass can
- * still pick up the raw LaTeX inside.
+ * Escape bare `{` and `}` characters in the prose — MDX v3 parses them as
+ * JSX expression delimiters, so a paragraph like `D = {(x, y), …}` crashes
+ * the parser. We walk the body line by line and only rewrite characters
+ * that are:
+ *
+ *   - not inside a fenced code block
+ *   - not inside a `$...$` or `$$...$$` math span (remark-math owns those)
+ *   - not inside an existing JSX tag line (e.g. `<Callout ...>`)
+ *
+ * Inline code spans delimited by backticks are also skipped so real
+ * template literals like `${x}` remain correct.
  */
-function wrapDisplayMath(body) {
-  const lines = body.split("\n");
+function escapeBareJsxBraces(body) {
+  const src = body.split("\n");
   const out = [];
   let inCode = false;
-  let inMath = false;
-  let buf = [];
-  for (const line of lines) {
+  let inDisplayMath = false;
+  for (const line of src) {
     if (/^```/.test(line)) {
       inCode = !inCode;
       out.push(line);
@@ -309,29 +347,87 @@ function wrapDisplayMath(body) {
       out.push(line);
       continue;
     }
-    const trimmed = line.trim();
-    if (trimmed === "$$") {
-      if (!inMath) {
-        inMath = true;
-        buf = [];
-        out.push(`<div class="my-6 rounded-xl border border-white/[0.06] bg-surface-1/20 px-4 py-3 font-code text-sm text-text-primary math-block">`);
-        out.push(`  <div class="text-[10px] font-mono uppercase tracking-wider text-text-muted mb-1">KaTeX</div>`);
-        out.push(`  <div class="overflow-x-auto whitespace-pre">$$`);
-      } else {
-        inMath = false;
-        out.push(buf.map((l) => "    " + l).join("\n"));
-        out.push(`  $$</div>`);
-        out.push(`</div>`);
-      }
+    // Toggle on lines that are just `$$` (multi-line display math).
+    if (line.trim() === "$$") {
+      inDisplayMath = !inDisplayMath;
+      out.push(line);
       continue;
     }
-    if (inMath) {
-      buf.push(line);
+    if (inDisplayMath) {
+      out.push(line);
       continue;
     }
-    out.push(line);
+    // Skip JSX tag-only lines so we don't mangle <Callout type="…">.
+    if (/^\s*<\/?[A-Za-z][^>]*>\s*$/.test(line)) {
+      out.push(line);
+      continue;
+    }
+    out.push(escapeLineSkippingProtectedSpans(line));
   }
   return out.join("\n");
+}
+
+/**
+ * Split a line on inline math (`$...$` and `$$...$$`) and inline code
+ * (`` `...` ``) and only escape `{` / `}` in the surviving prose chunks.
+ */
+function escapeLineSkippingProtectedSpans(line) {
+  // Tokenize: ``code``, `$$math$$`, `$math$` → kept verbatim; everything
+  // else → escape `{` and `}`.
+  const tokens = [];
+  let i = 0;
+  while (i < line.length) {
+    const ch = line[i];
+    if (ch === "`") {
+      // Inline code span — find matching backtick run.
+      let run = 1;
+      while (line[i + run] === "`") run += 1;
+      const open = line.slice(i, i + run);
+      const closeIdx = line.indexOf(open, i + run);
+      if (closeIdx === -1) {
+        // Unbalanced — treat as prose.
+        tokens.push({ kind: "prose", text: ch });
+        i += 1;
+        continue;
+      }
+      tokens.push({ kind: "raw", text: line.slice(i, closeIdx + run) });
+      i = closeIdx + run;
+      continue;
+    }
+    if (ch === "$") {
+      const isDisplay = line[i + 1] === "$";
+      const marker = isDisplay ? "$$" : "$";
+      const closeIdx = line.indexOf(marker, i + marker.length);
+      if (closeIdx === -1) {
+        tokens.push({ kind: "prose", text: ch });
+        i += 1;
+        continue;
+      }
+      tokens.push({ kind: "raw", text: line.slice(i, closeIdx + marker.length) });
+      i = closeIdx + marker.length;
+      continue;
+    }
+    // Accumulate prose until the next protected delimiter.
+    let j = i;
+    while (j < line.length && line[j] !== "`" && line[j] !== "$") j += 1;
+    tokens.push({ kind: "prose", text: line.slice(i, j) });
+    i = j;
+  }
+  return tokens
+    .map((t) => {
+      if (t.kind === "raw") return t.text;
+      // Escape JSX-hazardous characters in prose:
+      //   `{` / `}` → JSX expressions
+      //   `<` followed by anything that isn't a letter/slash → tag-like
+      // MDX v3 is stricter than older MDX about what counts as a tag open,
+      // so we normalize any `<` that's not immediately followed by an
+      // ASCII letter, `!`, or `/`.
+      return t.text
+        .replace(/\{/g, "&#123;")
+        .replace(/\}/g, "&#125;")
+        .replace(/<(?![A-Za-z!/])/g, "&lt;");
+    })
+    .join("");
 }
 
 /**
@@ -402,7 +498,10 @@ function convertModule(moduleDirName) {
   body = stripTopBanner(body);
   body = normalizeCodeFences(body);
   body = convertCallouts(body);
-  body = wrapDisplayMath(body);
+  body = escapeBareJsxBraces(body);
+  // NOTE: math is intentionally left alone. remark-math + rehype-katex in
+  // the theory page MDXRemote pipeline handle both `$...$` and `$$...$$`
+  // directly; any HTML wrapping would hide the math from the parser.
 
   // Trim trailing whitespace and ensure a single trailing newline.
   body = body.replace(/[ \t]+$/gm, "").replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
@@ -416,8 +515,9 @@ function convertModule(moduleDirName) {
     title: merged.title,
     bytesIn: raw.length,
     bytesOut: mdx.length,
-    callouts: (mdx.match(/data-callout-type=/g) || []).length,
-    mathBlocks: (mdx.match(/class="[^"]*math-block/g) || []).length,
+    callouts: (mdx.match(/^<Callout /gm) || []).length,
+    mathBlocks: (mdx.match(/^\$\$/gm) || []).length / 2,
+    inlineMath: (mdx.match(/\$[^\s$][^$]*\$/g) || []).length,
     codeFences: (mdx.match(/^```/gm) || []).length / 2,
   };
   return metrics;

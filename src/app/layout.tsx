@@ -45,6 +45,21 @@ export const metadata: Metadata = {
     description:
       "Master TensorFlow and deep learning with this free, comprehensive course. 10 modules, 80+ labs.",
     type: "website",
+    images: [
+      {
+        url: "/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "Deep Learning with TensorFlow — Free Course",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Deep Learning with TensorFlow — Free Course",
+    description:
+      "Master TensorFlow and deep learning with this free, comprehensive course. 10 modules, 80+ labs.",
+    images: ["/og-image.png"],
   },
 };
 

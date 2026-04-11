@@ -1,9 +1,26 @@
 import { getModule, getAdjacentModules } from "@/lib/modules";
-import { getModuleTheoryContent } from "@/lib/content";
+import { getModuleTheoryContent, getAllModuleIds } from "@/lib/content";
 import Breadcrumb from "@/components/layout/Breadcrumb";
 import Button from "@/components/ui/Button";
 import Link from "next/link";
-import TheoryContentRenderer from "./TheoryContentRenderer";
+import { MDXRemote } from "next-mdx-remote/rsc";
+import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import rehypeSlug from "rehype-slug";
+import rehypeAutolinkHeadings from "rehype-autolink-headings";
+import { mdxComponents } from "@/components/mdx/MDXComponents";
+
+// Theory pages are content-driven and the MDX compile step is pure, so there
+// is no value in rendering them dynamically on every request. Opt into full
+// static generation — Next will prerender one HTML file per module at build
+// time and serve it from the edge cache.
+export const dynamic = "force-static";
+export const dynamicParams = false;
+
+export async function generateStaticParams() {
+  return getAllModuleIds().map((moduleId) => ({ moduleId }));
+}
 
 interface PageProps {
   params: Promise<{ moduleId: string }>;
@@ -47,9 +64,35 @@ export default async function TheoryPage({ params }: PageProps) {
         </h1>
       </div>
 
-      {/* Content */}
+      {/* MDX content — compiled on the server with math + GFM + autolinked
+          headings. The mdxComponents map handles <Callout>, <CodeBlock>,
+          tables, links, etc. */}
       {theoryData ? (
-        <TheoryContentRenderer content={theoryData.content} />
+        <article className="theory-prose max-w-none">
+          <MDXRemote
+            source={theoryData.content}
+            components={mdxComponents}
+            options={{
+              parseFrontmatter: false,
+              mdxOptions: {
+                remarkPlugins: [remarkGfm, remarkMath],
+                rehypePlugins: [
+                  rehypeSlug,
+                  [
+                    rehypeAutolinkHeadings,
+                    {
+                      behavior: "wrap",
+                      properties: {
+                        className: ["heading-anchor"],
+                      },
+                    },
+                  ],
+                  rehypeKatex,
+                ],
+              },
+            }}
+          />
+        </article>
       ) : (
         <div className="p-8 rounded-xl border border-white/[0.06] bg-surface-1/30 text-center">
           <p className="text-text-muted text-lg mb-4">
