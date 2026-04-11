@@ -52,28 +52,55 @@ export default async function LabsListPage({ params }: PageProps) {
 
       {labs.length > 0 ? (
         <div className="space-y-3">
-          {labs.map((lab, i) => (
-            <Link
-              key={lab.id}
-              href={`/modules/${moduleId}/labs/${lab.id}`}
-              className="group flex items-center gap-4 p-4 rounded-xl border border-white/[0.06] bg-surface-1/30 hover:border-neon-purple/30 hover:bg-surface-1/50 transition-all"
-            >
-              <span
-                className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold shrink-0"
-                style={{ background: `${mod.color}15`, color: mod.color }}
+          {labs.map((lab) => {
+            const difficultyStyles: Record<"easy" | "medium" | "hard", string> = {
+              easy: "bg-emerald-500/10 text-emerald-300 border-emerald-500/20",
+              medium: "bg-amber-500/10 text-amber-300 border-amber-500/20",
+              hard: "bg-rose-500/10 text-rose-300 border-rose-500/20",
+            };
+
+            return (
+              <Link
+                key={lab.id}
+                href={`/modules/${moduleId}/labs/${lab.id}`}
+                className="group flex items-center gap-4 p-4 rounded-xl border border-white/[0.06] bg-surface-1/30 hover:border-neon-purple/30 hover:bg-surface-1/50 transition-all"
               >
-                {i + 1}
-              </span>
-              <div className="flex-1 min-w-0">
-                <h3 className="font-medium text-text-primary group-hover:text-white transition-colors truncate">
-                  {lab.title}
-                </h3>
-              </div>
-              <svg className="w-4 h-4 text-text-muted group-hover:text-text-primary group-hover:translate-x-0.5 transition-all shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </Link>
-          ))}
+                <span
+                  className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold shrink-0"
+                  style={{ background: `${mod.color}15`, color: mod.color }}
+                >
+                  {lab.labNumber}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-medium text-text-primary group-hover:text-white transition-colors truncate">
+                    {lab.title}
+                  </h3>
+                  {(lab.difficulty || lab.estimatedTime) && (
+                    <div className="mt-1 flex items-center gap-2 text-xs text-text-muted">
+                      {lab.difficulty && (
+                        <span
+                          className={`px-2 py-0.5 rounded-md border font-mono uppercase tracking-wide ${difficultyStyles[lab.difficulty]}`}
+                        >
+                          {lab.difficulty}
+                        </span>
+                      )}
+                      {lab.estimatedTime && (
+                        <span className="flex items-center gap-1">
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          {lab.estimatedTime}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <svg className="w-4 h-4 text-text-muted group-hover:text-text-primary group-hover:translate-x-0.5 transition-all shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </Link>
+            );
+          })}
         </div>
       ) : (
         <div className="p-8 rounded-xl border border-white/[0.06] bg-surface-1/30 text-center">
