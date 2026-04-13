@@ -20,6 +20,18 @@ source: "content/modules/06-object-detection/theory.md"
 generatedBy: "scripts/convert-theory.mjs"
 lastConverted: "2026-04-10T19:38:38.512Z"
 ---
+
+<VideoEmbed
+  type="youtube"
+  src="9s_FpMpdBi8"
+  title="Primer — Object Detection (YOLO) Explained (Computerphile, ~14 min)"
+  moduleId="06-object-detection"
+/>
+
+> **Heads up:** the embed above is a placeholder intro video. The final course
+> will replace it with a module-specific recorded lecture. It will not fetch
+> anything from YouTube until you click it.
+
 ## Table of Contents
 1. [Introduction to Object Detection](#1-introduction-to-object-detection)
 2. [Sliding Window Approach and Limitations](#2-sliding-window-approach-and-limitations)
@@ -1780,23 +1792,56 @@ model {
 
 ### 7. Ignoring Small Objects
 - **Problem**: Poor performance on small objects
-- **Problem**: Poor performance on small objects
 - **Solution**: Use higher resolution, FPN with P2, data augmentation
+
+---
+
+## Common Misconceptions
+
+<Callout type="warning" title="Misconception: YOLO is always faster than Faster R-CNN">
+While YOLOv1 was designed for speed, modern two-stage detectors like Cascade R-CNN with lightweight backbones can match or exceed YOLO latency on GPUs with batched inference. Conversely, large YOLO variants (YOLOv8-X) can be slower than efficient two-stage models. The speed gap has narrowed significantly — architecture choice should be driven by your deployment constraints (batch size, hardware, accuracy needs), not just the one-stage vs. two-stage label.
+</Callout>
+
+<Callout type="warning" title="Misconception: Higher IoU threshold always means better detections">
+Students often assume that setting the NMS IoU threshold very high (e.g., 0.9) will keep only the best boxes. In practice, a high IoU threshold means NMS suppresses fewer boxes, leading to *more* duplicate detections, not fewer. The NMS threshold controls how much overlap is tolerated before suppression kicks in — lower thresholds are more aggressive at removing duplicates. Separately, the *evaluation* IoU threshold (mAP@0.50 vs mAP@0.75) is a different parameter entirely.
+</Callout>
+
+<Callout type="warning" title="Misconception: Anchor-free detectors don't need prior knowledge about object sizes">
+Anchor-free methods like FCOS and CenterNet eliminate predefined anchor boxes, but they still rely on multi-scale feature maps (FPN) and assign objects to specific feature levels based on size. The prior knowledge shifts from explicit anchor shapes to implicit scale-to-level assignment rules. You still need to understand your dataset's object size distribution to configure these assignments properly.
+</Callout>
+
+<Callout type="warning" title="Misconception: DETR eliminates the need for NMS entirely">
+DETR uses learnable object queries and Hungarian matching to produce a set-based prediction, which in theory removes the need for NMS. However, in practice, Deformable DETR and many DETR variants still benefit from a light NMS pass to handle near-duplicate predictions, especially during early training or on datasets with heavily overlapping objects. The "NMS-free" claim is an asymptotic ideal, not always the deployed reality.
+</Callout>
+
+---
+
+## Key Takeaways
+
+<Callout type="tip" title="Key Takeaways">
+- **Multi-scale detection is non-negotiable**: FPN or similar neck architectures are essential for handling the extreme size variation in real-world objects — a pedestrian at 30px and a truck at 500px require fundamentally different feature resolutions.
+- **IoU-based losses (GIoU/CIoU) outperform L1/L2 for box regression**: They directly optimize the metric you evaluate on, and variants like CIoU add explicit penalties for center distance and aspect ratio mismatch that accelerate convergence.
+- **Class imbalance is the defining challenge of dense detection**: Single-stage detectors see 10,000–100,000 background proposals per image. Focal loss or hard negative mining isn't optional — without it, the model collapses to predicting "background" everywhere.
+- **Post-processing still matters in production**: Even with anchor-free and transformer-based detectors, NMS tuning, confidence thresholding, and test-time augmentation can yield 2–5% mAP improvement at minimal latency cost.
+</Callout>
 
 ---
 
 ## References
 
-1. Girshick, R., et al. (2014). Rich feature hierarchies for accurate object detection and semantic segmentation. CVPR.
-2. Ren, S., et al. (2015). Faster R-CNN: Towards real-time object detection with region proposal networks. NeurIPS.
-3. Redmon, J., et al. (2016). You only look once: Unified, real-time object detection. CVPR.
-4. Liu, W., et al. (2016). SSD: Single shot multibox detector. ECCV.
-5. Lin, T.Y., et al. (2017). Feature pyramid networks for object detection. CVPR.
-6. Lin, T.Y., et al. (2017). Focal loss for dense object detection. ICCV.
-7. Carion, N., et al. (2020). End-to-end object detection with transformers. ECCV.
-8. Rezatofighi, H., et al. (2019). Generalized intersection over union. CVPR.
-9. Zheng, Z., et al. (2020). Distance-IoU loss: Faster and better learning for bounding box regression. AAAI.
-10. Bodla, N., et al. (2017). Soft-NMS--improving object detection with one line of code. ICCV.
+1. Girshick, R., et al. (2014). Rich feature hierarchies for accurate object detection and semantic segmentation. CVPR. — Introduced R-CNN: CNN features extracted from selective search proposals, establishing the two-stage detection paradigm that dominated 2014–2016.
+2. Ren, S., et al. (2015). Faster R-CNN: Towards real-time object detection with region proposal networks. NeurIPS. — Replaced selective search with a learnable Region Proposal Network (RPN), enabling end-to-end training and ~10× speedup over Fast R-CNN.
+3. Redmon, J., et al. (2016). You only look once: Unified, real-time object detection. CVPR. — Pioneered single-stage detection by framing detection as a single regression problem on a grid, achieving real-time speeds (45 FPS) at the cost of some accuracy.
+4. Liu, W., et al. (2016). SSD: Single shot multibox detector. ECCV. — Combined multi-scale feature maps with default boxes at each scale, balancing YOLO's speed with Faster R-CNN's accuracy via predictions at multiple resolutions.
+5. Lin, T.Y., et al. (2017). Feature pyramid networks for object detection. CVPR. — Introduced the top-down pathway with lateral connections for building semantically rich feature pyramids from a single-scale backbone, now standard in nearly all modern detectors.
+6. Lin, T.Y., et al. (2017). Focal loss for dense object detection. ICCV. — Addressed the extreme foreground-background imbalance in dense detectors with focal loss, enabling RetinaNet to match two-stage accuracy while remaining single-stage.
+7. Carion, N., et al. (2020). End-to-end object detection with transformers. ECCV. — Introduced DETR: learnable object queries + Hungarian matching for set-based prediction, eliminating anchors and NMS in the architecture (though not always in practice).
+8. Rezatofighi, H., et al. (2019). Generalized intersection over union. CVPR. — Proposed GIoU as a differentiable loss that handles non-overlapping boxes (where standard IoU gradient is zero), improving box regression training.
+9. Zheng, Z., et al. (2020). Distance-IoU loss: Faster and better learning for bounding box regression. AAAI. — Introduced DIoU (center distance penalty) and CIoU (adds aspect ratio consistency), accelerating convergence and improving localization over GIoU.
+10. Bodla, N., et al. (2017). Soft-NMS--improving object detection with one line of code. ICCV. — Replaced hard NMS suppression with a continuous score decay function, consistently improving mAP by 1–2% across detectors with negligible overhead.
+11. Tian, Z., et al. (2019). FCOS: Fully convolutional one-stage object detection. ICCV. — Pioneered anchor-free detection by predicting distances from each spatial location to box boundaries, demonstrating that anchor boxes are not necessary for competitive accuracy.
+12. Bochkovskiy, A., et al. (2020). YOLOv4: Optimal speed and accuracy of object detection. arXiv:2004.10934. — Systematized "bag of freebies" (data augmentation, label smoothing) and "bag of specials" (SPP, PAN, Mish activation) into a cohesive training recipe that became the blueprint for YOLOv5–v8.
+13. Zhu, X., et al. (2021). Deformable DETR: Deformable transformers for end-to-end object detection. ICLR. — Addressed DETR's slow convergence and high memory cost with deformable attention that attends to a sparse set of key sampling points, achieving 10× faster training convergence.
 
 ---
 

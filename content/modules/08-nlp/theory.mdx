@@ -20,6 +20,18 @@ source: "content/modules/08-nlp/theory.md"
 generatedBy: "scripts/convert-theory.mjs"
 lastConverted: "2026-04-10T19:38:38.541Z"
 ---
+
+<VideoEmbed
+  type="youtube"
+  src="OxCpWwDCDFQ"
+  title="Primer — Attention in Neural Networks (StatQuest, ~16 min)"
+  moduleId="08-nlp"
+/>
+
+> **Heads up:** the embed above is a placeholder intro video. The final course
+> will replace it with a module-specific recorded lecture. It will not fetch
+> anything from YouTube until you click it.
+
 ## Course Overview
 
 This module provides a comprehensive exploration of Natural Language Processing (NLP) from foundational concepts to state-of-the-art architectures. Students will develop deep theoretical understanding of how machines process, represent, and generate human language, culminating in modern transformer-based models that have revolutionized the field.
@@ -854,7 +866,7 @@ Where $\odot$ denotes element-wise multiplication.
 
 **Input Gate Analysis:**
 - $\mathbf{i}_t \approx 0$: Ignore new input
-- $\mathbf&#123;i&#125;_t \approx 1**: Incorporate new input fully
+- $\mathbf{i}_t \approx 1$: Incorporate new input fully
 - Combined with candidate: Controls what enters memory
 
 **Output Gate Analysis:**
@@ -1869,6 +1881,43 @@ $$\max_{\pi_\theta} \mathbb{E}[r(x, y)] - \beta \text{KL}(\pi_\theta || \pi_{ref
 
 ---
 
+## Common Misconceptions
+
+<Callout type="warning" title="Misconception: Word2Vec learns word meanings">
+
+Word2Vec does not understand meaning — it learns co-occurrence statistics. The "king − man + woman ≈ queen" analogy works because these words appear in statistically similar contexts, not because the model understands monarchy or gender. Analogies can fail unpredictably (e.g., "doctor − man + woman" may yield "nurse" due to corpus bias, not semantic reasoning).
+
+</Callout>
+
+<Callout type="warning" title="Misconception: Transformers replaced RNNs because attention is better than recurrence">
+
+The Transformer's advantage is primarily about **parallelization and scalability**, not attention per se. RNNs with attention (Bahdanau, Luong) already achieved strong results. The key insight of "Attention Is All You Need" was that removing recurrence entirely enabled massive parallel training on GPUs, which in turn allowed scaling to much larger models and datasets. On small-scale tasks, LSTMs with attention can still be competitive.
+
+</Callout>
+
+<Callout type="warning" title="Misconception: BERT is always better than GPT (or vice versa)">
+
+BERT and GPT are designed for different tasks. BERT's bidirectional encoder excels at **understanding** tasks (classification, NER, QA) because it sees full context. GPT's autoregressive decoder excels at **generation** tasks (text completion, dialogue, creative writing) because it models left-to-right probability. Choosing the wrong architecture for your task can significantly hurt performance — use an encoder for understanding, a decoder for generation, and encoder-decoder for sequence-to-sequence.
+
+</Callout>
+
+<Callout type="warning" title="Misconception: More attention heads always means better performance">
+
+Research (Voita et al., 2019; Michel et al., 2019) shows that many attention heads are redundant and can be pruned after training with minimal performance loss. Some heads specialize in syntactic patterns while others appear to do very little. The optimal number of heads is task-dependent, and blindly increasing heads adds parameters and compute without guaranteed improvement.
+
+</Callout>
+
+<Callout type="tip" title="Key Takeaways">
+
+- **Representation is everything**: The progression from one-hot → static embeddings (Word2Vec/GloVe) → contextual embeddings (BERT/GPT) mirrors the field's journey from treating words as isolated symbols to understanding them in rich, context-dependent ways.
+- **The attention mechanism is the core primitive**: Whether in encoder-decoder attention (translation), self-attention (transformers), or cross-attention (multimodal), the query-key-value framework is the universal building block of modern NLP.
+- **LSTMs solved vanishing gradients; Transformers solved parallelization**: Each architecture addressed a specific bottleneck — understand which bottleneck matters for your problem before choosing.
+- **Pretraining + fine-tuning is the dominant paradigm**: Training from scratch is almost never the right choice when pretrained models exist. The key decisions are which pretrained model to use and how to fine-tune effectively (learning rate, epochs, freezing strategy).
+
+</Callout>
+
+---
+
 # Summary and Key Takeaways
 
 ## Module 8 Learning Path
@@ -1924,22 +1973,27 @@ Scaling → Efficiency → Multimodal → Alignment
 
 ## Foundational Papers
 
-1. Bengio et al. (2003). "A Neural Probabilistic Language Model"
-2. Mikolov et al. (2013). "Efficient Estimation of Word Representations"
-3. Pennington et al. (2014). "GloVe: Global Vectors for Word Representation"
-4. Hochreiter & Schmidhuber (1997). "Long Short-Term Memory"
-5. Cho et al. (2014). "Learning Phrase Representations using RNN"
-6. Bahdanau et al. (2015). "Neural Machine Translation by Jointly Learning to Align"
-7. Vaswani et al. (2017). "Attention Is All You Need"
-8. Devlin et al. (2019). "BERT: Pre-training of Deep Bidirectional Transformers"
-9. Radford et al. (2019). "Language Models are Unsupervised Multitask Learners"
-10. Raffel et al. (2020). "Exploring the Limits of Transfer Learning with T5"
+1. Bengio et al. (2003). "A Neural Probabilistic Language Model" — Introduced the neural language model with learned distributed word representations; first demonstration that a neural network could jointly learn embeddings and a language model, establishing the paradigm that Word2Vec later scaled.
+2. Mikolov et al. (2013). "Efficient Estimation of Word Representations in Vector Space" — Proposed Word2Vec (CBOW and Skip-gram), demonstrating that simple shallow architectures trained on large corpora produce embeddings with remarkable linear algebraic structure (king − man + woman ≈ queen).
+3. Pennington et al. (2014). "GloVe: Global Vectors for Word Representation" — Bridged count-based and prediction-based methods by factorizing the global log-bilinear co-occurrence matrix; showed that co-occurrence probability ratios encode meaning more effectively than raw counts.
+4. Hochreiter & Schmidhuber (1997). "Long Short-Term Memory" — Introduced the LSTM cell with input/forget/output gates and the cell state highway, solving the vanishing gradient problem that crippled vanilla RNNs on long sequences.
+5. Cho et al. (2014). "Learning Phrase Representations using RNN Encoder-Decoder" — Proposed the GRU as a simpler alternative to LSTM (2 gates vs 3), and introduced the encoder-decoder framework for sequence-to-sequence learning.
+6. Bahdanau et al. (2015). "Neural Machine Translation by Jointly Learning to Align and Translate" — Introduced additive (Bahdanau) attention for NMT, allowing the decoder to dynamically attend to relevant encoder states rather than compressing the entire source into a fixed-length vector.
+7. Vaswani et al. (2017). "Attention Is All You Need" — Replaced recurrence entirely with multi-head self-attention, enabling massive parallelization. Introduced positional encodings, scaled dot-product attention, and the encoder-decoder Transformer architecture that became the foundation of modern NLP.
+8. Devlin et al. (2019). "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding" — Introduced masked language modeling (MLM) and next sentence prediction (NSP) for bidirectional pretraining; set new SOTA on 11 NLP benchmarks and established the pretrain-then-finetune paradigm.
+9. Radford et al. (2019). "Language Models are Unsupervised Multitask Learners" (GPT-2) — Demonstrated that large autoregressive language models can perform diverse NLP tasks zero-shot by framing them as text generation, foreshadowing the in-context learning capabilities of GPT-3.
+10. Raffel et al. (2020). "Exploring the Limits of Transfer Learning with a Unified Text-to-Text Transformer" (T5) — Systematically evaluated pretraining objectives, architectures, and data strategies; proposed the text-to-text framework that unifies all NLP tasks into a single sequence-to-sequence format.
+11. Sennrich et al. (2016). "Neural Machine Translation of Rare Words with Subword Units" — Introduced Byte Pair Encoding (BPE) for NMT, solving the open-vocabulary problem by decomposing rare words into frequent subword units; now the standard tokenization method for most large language models.
+12. Bojanowski et al. (2017). "Enriching Word Vectors with Subword Information" (FastText) — Extended Word2Vec with character n-gram embeddings, enabling meaningful representations for out-of-vocabulary and morphologically rich words by composing subword vectors.
+13. Brown et al. (2020). "Language Models are Few-Shot Learners" (GPT-3) — Scaled autoregressive pretraining to 175B parameters, demonstrating emergent few-shot and zero-shot capabilities through in-context learning without parameter updates; landmark paper for the scaling hypothesis.
 
 ## Further Reading
 
-- Goldberg (2017). "Neural Network Methods for NLP"
-- Jurafsky & Martin (2023). "Speech and Language Processing"
-- Goodfellow et al. (2016). "Deep Learning" (Chapters 10-12)
+- Goldberg (2017). "Neural Network Methods for NLP" — Comprehensive textbook covering neural architectures for NLP from feed-forward networks through RNNs and attention; excellent for bridging theory and implementation.
+- Jurafsky & Martin (2023). "Speech and Language Processing" (3rd edition) — The definitive NLP textbook, updated to cover transformers, pretraining, and modern architectures alongside classical NLP methods and linguistics.
+- Goodfellow et al. (2016). "Deep Learning" (Chapters 10-12) — Covers sequence modeling (Ch. 10), practical methodology (Ch. 11), and applications (Ch. 12); provides the mathematical foundations for RNNs and attention from a deep learning perspective.
+- Luong et al. (2015). "Effective Approaches to Attention-based Neural Machine Translation" — Proposed multiplicative (dot-product and bilinear) attention as computationally cheaper alternatives to Bahdanau attention; introduced global vs. local attention variants.
+- Voita et al. (2019). "Analyzing Multi-Head Self-Attention: Specialized Heads Do the Heavy Lifting, and the Rest Can Be Pruned" — Demonstrated that most attention heads are redundant after training; identified specialized head types (positional, syntactic, rare-word) and showed >80% can be pruned with minimal quality loss.
 
 ---
 

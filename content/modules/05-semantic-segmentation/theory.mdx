@@ -20,6 +20,18 @@ source: "content/modules/05-semantic-segmentation/theory.md"
 generatedBy: "scripts/convert-theory.mjs"
 lastConverted: "2026-04-10T19:38:38.496Z"
 ---
+
+<VideoEmbed
+  type="youtube"
+  src="nDPWywWRIRo"
+  title="Primer — Image Segmentation Explained (Computerphile, ~12 min)"
+  moduleId="05-semantic-segmentation"
+/>
+
+> **Heads up:** the embed above is a placeholder intro video. The final course
+> will replace it with a module-specific recorded lecture. It will not fetch
+> anything from YouTube until you click it.
+
 ## Table of Contents
 1. [Introduction to Semantic Segmentation](#1-introduction-to-semantic-segmentation)
 2. [Encoder-Decoder Architecture Theory](#2-encoder-decoder-architecture-theory)
@@ -1763,7 +1775,21 @@ Skip connections provide:
 - Morphological operations: Cleaner outputs
 - Connected components: Remove noise
 
-### 12.2 Common Pitfalls
+### 12.2 Common Misconceptions
+
+> ⚠️ **Misconception: "Semantic segmentation distinguishes individual object instances."**
+> Semantic segmentation assigns a class label to every pixel but does **not** differentiate between distinct objects of the same class — two adjacent cars get the same label. *Instance segmentation* (Mask R-CNN) or *panoptic segmentation* (MaskFormer) is needed to separate individual instances. Confusing these paradigms leads to choosing the wrong architecture for the task.
+
+> ⚠️ **Misconception: "Higher output resolution always gives better mIoU."**
+> Reducing output stride from 16 → 8 roughly **quadruples** memory and compute, yet the mIoU gain is often only 1-2% on benchmarks like Cityscapes. In practice, the cost-benefit depends on the dataset: fine-grained boundaries (medical, satellite) benefit more than coarse-class scenes (indoor rooms). Always profile before committing to OS=8.
+
+> ⚠️ **Misconception: "Dice loss is always better than cross-entropy for imbalanced data."**
+> Dice loss handles class imbalance well but can produce **unstable gradients** when both prediction and target are near zero (small foreground), and it ignores easy-to-classify background pixels entirely. The most robust approach is a **combined loss** (e.g., 0.5 × Dice + 0.5 × weighted CE) that balances per-pixel learning signals with region-level overlap optimization.
+
+> ⚠️ **Misconception: "CRF post-processing is always beneficial."**
+> Dense CRF can improve boundary adherence by +2-5% mIoU, but it adds **significant inference latency** (100-500ms per image) and its bilateral filter parameters (θ_α, θ_β, θ_γ) need dataset-specific tuning. Modern architectures with boundary-aware losses or SegFormer-style decoders often match CRF-refined results without the overhead.
+
+### 12.3 Common Pitfalls
 
 **12.2.1 Pitfall 1: Ignoring Class Imbalance**
 
@@ -1835,7 +1861,7 @@ Results in: Performance degradation at test time
 
 ✅ **Correct:** Use multi-scale training and testing
 
-### 12.3 Best Practices Summary
+### 12.4 Best Practices Summary
 
 | Aspect | Recommendation |
 |--------|----------------|
@@ -1848,7 +1874,16 @@ Results in: Performance degradation at test time
 | Evaluation | mIoU + per-class metrics |
 | Augmentation | Aggressive geometric + photometric |
 
-### 12.4 Future Directions
+### 12.5 Key Takeaways
+
+> 💡 **Key Takeaways**
+>
+> - **Encoder-decoder with skip connections** is the dominant paradigm — the encoder captures "what" (semantics) while skip connections recover "where" (spatial detail). U-Net and DeepLab v3+ both embody this principle.
+> - **Atrous convolutions are the key innovation** for segmentation: they enlarge the receptive field without losing resolution, and ASPP's multi-rate parallel branches capture objects at different scales simultaneously.
+> - **Loss function choice is architecture-critical** — combine region-based losses (Dice, Tversky) with distribution-based losses (weighted cross-entropy) to handle class imbalance robustly; no single loss dominates all scenarios.
+> - **mIoU is the gold standard metric** because pixel accuracy is misleading on imbalanced datasets — a model predicting only background can achieve 90%+ pixel accuracy but 0% mIoU on foreground classes.
+
+### 12.6 Future Directions
 
 **12.4.1 Vision Transformers for Segmentation**
 
@@ -1874,21 +1909,27 @@ Automated design of segmentation architectures:
 
 ## References and Further Reading
 
-1. Long, J., Shelhamer, E., & Darrell, T. (2015). Fully convolutional networks for semantic segmentation. CVPR.
+1. Long, J., Shelhamer, E., & Darrell, T. (2015). Fully convolutional networks for semantic segmentation. CVPR. — *The seminal paper that introduced end-to-end dense prediction by converting classification networks into fully convolutional ones, establishing the foundation for all modern segmentation architectures.*
 
-2. Ronneberger, O., Fischer, P., & Brox, T. (2015). U-Net: Convolutional networks for biomedical image segmentation. MICCAI.
+2. Ronneberger, O., Fischer, P., & Brox, T. (2015). U-Net: Convolutional networks for biomedical image segmentation. MICCAI. — *Introduced the symmetric encoder-decoder with skip connections, achieving state-of-the-art results on biomedical tasks with very limited training data; remains the default starting architecture for medical image segmentation.*
 
-3. Chen, L. C., Papandreou, G., Kokkinos, I., Murphy, K., & Yuille, A. L. (2017). DeepLab: Semantic image segmentation with deep convolutional nets, atrous convolution, and fully connected CRFs. TPAMI.
+3. Chen, L. C., Papandreou, G., Kokkinos, I., Murphy, K., & Yuille, A. L. (2017). DeepLab: Semantic image segmentation with deep convolutional nets, atrous convolution, and fully connected CRFs. TPAMI. — *Introduced atrous (dilated) convolutions to segmentation, enabling larger receptive fields without resolution loss; the CRF post-processing pipeline set the standard for boundary refinement.*
 
-4. Chen, L. C., Zhu, Y., Papandreou, G., Schroff, F., & Adam, H. (2018). Encoder-decoder with atrous separable convolution for semantic image segmentation. ECCV.
+4. Chen, L. C., Zhu, Y., Papandreou, G., Schroff, F., & Adam, H. (2018). Encoder-decoder with atrous separable convolution for semantic image segmentation. ECCV. — *DeepLab v3+ combined ASPP with a lightweight decoder and depthwise separable convolutions, achieving 89.0% mIoU on PASCAL VOC 2012; the output stride trade-off analysis (OS=8 vs OS=16) is required reading.*
 
-5. Zhao, H., Shi, J., Qi, X., Wang, X., & Jia, J. (2017). Pyramid scene parsing network. CVPR.
+5. Zhao, H., Shi, J., Qi, X., Wang, X., & Jia, J. (2017). Pyramid scene parsing network. CVPR. — *PSPNet's pyramid pooling module captures global context at multiple scales by pooling at 1×1, 2×2, 3×3, and 6×6 grids; demonstrated that global context is critical for resolving ambiguous local regions.*
 
-6. Paszke, A., Chaurasia, A., Kim, S., & Culurciello, E. (2016). ENet: A deep neural network architecture for real-time semantic segmentation. arXiv.
+6. Paszke, A., Chaurasia, A., Kim, S., & Culurciello, E. (2016). ENet: A deep neural network architecture for real-time semantic segmentation. arXiv. — *Pioneered real-time segmentation with an asymmetric encoder-decoder that is 18× faster than SegNet while maintaining competitive accuracy; introduced early downsampling and bottleneck factorization for efficiency.*
 
-7. Yu, C., Wang, J., Peng, C., Gao, C., Yu, G., & Sang, N. (2018). Bisenet: Bilateral segmentation network for real-time semantic segmentation. ECCV.
+7. Yu, C., Wang, J., Peng, C., Gao, C., Yu, G., & Sang, N. (2018). Bisenet: Bilateral segmentation network for real-time semantic segmentation. ECCV. — *Proposed a two-pathway design: a spatial path preserves resolution for boundary detail while a context path captures high-level semantics; achieves 68.4% mIoU on Cityscapes at 105 FPS.*
 
-8. Kirillov, A., He, K., Girshick, R., Rother, C., & Dollár, P. (2019). Panoptic segmentation. CVPR.
+8. Kirillov, A., He, K., Girshick, R., Rother, C., & Dollár, P. (2019). Panoptic segmentation. CVPR. — *Unified semantic and instance segmentation into a single panoptic task, defining the Panoptic Quality (PQ) metric; catalyzed development of unified architectures like MaskFormer and Mask2Former.*
+
+9. Milletari, F., Navab, N., & Ahmadi, S.-A. (2016). V-Net: Fully convolutional neural networks for volumetric medical image segmentation. 3DV. — *Extended U-Net to 3D volumetric data and introduced the Dice loss as a training objective, which directly optimizes the overlap metric and handles class imbalance without manual weight tuning.*
+
+10. Xie, E., Wang, W., Yu, Z., Anandkumar, A., Alvarez, J. M., & Luo, P. (2021). SegFormer: Simple and efficient design for semantic segmentation with transformers. NeurIPS. — *Demonstrated that a hierarchical vision transformer encoder paired with a lightweight all-MLP decoder matches or outperforms CNN-based methods; the Mix-FFN avoids positional encodings, enabling flexible input sizes.*
+
+11. Salehi, S. S. M., Erdogmus, D., & Ghasemi, A. (2017). Tversky loss function for image segmentation using 3D fully convolutional deep networks. MLMI Workshop. — *Generalized Dice loss with asymmetric FP/FN weighting via the Tversky index, enabling practitioners to tune the precision-recall trade-off for clinical requirements.*
 
 ---
 

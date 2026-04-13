@@ -20,6 +20,18 @@ source: "content/modules/09-time-series/theory.md"
 generatedBy: "scripts/convert-theory.mjs"
 lastConverted: "2026-04-10T19:38:38.558Z"
 ---
+
+<VideoEmbed
+  type="youtube"
+  src="VYpAodcdFfA"
+  title="Primer — Time Series Forecasting with TensorFlow (TensorFlow, ~12 min)"
+  moduleId="09-time-series"
+/>
+
+> **Heads up:** the embed above is a placeholder intro video. The final course
+> will replace it with a module-specific recorded lecture. It will not fetch
+> anything from YouTube until you click it.
+
 ## Table of Contents
 1. [Introduction to Temporal Data](#1-introduction-to-temporal-data)
 2. [Stationarity: Theory and Tests](#2-stationarity-theory-and-tests)
@@ -1623,6 +1635,37 @@ $$\mathbf{z}(t) = \text{ODESolve}(f_\theta, \mathbf{z}_0, t)$$
 
 ---
 
+## Common Misconceptions
+
+<Callout type="warning" title="Misconception: Stationarity means constant values">
+Stationarity does **not** mean the series stays flat or near a constant. A stationary series still fluctuates — often wildly. Stationarity means the *statistical properties* (mean, variance, autocorrelation structure) remain constant over time. White noise is stationary despite being unpredictable; a slowly rising stock price is non-stationary despite looking smooth.
+</Callout>
+
+<Callout type="warning" title="Misconception: LSTMs always beat ARIMA">
+For simple, well-structured series with strong linear autocorrelation, a properly tuned ARIMA (or ETS) frequently **outperforms** deep learning models. The M4 Competition (2018) showed that pure ML methods underperformed hybrid and statistical approaches in many categories. LSTMs and TCNs shine with complex nonlinear patterns, multivariate inputs, and large datasets — but never skip the classical baseline.
+</Callout>
+
+<Callout type="warning" title="Misconception: More historical data is always better">
+In time series, older data may reflect a different regime (concept drift, structural breaks). Including 20 years of data for a process that fundamentally changed 3 years ago can *hurt* model performance. Use domain knowledge to select an appropriate training window, and consider regime-detection techniques (e.g., CUSUM tests, Markov-switching models) to identify breakpoints.
+</Callout>
+
+<Callout type="warning" title="Misconception: Differencing always fixes non-stationarity">
+Over-differencing is a common trap. Each round of differencing removes information and can introduce artificial MA structure. If ADF says stationary but KPSS says non-stationary after $d=1$, the issue may be a deterministic trend (use detrending, not differencing) or a structural break — not insufficient differencing. Always use both ADF and KPSS as complementary tests.
+</Callout>
+
+---
+
+## Key Takeaways
+
+<Callout type="tip" title="Key Takeaways">
+- **Stationarity is non-negotiable:** Apply both ADF (null: unit root) and KPSS (null: stationary) tests before modelling. Conflicting results indicate deterministic trends or structural breaks requiring specific treatment — not more differencing.
+- **Classical baselines remain competitive:** A well-tuned ARIMA or ETS model is the minimum bar your deep learning model must clear. If it doesn't, the issue is likely data preparation or architecture choice, not model capacity.
+- **Window size determines learnable patterns:** The sliding window defines your model's temporal receptive field. Too short and you miss seasonal cycles; too long and you dilute recent signal with stale history. Match window length to the dominant periodicity in your ACF/PACF plots.
+- **Probabilistic forecasting is essential for decisions:** Point forecasts alone are insufficient. Quantile regression, Monte Carlo dropout, or mixture density networks provide prediction intervals that quantify uncertainty — critical for downstream decision-making in finance, energy, and healthcare.
+</Callout>
+
+---
+
 ## Key Insights Summary
 
 ### Insight 1: Stationarity is Foundation
@@ -1653,6 +1696,31 @@ No single architecture is best for all problems. Consider sequence length, patte
 | Overfitting to noise | Complex models, small data | Regularization, simpler models |
 | Ignoring scale | Different series magnitudes | Normalization, scaling |
 | Forecast horizon mismatch | Training for wrong horizon | Match training to deployment |
+
+---
+
+## References
+
+### Foundational Papers
+
+- **Box, G. E. P. & Jenkins, G. M. (1970)** — *Time Series Analysis: Forecasting and Control.* The foundational text establishing the ARIMA methodology and the iterative identification-estimation-diagnostic approach that remains standard practice.
+- **Hochreiter, S. & Schmidhuber, J. (1997)** — *Long Short-Term Memory.* Introduced the LSTM architecture with gating mechanisms that solve the vanishing gradient problem, enabling learning of long-range temporal dependencies.
+- **Hyndman, R. J. & Athanasopoulos, G. (2021)** — *Forecasting: Principles and Practice* (3rd ed., OTexts). The standard modern reference for statistical forecasting covering ETS, ARIMA, and cross-validation for time series.
+- **Bai, S., Kolter, J. Z. & Koltun, V. (2018)** — *An Empirical Evaluation of Generic Convolutional and Recurrent Networks for Sequence Modeling.* Demonstrated that TCNs can match or outperform LSTMs on many sequence tasks, establishing dilated causal convolutions as a serious alternative.
+- **Oreshkin, B. N. et al. (2020)** — *N-BEATS: Neural Basis Expansion Analysis for Interpretable Time Series Forecasting.* Pure deep learning architecture without time-series-specific components, achieving state-of-the-art on M4 Competition via basis function expansion.
+- **Zhou, H. et al. (2021)** — *Informer: Beyond Efficient Transformer for Long Sequence Time-Series Forecasting.* Introduced ProbSparse attention (O(L log L)) and self-attention distilling, enabling Transformers for long-horizon forecasting.
+- **Wu, H. et al. (2021)** — *Autoformer: Decomposition Transformers with Auto-Correlation for Long-Term Series Forecasting.* Replaced self-attention with auto-correlation mechanism and introduced deep decomposition architecture for seasonal-trend separation.
+- **Salinas, D. et al. (2020)** — *DeepAR: Probabilistic Forecasting with Autoregressive Recurrent Networks.* Trained a global autoregressive RNN across multiple related time series, outputting parametric probability distributions rather than point forecasts.
+- **Chen, R. T. Q. et al. (2018)** — *Neural Ordinary Differential Equations.* Formulated continuous-depth neural networks via ODE solvers, naturally handling irregularly sampled time series without imputation.
+- **Makridakis, S. et al. (2018)** — *The M4 Competition: 100,000 Time Series and 61 Forecasting Methods.* Comprehensive benchmark showing that hybrid statistical-ML methods outperformed pure deep learning, establishing the importance of classical baselines.
+
+### Further Reading
+
+- **Challu, C. et al. (2023)** — *N-HiTS: Neural Hierarchical Interpolation for Time Series Forecasting.* Extended N-BEATS with multi-rate sampling and hierarchical interpolation for improved long-horizon performance.
+- **Zeng, A. et al. (2023)** — *Are Transformers Effective for Time Series Forecasting?* Provocatively showed that simple linear models can outperform complex Transformers on several benchmarks, sparking important debate on appropriate model complexity.
+- **Engle, R. F. (1982)** — *Autoregressive Conditional Heteroscedasticity with Estimates of the Variance of United Kingdom Inflation.* Introduced ARCH models for time-varying volatility, foundational for financial time series.
+- **Cleveland, R. B. et al. (1990)** — *STL: A Seasonal-Trend Decomposition Procedure Based on LOESS.* The standard algorithm for robust seasonal decomposition, widely used in preprocessing pipelines.
+- **Rangapuram, S. S. et al. (2018)** — *Deep State Space Models for Time Series Forecasting.* Combined state space models with deep learning to produce interpretable probabilistic forecasts with linear Gaussian structure.
 
 ---
 

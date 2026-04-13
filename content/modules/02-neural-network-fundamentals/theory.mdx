@@ -20,6 +20,18 @@ source: "content/modules/02-neural-network-fundamentals/theory.md"
 generatedBy: "scripts/convert-theory.mjs"
 lastConverted: "2026-04-10T19:38:38.457Z"
 ---
+
+<VideoEmbed
+  type="youtube"
+  src="VMj-3S1tku0"
+  title="Primer — Gradient descent, how neural networks learn (3Blue1Brown, ~21 min)"
+  moduleId="02-neural-network-fundamentals"
+/>
+
+> **Heads up:** the embed above is a placeholder intro video. The final course
+> will replace it with a module-specific recorded lecture. It will not fetch
+> anything from YouTube until you click it.
+
 ## Module Overview
 
 This module provides the foundational theoretical understanding of neural networks, bridging the gap between biological inspiration and modern computational implementations. We explore the mathematical foundations, architectural principles, and optimization mechanisms that enable neural networks to learn from data.
@@ -169,6 +181,16 @@ Adding $b < 0$ to the second inequality: $w_1 + w_2 + 2b < b < 0$
 This contradicts $w_1 + w_2 + 2b \geq 0$. ∎
 
 **Solution:** Multi-layer networks with non-linear activations can solve XOR and any other classification problem.
+
+<Callout type="warning" title="Common Misconceptions for Beginners">
+
+1. **"More neurons always means better performance."** Not true — adding neurons without regularization leads to overfitting. The Universal Approximation Theorem guarantees *existence* of a good network, not that training will find it. Start small and scale up only when underfitting.
+
+2. **"Backpropagation is a learning algorithm."** Backpropagation is a *gradient computation* algorithm (efficient chain rule). The learning algorithm is gradient descent (or Adam, SGD, etc.) which *uses* those gradients to update weights. Conflating the two leads to confusion when you encounter alternatives like evolutionary strategies that learn without backprop.
+
+3. **"ReLU is always the best activation function."** ReLU is a strong default for hidden layers because it avoids the vanishing gradient problem and is cheap to compute. But it suffers from "dying neurons" (units stuck at zero). Leaky ReLU, GELU, and SiLU/Swish are often better in practice, especially in deeper networks and transformer architectures.
+
+</Callout>
 
 ---
 
@@ -1266,6 +1288,8 @@ $$\text{Accuracy} = \frac{\text{correct predictions}}{\text{total predictions}}$
 
 <Callout type="note" title="Example">
 
+The Sequential API treats the model as a plain stack of layers where each layer feeds into the next. You define layers in order and Keras connects them automatically — no need to specify how data flows between them. This is ideal for simple architectures like a fully-connected classifier: input → hidden → hidden → output.
+
 </Callout>
 
 ```python
@@ -1293,6 +1317,8 @@ model = keras.Sequential([
 
 <Callout type="note" title="Example">
 
+The Functional API treats each layer as a callable that takes a tensor and returns a tensor. You explicitly wire connections between layers, which lets you build multi-input/multi-output models, shared layers, and residual connections — anything that isn't a simple linear stack.
+
 </Callout>
 
 ```python
@@ -1309,9 +1335,9 @@ model = keras.Model(inputs=inputs, outputs=outputs)
 **Multi-Input Example:**
 ```python
 # Text input
- text_input = keras.Input(shape=(100,), name='text')
- x1 = keras.layers.Embedding(10000, 128)(text_input)
- x1 = keras.layers.LSTM(64)(x1)
+text_input = keras.Input(shape=(100,), name='text')
+x1 = keras.layers.Embedding(10000, 128)(text_input)
+x1 = keras.layers.LSTM(64)(x1)
 
 # Image input
 image_input = keras.Input(shape=(64, 64, 3), name='image')
@@ -1346,6 +1372,30 @@ model = CustomModel()
 ```
 
 ---
+
+<Callout type="warning" title="Common Misconceptions about Backpropagation and Training">
+
+**"Backpropagation is how neural networks learn."** Backpropagation only computes gradients — it is the *chain rule applied mechanically*. The actual learning happens in the optimizer step (SGD, Adam, etc.) that *uses* those gradients to update weights. Confusing the two makes it harder to reason about training failures: a gradient computation bug is very different from a learning-rate or momentum bug.
+
+**"More layers always means better performance."** Depth helps representational efficiency (logarithmic vs exponential width), but deeper networks are harder to train due to vanishing gradients, require careful initialization (He/Xavier), and may need skip connections or normalization. A well-tuned shallow network often beats a poorly-tuned deep one.
+
+**"Loss = 0 means the model is perfect."** Zero training loss usually signals severe overfitting. The model has memorized the training set but may generalize poorly. Always evaluate on a held-out validation set and watch for the gap between training and validation loss.
+
+**"BatchNorm replaces the need for proper initialization."** While BatchNorm does reduce sensitivity to initialization, starting with He (for ReLU) or Xavier (for sigmoid/tanh) initialization still matters — it accelerates convergence and reduces the number of epochs to reach a good solution. BatchNorm handles the mid-training distribution shift, not the starting point.
+
+</Callout>
+
+<Callout type="tip" title="Key Takeaways">
+
+1. **Perceptrons are linear classifiers** — the XOR problem proved that single-layer networks cannot solve non-linearly separable problems, motivating multi-layer architectures. This historical lesson still matters: always check whether your problem actually requires non-linearity before reaching for deep models.
+
+2. **Backpropagation is not magic** — it is a systematic application of the chain rule over a computation graph. Understanding this demystifies "how neural networks learn" and helps you debug gradient issues (vanishing, exploding, dead neurons) from first principles.
+
+3. **Initialization determines trainability** — Xavier (for sigmoid/tanh) and He (for ReLU) initialization keep activation variance stable across layers. Without proper scaling, deep networks either explode or collapse before the optimizer even gets a chance.
+
+4. **The Keras API spectrum (Sequential → Functional → Subclassing)** maps to increasing model complexity. Start with Sequential for linear stacks, graduate to Functional for multi-input/output or shared-layer architectures, and use Subclassing only when you need dynamic control flow (e.g., conditional computation).
+
+</Callout>
 
 ## Key Insights Summary
 
@@ -1387,24 +1437,41 @@ model = CustomModel()
 
 ---
 
-## Further Reading
+## References
 
-1. **Original Papers:**
-   - McCulloch & Pitts (1943): "A logical calculus of the ideas immanent in nervous activity"
-   - Rosenblatt (1958): "The Perceptron: A probabilistic model for information storage and organization in the brain"
-   - Rumelhart et al. (1986): "Learning representations by back-propagating errors"
-   - Glorot & Bengio (2010): "Understanding the difficulty of training deep feedforward neural networks"
-   - He et al. (2015): "Delving deep into rectifiers: Surpassing human-level performance on ImageNet classification"
+### Foundational Papers
 
-2. **Textbooks:**
-   - Goodfellow, Bengio, & Courville: "Deep Learning" (Chapters 6, 7, 8)
-   - Bishop: "Pattern Recognition and Machine Learning" (Chapter 5)
-   - Nielsen: "Neural Networks and Deep Learning" (Online, free)
+1. **McCulloch & Pitts (1943):** "A logical calculus of the ideas immanent in nervous activity" — *Bulletin of Mathematical Biophysics*, 5(4), 115–133. The first mathematical model of a neuron, proving that networks of binary threshold units can compute any logical function. Establishes the computational theory underlying Section 2.1.1.
 
-3. **Online Resources:**
-   - CS231n: Convolutional Neural Networks for Visual Recognition (Stanford)
-   - Fast.ai: Practical Deep Learning for Coders
-   - Distill.pub: Interactive explanations
+2. **Rosenblatt (1958):** "The Perceptron: A probabilistic model for information storage and organization in the brain" — *Psychological Review*, 65(6), 386–408. Introduced the perceptron learning rule with convergence proof for linearly separable data. The algorithm and convergence analysis in Section 2.1.2–2.1.3 follow directly from this work.
+
+3. **Minsky & Papert (1969):** "Perceptrons: An Introduction to Computational Geometry" — MIT Press. The XOR impossibility proof that triggered the first AI winter. Their rigorous demonstration that single-layer perceptrons cannot solve non-linearly separable problems motivated the multi-layer architectures discussed in Section 2.2.
+
+4. **Rumelhart, Hinton & Williams (1986):** "Learning representations by back-propagating errors" — *Nature*, 323, 533–536. The paper that made backpropagation practical for training multi-layer networks. The algorithm described in Section 2.7 follows their formulation of reverse-mode automatic differentiation through computation graphs.
+
+5. **Cybenko (1989):** "Approximation by superpositions of a sigmoidal function" — *Mathematics of Control, Signals and Systems*, 2(4), 303–314. The original Universal Approximation Theorem proof showing that one hidden layer with sigmoid activations can approximate any continuous function on compact subsets of ℝⁿ. Provides the theoretical foundation for Section 2.2.
+
+6. **Glorot & Bengio (2010):** "Understanding the difficulty of training deep feedforward neural networks" — *AISTATS 2010*. Analyzed variance propagation through layers and derived Xavier initialization (variance = 1/fan_in for tanh/sigmoid). The initialization strategies in Section 2.8 are built on this analysis.
+
+7. **He et al. (2015):** "Delving deep into rectifiers: Surpassing human-level performance on ImageNet classification" — *ICCV 2015*. Extended variance analysis to ReLU networks, deriving He initialization (variance = 2/fan_in). Essential reading for understanding why ReLU networks need different scaling than sigmoid/tanh, as discussed in Section 2.8.
+
+8. **Ioffe & Szegedy (2015):** "Batch Normalization: Accelerating Deep Network Training by Reducing Internal Covariate Shift" — *ICML 2015*. Introduced BatchNorm to stabilize training by normalizing layer inputs. The technique and its placement considerations (before vs after activation) are covered in Section 2.9.
+
+9. **Nair & Hinton (2010):** "Rectified Linear Units Improve Restricted Boltzmann Machines" — *ICML 2010*. Demonstrated that ReLU activations train faster and generalize better than sigmoid/tanh. Provides empirical motivation for the ReLU family discussed in Section 2.4.
+
+10. **Klambauer et al. (2017):** "Self-Normalizing Neural Networks" — *NeurIPS 2017*. Introduced SELU (Scaled Exponential Linear Unit) with a proof that networks using SELU converge toward zero mean and unit variance activations without explicit normalization. An alternative to BatchNorm for fully-connected architectures.
+
+### Further Reading
+
+11. **Goodfellow, Bengio & Courville (2016):** "Deep Learning" — MIT Press, Chapters 6–8. The definitive textbook treatment of feedforward networks, regularization, and optimization. Chapter 6 covers activation functions and architecture design; Chapter 8 covers backpropagation in detail with computation graph notation.
+
+12. **Bishop (2006):** "Pattern Recognition and Machine Learning" — Springer, Chapter 5. A rigorous Bayesian perspective on neural networks with thorough coverage of error backpropagation, weight space symmetries, and the relationship between network width and function approximation capacity.
+
+13. **Nielsen (2015):** "Neural Networks and Deep Learning" — Online (free). An accessible introduction with interactive visualizations of backpropagation and gradient flow. Excellent supplementary resource for students who want visual intuition alongside the mathematical treatment.
+
+14. **CS231n (Stanford):** Convolutional Neural Networks for Visual Recognition — course notes and video lectures. The "Backpropagation" and "Neural Networks Part 1" modules provide outstanding visual explanations of gradient flow through computation graphs.
+
+15. **Distill.pub:** Interactive explanations of neural network concepts. Particularly the "Momentum" article (Goh, 2017) for optimization intuition, and "Feature Visualization" (Olah et al., 2017) for understanding what hidden layers learn.
 
 ---
 

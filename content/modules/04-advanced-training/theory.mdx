@@ -20,6 +20,18 @@ source: "content/modules/04-advanced-training/theory.md"
 generatedBy: "scripts/convert-theory.mjs"
 lastConverted: "2026-04-10T19:38:38.484Z"
 ---
+
+<VideoEmbed
+  type="youtube"
+  src="IHZwWFHWa-w"
+  title="Primer — Backpropagation calculus (3Blue1Brown, ~10 min)"
+  moduleId="04-advanced-training"
+/>
+
+> **Heads up:** the embed above is a placeholder intro video. The final course
+> will replace it with a module-specific recorded lecture. It will not fetch
+> anything from YouTube until you click it.
+
 ## Table of Contents
 1. [Introduction to Optimization in Deep Learning](#1-introduction)
 2. [First-Order Optimization Methods](#2-first-order-methods)
@@ -1356,6 +1368,34 @@ Often improves generalization.
 
 ---
 
+## Common Misconceptions
+
+<Callout type="warning" title="Myth: Adam is always better than SGD">
+
+Adam converges faster in early training, but SGD with momentum often achieves better final generalization — especially for CNNs. Wilson et al. (2017) demonstrated a persistent "generalization gap." A practical strategy is to start with Adam/AdamW for rapid prototyping, then switch to SGD + cosine annealing for the final training run when peak accuracy matters.
+
+</Callout>
+
+<Callout type="warning" title="Myth: Larger batch sizes always speed up training">
+
+While larger batches improve GPU utilization, they can hurt generalization. The linear scaling rule (scale LR proportionally to batch size) helps, but breaks down beyond a critical batch size. Gradient accumulation over smaller micro-batches often achieves the same effective batch size without the generalization penalty.
+
+</Callout>
+
+<Callout type="warning" title="Myth: BatchNorm fixes internal covariate shift">
+
+The original BatchNorm paper (Ioffe & Szegedy, 2015) motivated BatchNorm as reducing internal covariate shift, but Santurkar et al. (2018) showed the real benefit is making the loss landscape smoother (reducing the Lipschitz constant of the gradient). This is why BatchNorm works even when the input distributions do not change significantly.
+
+</Callout>
+
+<Callout type="warning" title="Myth: Weight decay and L2 regularization are the same thing">
+
+They are equivalent for vanilla SGD, but NOT for adaptive optimizers like Adam. With Adam, L2 regularization is scaled by the adaptive learning rate, weakening its effect on parameters with large gradient history. AdamW decouples weight decay from the adaptive rate, which is why it generalizes better — see the Loshchilov & Hutter (2019) paper.
+
+</Callout>
+
+---
+
 ## Summary
 
 This module covered the theoretical foundations of advanced training methodologies:
@@ -1372,7 +1412,10 @@ This module covered the theoretical foundations of advanced training methodologi
 
 <Callout type="tip" title="Key Takeaways">
 
-- Understanding theory enables better hyperparameter tuning - No single approach works for all problems - Modern training combines multiple techniques - Always validate on held-out data
+- **Understanding theory enables better hyperparameter tuning** — knowing *why* Adam converges faster than SGD early on (adaptive rates) but may generalize worse (sharper minima) lets you make informed optimizer choices rather than guessing.
+- **No single approach works for all problems** — CNNs often benefit from SGD + momentum for final accuracy, while transformers almost always need AdamW with warmup.
+- **Modern training combines multiple techniques** — a typical recipe: AdamW + cosine annealing with warmup + mixed precision + BatchNorm/LayerNorm + dropout + data augmentation.
+- **Always validate on held-out data** — training loss alone is misleading; monitor validation metrics and use early stopping to detect overfitting.
 
 </Callout>
 
@@ -1380,10 +1423,16 @@ This module covered the theoretical foundations of advanced training methodologi
 
 ## References
 
-1. Goodfellow, I., Bengio, Y., & Courville, A. (2016). Deep Learning. MIT Press.
-2. Kingma, D. P., & Ba, J. (2014). Adam: A method for stochastic optimization.
-3. Ioffe, S., & Szegedy, C. (2015). Batch normalization.
-4. Srivastava, N., et al. (2014). Dropout: A simple way to prevent overfitting.
-5. Bottou, L., et al. (2018). Optimization methods for large-scale machine learning.
-6. Micikevicius, P., et al. (2018). Mixed precision training.
-7. Goyal, P., et al. (2017). Accurate, large minibatch SGD.
+1. Goodfellow, I., Bengio, Y., & Courville, A. (2016). *Deep Learning.* MIT Press. — The standard graduate-level textbook; Chapters 8–9 cover optimization and regularization in depth.
+2. Kingma, D. P., & Ba, J. (2014). Adam: A method for stochastic optimization. *ICLR 2015.* — Introduced Adam, combining momentum with adaptive per-parameter learning rates; the most widely-used optimizer in deep learning.
+3. Ioffe, S., & Szegedy, C. (2015). Batch normalization: Accelerating deep network training by reducing internal covariate shift. *ICML 2015.* — Foundational paper that introduced BatchNorm; the original "covariate shift" motivation has since been challenged (see Santurkar et al.).
+4. Srivastava, N., et al. (2014). Dropout: A simple way to prevent neural networks from overfitting. *JMLR 15.* — Introduced dropout regularization with theoretical analysis as approximate model averaging.
+5. Bottou, L., et al. (2018). Optimization methods for large-scale machine learning. *SIAM Review.* — Comprehensive survey of SGD variants and convergence theory; excellent bridge between theory and practice.
+6. Micikevicius, P., et al. (2018). Mixed precision training. *ICLR 2018.* — Showed how to train with FP16 without accuracy loss using loss scaling and master weights in FP32.
+7. Goyal, P., et al. (2017). Accurate, large minibatch SGD: Training ImageNet in 1 hour. *arXiv.* — Established the linear scaling rule for learning rate with batch size and warmup schedules for large-batch training.
+8. Loshchilov, I., & Hutter, F. (2019). Decoupled weight decay regularization. *ICLR 2019.* — Showed L2 regularization and weight decay are not equivalent for adaptive optimizers; introduced AdamW.
+9. Smith, L. N. (2017). Cyclical learning rates for training neural networks. *WACV 2017.* — Introduced the LR range test and cyclical learning rate schedules.
+10. Smith, L. N., & Topin, N. (2018). Super-convergence: Very fast training of neural networks using large learning rates. *arXiv.* — Introduced the 1cycle policy achieving super-convergence with aggressive LR schedules.
+11. Santurkar, S., et al. (2018). How does batch normalization help optimization? *NeurIPS 2018.* — Challenged the "covariate shift" explanation; showed BatchNorm's real benefit is smoothing the loss landscape.
+12. Wilson, A. C., et al. (2017). The marginal value of adaptive gradient methods in machine learning. *NeurIPS 2017.* — Demonstrated that adaptive methods often generalize worse than SGD with tuned learning rates.
+13. Dauphin, Y., et al. (2014). Identifying and attacking the saddle point problem in high-dimensional non-convex optimization. *NeurIPS 2014.* — Showed saddle points dominate local minima in high dimensions; motivated second-order aware methods.

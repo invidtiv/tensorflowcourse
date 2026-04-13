@@ -20,6 +20,18 @@ source: "content/modules/03-cnns/theory.md"
 generatedBy: "scripts/convert-theory.mjs"
 lastConverted: "2026-04-10T19:38:38.471Z"
 ---
+
+<VideoEmbed
+  type="youtube"
+  src="KuXjwB4LzSA"
+  title="Primer — But what is a convolution? (3Blue1Brown, ~23 min)"
+  moduleId="03-cnns"
+/>
+
+> **Heads up:** the embed above is a placeholder intro video. The final course
+> will replace it with a module-specific recorded lecture. It will not fetch
+> anything from YouTube until you click it.
+
 ## Module Overview
 
 Convolutional Neural Networks (CNNs) represent one of the most significant breakthroughs in deep learning, enabling machines to achieve superhuman performance in visual perception tasks. This module provides a comprehensive theoretical foundation spanning mathematical principles, architectural evolution, and modern advances in computer vision.
@@ -1214,6 +1226,20 @@ ConvNeXt matches or exceeds Swin Transformer performance while maintaining CNN s
 
 ---
 
+<Callout type="tip" title="Key Takeaways">
+- **Convolution is cross-correlation in practice** — deep learning frameworks skip the kernel flip because learned weights absorb the symmetry, but understanding the true mathematical definition matters for reading papers.
+- **Receptive field is the silent architect** — every design choice (kernel size, stride, dilation, depth) shapes what each neuron "sees". A model whose receptive field is smaller than the relevant structure in the input will *never* learn that structure, no matter how many epochs you train.
+- **ResNet's skip connections didn't just help — they changed what "deep" means** — before residual learning, networks deeper than ~20 layers degraded. After, 100+ layer networks became routine. The insight is that learning *residual* functions (deviations from identity) is easier than learning full mappings.
+- **Transfer learning is the default, not the exception** — for most real-world vision tasks, training from scratch is wasteful. A pretrained backbone + fine-tuned head consistently outperforms random initialization, even with seemingly unrelated source domains (ImageNet features transfer surprisingly well).
+- **The CNN → Transformer convergence** — modern ConvNeXt architectures borrow ideas from Vision Transformers (larger kernels, fewer normalization layers, GELU activations) and match ViT performance, showing that the inductive biases matter more than the specific mechanism.
+</Callout>
+
+<Callout type="warning" title="Common Misconceptions">
+- **"More filters = better features"** — Adding filters increases capacity but also overfitting risk and compute cost. EfficientNet showed that *balanced* scaling of depth, width, and resolution outperforms brute-force filter increases.
+- **"Max pooling is outdated"** — While strided convolutions can replace pooling, max pooling still provides useful translation invariance and is used in modern architectures (ResNet, EfficientNet). The choice is task-dependent, not a simple "old vs new" decision.
+- **"CNNs can't handle variable-size inputs"** — CNNs are fully convolutional by nature; it's the final fully-connected layers that fix the input size. Global Average Pooling (GAP) eliminates this constraint, and modern architectures routinely handle variable resolutions.
+</Callout>
+
 # Part 9: Key Insights and Common Pitfalls
 
 ## 9.1 Key Insights Summary
@@ -1314,20 +1340,21 @@ $$\text{FLOPs} = 2 \times H_{out} \times W_{out} \times C_{in} \times k_h \times
 
 ## Foundational Papers
 
-1. **LeCun et al. (1998)** - "Gradient-Based Learning Applied to Document Recognition"
-2. **Krizhevsky et al. (2012)** - "ImageNet Classification with Deep Convolutional Neural Networks"
-3. **Simonyan & Zisserman (2014)** - "Very Deep Convolutional Networks for Large-Scale Image Recognition"
-4. **Szegedy et al. (2015)** - "Going Deeper with Convolutions"
-5. **He et al. (2016)** - "Deep Residual Learning for Image Recognition"
-6. **Huang et al. (2017)** - "Densely Connected Convolutional Networks"
-7. **Tan & Le (2019)** - "EfficientNet: Rethinking Model Scaling"
-8. **Dosovitskiy et al. (2020)** - "An Image is Worth 16x16 Words"
+1. **LeCun et al. (1998)** — "Gradient-Based Learning Applied to Document Recognition" — The paper that introduced LeNet-5 and demonstrated end-to-end gradient-based training of CNNs for character recognition. Foundational for all modern CNN work.
+2. **Krizhevsky et al. (2012)** — "ImageNet Classification with Deep Convolutional Neural Networks" (AlexNet) — Sparked the deep learning revolution by winning ILSVRC 2012 with a 10.8% top-5 error margin over the runner-up. Introduced ReLU, dropout, and GPU training to the mainstream.
+3. **Simonyan & Zisserman (2014)** — "Very Deep Convolutional Networks for Large-Scale Image Recognition" (VGGNet) — Demonstrated that depth with small (3×3) kernels outperforms shallow networks with large kernels, establishing the "stack small filters" design principle.
+4. **Szegedy et al. (2015)** — "Going Deeper with Convolutions" (GoogLeNet/Inception) — Introduced the Inception module with parallel multi-scale convolutions and 1×1 bottlenecks, achieving strong accuracy with far fewer parameters than VGG.
+5. **He et al. (2016)** — "Deep Residual Learning for Image Recognition" (ResNet) — Introduced skip connections that solved the degradation problem, enabling training of 152+ layer networks. Arguably the most influential CNN paper after AlexNet.
+6. **Huang et al. (2017)** — "Densely Connected Convolutional Networks" (DenseNet) — Extended skip connections to connect every layer to every other layer, improving feature reuse and gradient flow while reducing parameter count.
+7. **Tan & Le (2019)** — "EfficientNet: Rethinking Model Scaling" — Proposed compound scaling (balanced depth/width/resolution) and neural architecture search, achieving state-of-the-art accuracy with 8× fewer parameters than previous models.
+8. **Dosovitskiy et al. (2020)** — "An Image is Worth 16x16 Words" (ViT) — Applied the Transformer architecture to vision by splitting images into patches, challenging CNN dominance and opening the hybrid CNN-Transformer era.
+9. **Liu et al. (2022)** — "A ConvNet for the 2020s" (ConvNeXt) — Modernized ResNet with Transformer-inspired design choices (larger kernels, fewer activations, Layer Norm), matching Swin Transformer performance while retaining CNN simplicity. Covered in Section 8.7.
 
 ## Recommended Textbooks
 
-1. **"Deep Learning"** - Goodfellow, Bengio, Courville
-2. **"Computer Vision: Algorithms and Applications"** - Szeliski
-3. **"Pattern Recognition and Machine Learning"** - Bishop
+1. **"Deep Learning"** — Goodfellow, Bengio, Courville — Chapters 9–10 cover CNN theory comprehensively with excellent mathematical rigor.
+2. **"Computer Vision: Algorithms and Applications"** — Szeliski (2nd ed., 2022) — Broader CV context; Chapter 5 covers deep learning for vision with practical perspective.
+3. **"Pattern Recognition and Machine Learning"** — Bishop — Strong probabilistic foundations that complement the CNN-specific material.
 
 ---
 

@@ -20,6 +20,18 @@ source: "content/modules/10-production-deployment/theory.md"
 generatedBy: "scripts/convert-theory.mjs"
 lastConverted: "2026-04-10T19:38:38.572Z"
 ---
+
+<VideoEmbed
+  type="youtube"
+  src="WbARPbJXmg0"
+  title="Primer — ML in Production: From Model to Deployment (Google Cloud Tech, ~14 min)"
+  moduleId="10-production-deployment"
+/>
+
+> **Heads up:** the embed above is a placeholder intro video. The final course
+> will replace it with a module-specific recorded lecture. It will not fetch
+> anything from YouTube until you click it.
+
 ## Chapter 1: Introduction to Production Machine Learning
 
 ### 1.1 The Production ML Gap
@@ -1735,6 +1747,35 @@ Develop energy-efficient ML systems.
 
 ---
 
+## Common Misconceptions
+
+<Callout type="warning" title="Misconception: Quantization always degrades accuracy significantly">
+Many practitioners avoid quantization assuming large accuracy drops. In reality, post-training INT8 quantization on well-trained models typically loses less than 0.5% accuracy while delivering 2–4× speedup and ~4× model size reduction. The key is using representative calibration data. Only aggressive quantization (INT4 or lower) without QAT tends to cause meaningful degradation.
+</Callout>
+
+<Callout type="warning" title="Misconception: TF Serving is only for large-scale deployments">
+TF Serving is often perceived as enterprise-only infrastructure. In practice, a single Docker container running TF Serving can serve models with sub-10ms latency for small teams. Its model versioning, batching, and gRPC/REST APIs are valuable even at modest scale — you don't need Kubernetes to benefit from it.
+</Callout>
+
+<Callout type="warning" title="Misconception: Monitoring accuracy alone is sufficient for production ML">
+Teams often monitor only model accuracy or loss, missing the root causes of degradation. Data drift (covariate shift) and concept drift are distinct phenomena requiring different detection methods — PSI/KS tests for input distributions, and performance decay on labeled samples for concept drift. By the time accuracy drops noticeably, the underlying drift may have been accumulating for weeks.
+</Callout>
+
+<Callout type="warning" title="Misconception: MLOps is just DevOps applied to ML">
+While MLOps borrows CI/CD principles from DevOps, ML systems have unique challenges: data versioning alongside code versioning, experiment tracking across hyperparameter sweeps, model validation gates (not just unit tests), feature store management, and continuous retraining triggers. A purely DevOps approach misses these ML-specific concerns and leads to brittle production pipelines.
+</Callout>
+
+---
+
+<Callout type="tip" title="Key Takeaways">
+- **Optimization is a spectrum, not a binary:** Combine quantization (size), pruning (sparsity), and distillation (architecture) for compounding gains — a pruned + quantized model can be 10–50× smaller than the original with minimal accuracy loss.
+- **Deploy defensively:** Use canary deployments with automatic rollback thresholds, not big-bang releases. Shadow mode (serving both old and new models, comparing outputs) catches regressions before they reach users.
+- **Monitor the data, not just the model:** Feature distributions shift before model performance degrades. Catching data drift early (via PSI, KS tests, or population stability monitoring) gives you a retraining head start measured in weeks, not days.
+- **TFX pipelines pay off at the second iteration:** The overhead of building an ExampleGen → StatisticsGen → SchemaGen → Transform → Trainer → Evaluator → Pusher pipeline feels heavy for a first deployment, but becomes essential the moment you need reproducible retraining, automated validation gates, or audit trails.
+</Callout>
+
+---
+
 ## Summary
 
 This module covered the complete lifecycle of production ML deployment:
@@ -1749,6 +1790,44 @@ This module covered the complete lifecycle of production ML deployment:
 8. **MLOps**: Best practices for production ML systems
 
 The key to successful production ML is treating models as software systems that require the same rigor in testing, deployment, and monitoring as any other production application.
+
+---
+
+## References
+
+### Foundational Papers
+
+1. **Jacob et al. (2018)** — *Quantization and Training of Neural Networks for Efficient Integer-Arithmetic-Only Inference*. Google's seminal INT8 quantization paper introducing the fake-quantization approach used in TensorFlow's QAT pipeline. Established the straight-through estimator workflow now standard across frameworks.
+
+2. **Han et al. (2016)** — *Deep Compression: Compressing Deep Neural Networks with Pruning, Trained Quantization and Huffman Coding*. The landmark "compression trifecta" paper demonstrating that pruning, quantization, and entropy coding can be combined for 35–49× compression on AlexNet/VGG without accuracy loss. Foundational for model optimization theory.
+
+3. **Hinton et al. (2015)** — *Distilling the Knowledge in a Neural Network*. Introduced knowledge distillation with temperature-scaled softmax (the "dark knowledge" concept). The student-teacher framework and temperature parameter T > 1 are now standard practice for model compression.
+
+4. **Olston et al. (2017)** — *TensorFlow-Serving: Flexible, High-Performance ML Serving*. Describes the architecture of TF Serving: Servables, Loaders, Sources, and the Aspired Versions mechanism for zero-downtime model updates. Directly relevant to Chapter 4.
+
+5. **Baylor et al. (2017)** — *TFX: A TensorFlow-Based Production-Scale Machine Learning Platform*. The original TFX paper from Google describing the end-to-end pipeline architecture (ExampleGen through Pusher) that became the open-source TFX library. Essential reading for Chapter 5.
+
+6. **Sculley et al. (2015)** — *Hidden Technical Debt in Machine Learning Systems*. The foundational "ML systems" paper identifying configuration debt, data dependency debt, and the observation that ML code is a tiny fraction of a production ML system. Motivates the entire MLOps discipline covered in Chapter 9.
+
+7. **McMahan et al. (2017)** — *Communication-Efficient Learning of Deep Networks from Decentralized Data*. Introduced Federated Averaging (FedAvg), the algorithm presented in Section 10.2. Showed that averaging local SGD updates across devices converges while keeping data decentralized.
+
+8. **Zoph & Le (2017)** — *Neural Architecture Search with Reinforcement Learning*. The pioneering NAS paper using an RNN controller trained with REINFORCE to generate architecture descriptions. While computationally expensive (800 GPUs), it opened the field covered in Section 10.1.
+
+9. **Liu et al. (2019)** — *DARTS: Differentiable Architecture Search*. Made NAS practical by relaxing the discrete search space to continuous, enabling gradient-based optimization. Orders of magnitude faster than RL-based NAS. Referenced in the gradient-based row of the NAS strategies table.
+
+10. **Frankle & Carlin (2019)** — *The Lottery Ticket Hypothesis: Finding Sparse, Trainable Neural Networks*. Demonstrated that dense networks contain sparse subnetworks ("winning tickets") that can train to full accuracy when initialized correctly. Deepens the theoretical understanding of pruning in Section 2.3.
+
+### Further Reading
+
+11. **Nagel et al. (2021)** — *A White Paper on Neural Network Quantization*. Qualcomm's comprehensive survey of quantization methods: PTQ, QAT, mixed-precision, and hardware considerations. Excellent practical guide beyond the theory in Chapter 2.
+
+12. **Polino et al. (2018)** — *Model Compression via Distillation and Quantization*. Combines distillation and quantization in a single training loop, showing they are complementary rather than competing techniques. Extends the "compression spectrum" concept from Key Takeaways.
+
+13. **Kairouz et al. (2021)** — *Advances and Open Problems in Federated Learning*. Comprehensive 100+ page survey covering non-IID data, communication efficiency, privacy (differential privacy + secure aggregation), and systems challenges. Deepens Section 10.2.
+
+14. **Paleyes et al. (2022)** — *Challenges in Deploying Machine Learning: A Survey of Case Studies*. Systematic review of real-world ML deployment failures and lessons learned. Covers data management, monitoring, and organizational challenges — complements the MLOps best practices in Chapter 9.
+
+15. **Shankar et al. (2022)** — *Operationalizing Machine Learning: An Interview Study*. Qualitative study of ML practitioners revealing that monitoring, debugging, and data management consume more engineering time than model development. Reinforces the "monitor the data, not just the model" takeaway.
 
 ---
 

@@ -21,6 +21,17 @@ lastConverted: "2026-04-10T19:38:38.421Z"
 ---
 # Chapter 1: Foundations of Artificial Intelligence and Deep Learning
 
+<VideoEmbed
+  type="youtube"
+  src="aircAruvnKk"
+  title="Primer — But what is a neural network? (3Blue1Brown, ~19 min)"
+  moduleId="01-intro-deep-learning"
+/>
+
+> **Heads up:** the embed above is a placeholder intro video. The final course
+> will replace it with a module-specific recorded lecture. It will not fetch
+> anything from YouTube until you click it.
+
 ## 1.1 Historical Evolution of Artificial Intelligence
 
 ### 1.1.1 The Foundational Era (1950s-1960s)
@@ -300,6 +311,14 @@ Input → Layer 1 → Layer 2 → ... → Layer L → Output
 | **Training Time** | None | Minutes to hours | Hours to weeks |
 | **Inference Time** | Fast | Fast | Fast to moderate |
 | **Generalization** | Poor outside domain | Moderate | Good with proper regularization |
+
+<Callout type="warning" title="Common Misconceptions for Beginners">
+
+1. **"Deep learning is always better than classical ML."** For small, tabular datasets gradient-boosted trees (XGBoost, LightGBM) often outperform neural networks and train in seconds. Deep learning shines when you have large amounts of unstructured data (images, text, audio).
+2. **"More layers = better model."** Adding depth without proper regularisation, skip connections, or normalisation leads to vanishing gradients and worse performance, not better.
+3. **"AI, ML, and DL are interchangeable terms."** They are nested subsets — every DL system is ML, but not every ML system is DL, and many AI systems (e.g., rule-based expert systems) involve no learning at all.
+
+</Callout>
 
 ### 1.2.4 Types of Machine Learning
 
@@ -1093,6 +1112,14 @@ end for
 
 ## 2.6 The Optimization Landscape in Deep Learning
 
+<Callout type="warning" title="Common Misconceptions about Optimizers">
+
+1. **"Adam is always the best optimizer."** Adam converges faster but can generalize worse than SGD+momentum on well-tuned image classification tasks. Many state-of-the-art results (e.g., ResNet, EfficientNet) still use SGD+momentum with cosine annealing.
+2. **"Adaptive learning rates eliminate the need for tuning."** Adam still has three hyperparameters (η, β₁, β₂) and is sensitive to η. The default lr=0.001 is a starting point, not a universal answer.
+3. **"The loss going down means the model is learning well."** A decreasing training loss can mask overfitting. Always monitor validation loss alongside training loss — divergence between them signals the model is memorizing, not generalizing.
+
+</Callout>
+
 ### 2.6.1 Local Minima in High Dimensions
 
 <Callout type="tip" title="Key Insight">
@@ -1289,6 +1316,10 @@ Rule 3: Arrays can be broadcast together if all dimensions are compatible
 
 <Callout type="note" title="Example">
 
+Below, array A has shape `(3, 1, 4)` and array B has shape `(2, 4)`. NumPy
+first pads B's shape to `(1, 2, 4)`, then stretches each size-1 dimension so
+the result is `(3, 2, 4)` — no extra memory is allocated for the expansion.
+
 </Callout>
 
 ```python
@@ -1452,8 +1483,8 @@ def col_sum_fast(a):
 ├──────────────────────────────────────────────────────────────────┤
 │  High-Level APIs                                                 │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐             │
-│  │ Keras    │ │ Estimator│ │ TensorFlow│ │ TensorFlow│           │
-│  │          │ │          │ │  Lite    │ │  JS      │             │
+│  │ Keras    │ │Estimator*│ │ TensorFlow│ │ TensorFlow│           │
+│  │          │ │(legacy)  │ │  Lite    │ │  JS      │             │
 │  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘             │
 ├───────┼────────────┼────────────┼────────────┼─────────────────┤
 │       └────────────┴────────────┴────────────┘                   │
@@ -1478,6 +1509,12 @@ def col_sum_fast(a):
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘             │
 └──────────────────────────────────────────────────────────────────┘
 ```
+
+<Callout type="warning" title="Common Misconception: Estimator API">
+
+The `tf.estimator` API shown in the diagram above is **deprecated as of TF 2.x**. New projects should use `tf.keras` exclusively. You may encounter Estimator-based code in older tutorials, TFX pipelines, and production systems migrated from TF 1.x, but there is no reason to start a new project with Estimators today. Google's own recommendation is to use Keras for all high-level modeling.
+
+</Callout>
 
 ### 4.1.2 Core Components
 
@@ -1545,6 +1582,15 @@ Tensor memory structure:
 ## 4.3 Computational Graphs
 
 ### 4.3.1 Graph Construction (TensorFlow 1.x Style)
+
+<Callout type="warning" title="Historical Context Only">
+
+The code below uses TensorFlow 1.x APIs (`tf.placeholder`, `tf.Session`) that
+are **deprecated in TF 2.x**. It is shown here so you can read older tutorials
+and papers. All labs in this course use TF 2.x eager execution and
+`tf.GradientTape`.
+
+</Callout>
 
 ```python
 import tensorflow as tf
@@ -1871,6 +1917,11 @@ Operations on dual numbers:
 
 <Callout type="note" title="Example">
 
+To differentiate `y = x²` at `x = 3` using forward-mode AD, seed the dual
+number as `(3, 1)` (value 3, derivative seed 1). Then apply the multiplication
+rule: `(3, 1) × (3, 1) = (9, 3·1 + 1·3) = (9, 6)`. The result gives both
+`y = 9` and `dy/dx = 6` in a single forward pass.
+
 </Callout>
 
 ```python
@@ -1906,6 +1957,12 @@ Two phases:
 ```
 
 <Callout type="note" title="Example">
+
+For `y = x₁ × x₂ + sin(x₁)` at `x₁ = 2, x₂ = 3`: the forward pass records
+`v₁ = x₁·x₂ = 6`, `v₂ = sin(x₁) ≈ 0.909`, `y = v₁ + v₂ ≈ 6.909`. The
+reverse pass starts with `∂y/∂y = 1` and propagates back: `∂y/∂v₁ = 1`,
+`∂y/∂v₂ = 1`, `∂y/∂x₁ = x₂ + cos(x₁) ≈ 3 + (−0.416) ≈ 2.584`,
+`∂y/∂x₂ = x₁ = 2`. One reverse pass gives **all** partial derivatives.
 
 </Callout>
 
@@ -2641,6 +2698,15 @@ tflite_model = converter.convert()
 
 ---
 
+<Callout type="tip" title="Key Takeaways — Module 1">
+
+1. **The three pillars of deep learning's success** are large datasets, GPU compute, and algorithmic advances (ReLU, dropout, batch norm, residual connections). None alone is sufficient — the convergence of all three drove the 2012+ revolution.
+2. **Gradient descent is conceptually simple but practically subtle.** Learning rate, batch size, and momentum interact non-linearly. Start with Adam as a default, but understand SGD+momentum for research-grade training.
+3. **NumPy fluency is a prerequisite, not an option.** Broadcasting, vectorization, and memory layout (C vs Fortran order) directly affect both correctness and performance of your data pipelines.
+4. **TF 2.x eager execution is the default** — use `tf.GradientTape` for custom training loops. Reserve `@tf.function` for production code where graph-mode speed matters, but prototype in eager mode first.
+
+</Callout>
+
 # Key Insights Summary
 
 ## Module 1 Key Takeaways
@@ -2681,13 +2747,28 @@ tflite_model = converter.convert()
 
 ---
 
-# Further Reading
+# References and Further Reading
 
-1. **Deep Learning** by Goodfellow, Bengio, and Courville
-2. **Pattern Recognition and Machine Learning** by Bishop
-3. **Neural Networks and Deep Learning** by Michael Nielsen (online)
-4. TensorFlow documentation: tensorflow.org
-5. Distill.pub for interactive explanations
+## Foundational Papers
+
+1. Rosenblatt, F. (1958). "The Perceptron: A Probabilistic Model for Information Storage and Organization in the Brain." *Psychological Review*, 65(6), 386–408. — The original perceptron learning algorithm with convergence proof; the paper that launched connectionism.
+2. Minsky, M. & Papert, S. (1969). *Perceptrons*. MIT Press. — Proved single-layer perceptrons cannot solve XOR; triggered the first AI winter but also clarified what multi-layer networks needed to achieve.
+3. Rumelhart, D., Hinton, G. & Williams, R. (1986). "Learning representations by back-propagating errors." *Nature*, 323, 533–536. — Popularized backpropagation for training multi-layer networks; the algorithmic foundation of all modern deep learning.
+4. LeCun, Y., Bottou, L., Bengio, Y. & Haffner, P. (1998). "Gradient-Based Learning Applied to Document Recognition." *Proceedings of the IEEE*, 86(11), 2278–2324. — Introduced LeNet-5 and demonstrated end-to-end gradient-based learning on MNIST; the blueprint for modern CNNs.
+5. Glorot, X. & Bengio, Y. (2010). "Understanding the difficulty of training deep feedforward neural networks." *AISTATS*. — Analyzed variance propagation through layers and proposed Xavier/Glorot initialization; essential reading for understanding why initialization matters.
+6. Kingma, D. & Ba, J. (2015). "Adam: A Method for Stochastic Optimization." *ICLR*. — Introduced Adam optimizer combining momentum and adaptive learning rates with bias correction; the default optimizer for most practitioners.
+7. Krizhevsky, A., Sutskever, I. & Hinton, G. (2012). "ImageNet Classification with Deep Convolutional Neural Networks." *NeurIPS*. — AlexNet: the paper that launched the modern deep learning era by winning ImageNet 2012 with a large margin using GPUs, ReLU, and dropout.
+8. Kaplan, J. et al. (2020). "Scaling Laws for Neural Language Models." *arXiv:2001.08361*. — Empirically derived power-law relationships between model size, data, compute, and performance; foundational for understanding why scale matters.
+9. He, K., Zhang, X., Ren, S. & Sun, J. (2015). "Delving Deep into Rectifiers." *ICCV*. — Proposed He (Kaiming) initialization for ReLU networks; proved that variance-aware initialization is critical for training very deep networks.
+10. Abadi, M. et al. (2016). "TensorFlow: A System for Large-Scale Machine Learning." *OSDI*. — The TensorFlow systems paper describing the computational graph abstraction, eager vs. graph execution, and distributed training architecture.
+
+## Further Reading
+
+11. **Deep Learning** by Goodfellow, Bengio, and Courville (2016). MIT Press. — The standard graduate textbook covering mathematical foundations, optimization, regularization, and modern architectures in depth.
+12. **Pattern Recognition and Machine Learning** by Bishop (2006). Springer. — Classical ML foundations with rigorous Bayesian treatment; excellent for understanding the probabilistic perspective that underlies deep learning.
+13. **Neural Networks and Deep Learning** by Michael Nielsen (online, free). — Excellent intuitive explanations with interactive visualizations; ideal first read before tackling Goodfellow et al.
+14. Distill.pub — Interactive, peer-reviewed articles on ML concepts (momentum, attention, feature visualization). The gold standard for visual explanations.
+15. Smith, L.N. (2017). "Cyclical Learning Rates for Training Neural Networks." *WACV*. — Introduced cyclical learning rate schedules and the LR range test; practical techniques covered in Lab 12 of this module.
 
 ---
 
