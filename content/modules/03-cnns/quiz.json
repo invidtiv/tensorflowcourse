@@ -131,6 +131,188 @@
         }
       ],
       "explanation": "Convolution gives equivariance; pooling (plus the final global average) is what yields approximate translation invariance of outputs."
+    },
+    {
+      "id": "m3-q6",
+      "type": "multiple-choice",
+      "difficulty": "easy",
+      "topic": "Parameter Counting",
+      "question": "How many trainable parameters does a Conv2D layer with 32 filters of size 3\u00d73, 3 input channels, and bias enabled have?",
+      "options": [
+        {
+          "text": "864",
+          "correct": false
+        },
+        {
+          "text": "896",
+          "correct": true
+        },
+        {
+          "text": "288",
+          "correct": false
+        },
+        {
+          "text": "32",
+          "correct": false
+        }
+      ],
+      "explanation": "Params = (kernel_h \u00d7 kernel_w \u00d7 in_channels + 1) \u00d7 out_channels = (3\u00b73\u00b73 + 1) \u00d7 32 = 28 \u00d7 32 = 896. Forgetting the +1 bias term (864) is the classic off-by-one beginners hit."
+    },
+    {
+      "id": "m3-q7",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "1x1 Convolutions",
+      "question": "What is the primary role of a 1\u00d71 convolution in modern CNN architectures like Inception and ResNet bottlenecks?",
+      "options": [
+        {
+          "text": "To increase the spatial resolution of feature maps",
+          "correct": false
+        },
+        {
+          "text": "To perform cheap cross-channel mixing and adjust channel depth (a learned linear combination per spatial location)",
+          "correct": true
+        },
+        {
+          "text": "To replace ReLU activation and add non-linearity on its own",
+          "correct": false
+        },
+        {
+          "text": "To apply spatial pooling without stride",
+          "correct": false
+        }
+      ],
+      "explanation": "A 1\u00d71 conv has no spatial extent, so it cannot change spatial resolution or pool. What it *can* do is mix channels: it is a pointwise linear combination across the channel dimension, used to cheaply project channel depth up or down (bottlenecks) and add capacity between 3\u00d73 layers."
+    },
+    {
+      "id": "m3-q8",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "Transfer Learning Pitfalls",
+      "question": "You load a pretrained ResNet50 from `tf.keras.applications`, set `base_model.trainable = False`, stack a new head, and train. Validation accuracy is weirdly unstable and way below the paper's numbers. Which single issue is the most likely culprit?",
+      "options": [
+        {
+          "text": "You forgot to normalize inputs with the model's expected preprocessing (`tf.keras.applications.resnet50.preprocess_input`) so the frozen conv stack sees out-of-distribution statistics",
+          "correct": true
+        },
+        {
+          "text": "You should have trained the head with SGD instead of Adam \u2014 Adam cannot fine-tune frozen models",
+          "correct": false
+        },
+        {
+          "text": "You need to reinitialize the frozen conv weights before training the head",
+          "correct": false
+        },
+        {
+          "text": "Freezing via `base_model.trainable = False` doesn't actually freeze the layers in Keras 3"
+        , "correct": false
+        }
+      ],
+      "explanation": "The number-one transfer-learning footgun: every `tf.keras.applications` model expects inputs preprocessed a specific way (ResNet50: caffe-style BGR mean subtraction; EfficientNet: rescale-to-0-1; etc.). Skipping `preprocess_input` feeds out-of-distribution statistics into a frozen feature extractor and destroys its representations. A secondary related trap is that `trainable=False` still lets BatchNorm layers update their moving statistics unless you also pass `training=False` at call time \u2014 but the preprocessing mismatch is the dominant cause of 'weirdly bad' transfer results."
+    },
+    {
+      "id": "m3-q9",
+      "type": "multiple-choice",
+      "difficulty": "easy",
+      "topic": "Global Average Pooling",
+      "question": "What is the main advantage of using Global Average Pooling (GAP) instead of a fully connected layer at the end of a CNN classifier?",
+      "options": [
+        {
+          "text": "It dramatically reduces the number of parameters by eliminating the large FC weight matrix, acting as a structural regularizer",
+          "correct": true
+        },
+        {
+          "text": "It increases the spatial resolution of feature maps before classification",
+          "correct": false
+        },
+        {
+          "text": "It replaces the need for any activation functions in the network",
+          "correct": false
+        },
+        {
+          "text": "It allows the network to output multiple predictions simultaneously",
+          "correct": false
+        }
+      ],
+      "explanation": "GAP collapses each feature map to a single scalar by averaging all spatial locations, replacing a massive FC layer (e.g., 7\u00d77\u00d7512 \u00d7 1000 = 25M params in VGG) with zero learnable parameters. This acts as a structural regularizer and makes the model accept variable input sizes. Introduced in Lin et al. (2013) 'Network in Network' and adopted by GoogLeNet, ResNet, and virtually all modern architectures."
+    },
+    {
+      "id": "m3-q10",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "ResNet Degradation Problem",
+      "question": "Before ResNet, deeper networks (e.g., 56-layer) performed WORSE than shallower ones (e.g., 20-layer) on BOTH training and test sets. Why does this 'degradation problem' rule out overfitting as the explanation?",
+      "options": [
+        {
+          "text": "Overfitting would produce LOW training error but HIGH test error. The degradation problem shows HIGH training error in deeper networks, meaning the network genuinely cannot learn the mapping \u2014 it's an optimization failure, not a generalization failure",
+          "correct": true
+        },
+        {
+          "text": "Deeper networks have fewer parameters, so they cannot possibly overfit",
+          "correct": false
+        },
+        {
+          "text": "The degradation problem only appears with small datasets, which can't cause overfitting",
+          "correct": false
+        },
+        {
+          "text": "Batch normalization was already preventing overfitting in these experiments, so it must be a different issue",
+          "correct": false
+        }
+      ],
+      "explanation": "The key insight from He et al. (2016): if a deeper network could at least learn the identity mapping for its extra layers, it should match the shallower network's performance. The fact that training error was higher proved the deeper network couldn't even learn identity \u2014 a fundamental optimization barrier, not overfitting. Skip connections solve this by making identity the default: the network only needs to learn the residual F(x) = H(x) - x, which is easier to optimize toward zero than learning H(x) = x from scratch."
+    },
+    {
+      "id": "m3-q11",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Depthwise Separable Convolutions",
+      "question": "A standard Conv2D with 64 input channels, 128 output channels, and a 3×3 kernel has (3×3×64+1)×128 = 73,856 parameters. How many parameters does the equivalent depthwise separable convolution (depthwise + pointwise) have?",
+      "options": [
+        {
+          "text": "73,856 — the same, because the factorization doesn't change parameter count",
+          "correct": false
+        },
+        {
+          "text": "(3×3×1+1)×64 + (1×1×64+1)×128 = 640 + 8,320 = 8,960",
+          "correct": true
+        },
+        {
+          "text": "(3×3×64)×128 = 73,728 — bias doesn't matter",
+          "correct": false
+        },
+        {
+          "text": "(3×3+1)×128 = 1,280 — only the pointwise layer has learnable parameters",
+          "correct": false
+        }
+      ],
+      "explanation": "Depthwise separable convolution factorizes the standard convolution into two steps: (1) depthwise — one 3×3 filter per input channel (no cross-channel mixing), giving (3×3×1+1)×64 = 640 params, and (2) pointwise — a 1×1 convolution to mix channels, giving (1×1×64+1)×128 = 8,320 params. Total: 8,960, which is ~8× fewer than the standard 73,856. This is the core trick behind MobileNet (Howard et al., 2017) and Xception (Chollet, 2017)."
+    },
+    {
+      "id": "m3-q12",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "Vision Transformers vs CNNs",
+      "question": "Vision Transformers (ViT) split images into 16×16 patches and process them with self-attention. Compared to CNNs, what is the primary inductive bias that ViT LACKS, and what practical consequence does this have?",
+      "options": [
+        {
+          "text": "ViT lacks translation equivariance (local spatial structure), so it requires much larger training datasets (e.g., JFT-300M) to learn spatial relationships that CNNs get 'for free' from convolution",
+          "correct": true
+        },
+        {
+          "text": "ViT lacks non-linearity, so it cannot model complex decision boundaries without additional activation functions",
+          "correct": false
+        },
+        {
+          "text": "ViT lacks the ability to process color images, requiring grayscale conversion before patch embedding",
+          "correct": false
+        },
+        {
+          "text": "ViT lacks backpropagation support, so it must be trained with evolutionary strategies or reinforcement learning",
+          "correct": false
+        }
+      ],
+      "explanation": "CNNs encode two strong inductive biases: locality (each filter sees a small spatial region) and translation equivariance (the same filter is applied everywhere). ViT has neither — it treats patch embeddings as an unordered set (modulo positional embeddings). Dosovitskiy et al. (2020) showed that without these biases, ViT needs ~10–100× more training data to match CNN accuracy. On large datasets (JFT-300M, LAION-5B) ViT excels, but on ImageNet-1K alone it underperforms well-tuned ResNets. This is why DeiT (Touvron et al., 2021) introduced distillation and strong augmentation to make ViT competitive at smaller data scales."
     }
   ]
 }

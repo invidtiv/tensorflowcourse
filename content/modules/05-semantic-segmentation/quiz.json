@@ -131,6 +131,188 @@
         }
       ],
       "explanation": "mIoU averages IoU over classes; it is the standard segmentation metric because it is robust to class imbalance."
+    },
+    {
+      "id": "m5-q6",
+      "type": "multiple-choice",
+      "difficulty": "easy",
+      "topic": "FCN Architecture",
+      "question": "What key architectural change did Fully Convolutional Networks (FCN) introduce compared to earlier sliding-window CNN approaches to segmentation?",
+      "options": [
+        {
+          "text": "They replaced all convolutional layers with fully connected layers",
+          "correct": false
+        },
+        {
+          "text": "They replaced the final fully connected layers with convolutional layers, enabling end-to-end dense prediction on arbitrary-sized inputs",
+          "correct": true
+        },
+        {
+          "text": "They used only 1×1 convolutions throughout the entire network",
+          "correct": false
+        },
+        {
+          "text": "They removed all pooling layers to preserve spatial resolution",
+          "correct": false
+        }
+      ],
+      "explanation": "FCN's breakthrough was converting classification networks (e.g., VGG) into fully convolutional ones by replacing the dense layers with 1×1 convolutions and adding learnable upsampling (transposed convolutions). This allows the network to accept any input size and produce a dense, per-pixel prediction map in a single forward pass — unlike sliding-window methods that classified each patch independently."
+    },
+    {
+      "id": "m5-q7",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Output Stride",
+      "question": "A segmentation model has an output stride (OS) of 16. What does this mean, and what is the primary trade-off when reducing it to OS=8?",
+      "options": [
+        {
+          "text": "The output is 16× larger than the input; reducing to OS=8 halves memory usage",
+          "correct": false
+        },
+        {
+          "text": "The output feature map is 1/16 the spatial resolution of the input; reducing to OS=8 doubles spatial resolution but roughly quadruples computation and memory",
+          "correct": true
+        },
+        {
+          "text": "The model takes 16 strides per convolution; OS=8 makes it faster by taking fewer strides",
+          "correct": false
+        },
+        {
+          "text": "The model has 16 output classes; OS=8 means fewer classes are predicted",
+          "correct": false
+        }
+      ],
+      "explanation": "Output stride is the ratio of input spatial resolution to the deepest feature map resolution. OS=16 means a 512×512 input produces a 32×32 feature map. Reducing to OS=8 (e.g., by replacing a stride-2 layer with an atrous convolution at rate 2) doubles the feature map to 64×64, which improves boundary localization — but the feature map has 4× more spatial elements, so both memory and compute roughly quadruple. DeepLab typically uses OS=16 for training and OS=8 for evaluation as a practical compromise."
+    },
+    {
+      "id": "m5-q8",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "Tversky Loss",
+      "question": "The Tversky loss generalizes the Dice loss with two parameters α and β that weight false positives and false negatives differently. In medical image segmentation where missing a lesion is far more dangerous than a false alarm, which parameter setting is most appropriate?",
+      "options": [
+        {
+          "text": "α = 0.5, β = 0.5 (equal weighting, identical to Dice)",
+          "correct": false
+        },
+        {
+          "text": "α = 0.7, β = 0.3 (penalize false positives more heavily than false negatives)",
+          "correct": false
+        },
+        {
+          "text": "α = 0.3, β = 0.7 (penalize false negatives more heavily than false positives)",
+          "correct": true
+        },
+        {
+          "text": "α = 1.0, β = 0.0 (ignore false negatives entirely)",
+          "correct": false
+        }
+      ],
+      "explanation": "The Tversky index is TI = TP / (TP + α·FP + β·FN). When β > α, the denominator grows faster for false negatives, so the loss penalizes missed detections more than false alarms. In medical imaging, a missed lesion (FN) can be life-threatening, so we set α < β (e.g., 0.3 / 0.7) to push the model toward higher recall at the expense of some precision. Setting α = β = 0.5 recovers the standard Dice coefficient, which treats FP and FN symmetrically."
+    },
+    {
+      "id": "m5-q9",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Post-Processing / CRF",
+      "question": "Dense CRF post-processing typically improves segmentation boundary quality by modeling pairwise pixel relationships. What is the primary reason this technique is often skipped in real-time segmentation pipelines?",
+      "options": [
+        {
+          "text": "CRF requires ground-truth labels at inference time",
+          "correct": false
+        },
+        {
+          "text": "CRF inference adds 100–500 ms per image due to iterative mean-field approximation, which exceeds real-time latency budgets",
+          "correct": true
+        },
+        {
+          "text": "CRF only works with binary (two-class) segmentation masks",
+          "correct": false
+        },
+        {
+          "text": "CRF always degrades mIoU because it over-smooths small objects",
+          "correct": false
+        }
+      ],
+      "explanation": "Dense CRF uses iterative mean-field inference with bilateral and Gaussian pairwise potentials, which refines boundaries by encouraging nearby pixels with similar color to share the same label. While this can boost mIoU by 2-5%, each iteration involves message passing across all pixel pairs (approximated via high-dimensional filtering), adding 100-500ms per image. For real-time applications targeting 30+ FPS (~33ms per frame), this overhead is prohibitive. Modern alternatives include boundary-aware losses (e.g., boundary Dice) or lightweight learned CRF modules like ConvCRF that trade global pairwise reasoning for speed."
+    },
+    {
+      "id": "m5-q10",
+      "type": "multiple-choice",
+      "difficulty": "easy",
+      "topic": "Real-Time Segmentation",
+      "question": "BiSeNet achieves real-time segmentation by splitting the network into two pathways. What is the role of each pathway?",
+      "options": [
+        {
+          "text": "One pathway processes RGB channels and the other processes depth channels",
+          "correct": false
+        },
+        {
+          "text": "A spatial path preserves high-resolution spatial detail while a context path captures rich semantic information at lower resolution",
+          "correct": true
+        },
+        {
+          "text": "One pathway runs on CPU and the other runs on GPU for hardware parallelism",
+          "correct": false
+        },
+        {
+          "text": "Both pathways are identical but process the image at different crop positions",
+          "correct": false
+        }
+      ],
+      "explanation": "BiSeNet's bilateral design separates the competing demands of segmentation: the spatial path uses a small, shallow network that preserves 1/8 resolution for fine boundary detail, while the context path uses a deep backbone (e.g., ResNet-18) with rapid downsampling for large receptive fields and high-level semantics. A Feature Fusion Module merges both, achieving 68.4% mIoU on Cityscapes at 105 FPS — demonstrating that decoupling spatial and semantic processing is more efficient than a single compromise architecture."
+    },
+    {
+      "id": "m5-q11",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Panoptic Segmentation",
+      "question": "Panoptic segmentation unifies semantic and instance segmentation. What is the key distinction between 'stuff' and 'things' classes in the panoptic framework, and how does this affect the output format?",
+      "options": [
+        {
+          "text": "'Stuff' classes (sky, road) are amorphous regions assigned per-pixel labels only, while 'things' classes (car, person) receive both a class label and a unique instance ID per connected object",
+          "correct": true
+        },
+        {
+          "text": "'Stuff' refers to moving objects and 'things' refers to static background — the model outputs separate masks for each",
+          "correct": false
+        },
+        {
+          "text": "'Stuff' and 'things' are interchangeable terms — every pixel gets an instance ID regardless of class",
+          "correct": false
+        },
+        {
+          "text": "'Stuff' classes are predicted at half resolution and 'things' at full resolution to save compute",
+          "correct": false
+        }
+      ],
+      "explanation": "In panoptic segmentation (Kirillov et al., 2019), 'stuff' classes are uncountable amorphous regions (sky, grass, road) where individual instances don't make semantic sense — they only need per-pixel class labels. 'Things' classes are countable objects (car, person, dog) that require both a class label and a unique instance ID to distinguish separate objects of the same class. The output is a panoptic map where each pixel has a (class_id, instance_id) tuple, with instance_id = 0 for stuff classes. The Panoptic Quality (PQ) metric evaluates both simultaneously: PQ = SQ × RQ (Segmentation Quality × Recognition Quality)."
+    },
+    {
+      "id": "m5-q12",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "ASPP Design",
+      "question": "DeepLab v3's Atrous Spatial Pyramid Pooling (ASPP) uses parallel atrous convolutions at rates {6, 12, 18} plus a 1×1 convolution and global average pooling. Why does ASPP include the global average pooling branch, and what problem does it address?",
+      "options": [
+        {
+          "text": "Global average pooling reduces memory usage by compressing the feature map to a single vector before the final classifier",
+          "correct": false
+        },
+        {
+          "text": "At very high dilation rates, atrous convolutions degenerate — the kernel samples only a few effective pixels — so global average pooling provides a complementary image-level feature that captures full-image context",
+          "correct": true
+        },
+        {
+          "text": "Global average pooling is needed to normalize the outputs of the different atrous branches to the same scale before concatenation",
+          "correct": false
+        },
+        {
+          "text": "It replaces the CRF post-processing step by providing global smoothing within the network itself",
+          "correct": false
+        }
+      ],
+      "explanation": "As the dilation rate increases, the effective number of kernel weights that fall on valid feature map locations decreases — at extreme rates, a 3×3 atrous convolution degenerates toward a 1×1 convolution (the 'gridding problem'). This means the highest-rate branches in ASPP may not effectively capture the global context they're designed for. The image-level global average pooling branch addresses this by collapsing the entire feature map into a single vector (then upsampled back), providing a guaranteed global context signal regardless of dilation artifacts. Chen et al. (2017) showed this branch contributes 0.5–1.0% mIoU improvement on PASCAL VOC 2012, confirming that explicit global features complement the multi-scale atrous branches."
     }
   ]
 }

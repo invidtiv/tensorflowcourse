@@ -131,6 +131,214 @@
         }
       ],
       "explanation": "StyleGAN maps latent z to intermediate w, then injects w via AdaIN at each scale \u2014 disentangling coarse and fine style attributes."
+    },
+    {
+      "id": "m7-q6",
+      "type": "multiple-choice",
+      "difficulty": "easy",
+      "topic": "GAN Training",
+      "question": "In the original GAN paper, what practical modification is recommended for the generator's loss to avoid vanishing gradients early in training?",
+      "options": [
+        {
+          "text": "Minimize log(1 \u2212 D(G(z))) as stated in the minimax objective",
+          "correct": false
+        },
+        {
+          "text": "Maximize log D(G(z)) instead, providing stronger gradients when D easily rejects fakes",
+          "correct": true
+        },
+        {
+          "text": "Use L2 pixel loss between generated and real images",
+          "correct": false
+        },
+        {
+          "text": "Train the generator twice for every discriminator step",
+          "correct": false
+        }
+      ],
+      "explanation": "When the generator is poor, D(G(z)) \u2248 0 and the gradient of log(1 \u2212 D(G(z))) is nearly flat. Maximizing log D(G(z)) instead gives a much stronger gradient signal early in training. This is the 'non-saturating' loss recommended in Goodfellow et al. (2014)."
+    },
+    {
+      "id": "m7-q7",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Evaluation Metrics",
+      "question": "A GAN achieves a low FID score but a low Inception Score. What is the most likely explanation?",
+      "options": [
+        {
+          "text": "The GAN has collapsed to a single mode",
+          "correct": false
+        },
+        {
+          "text": "The generated images are realistic and diverse but do not clearly belong to recognizable ImageNet classes",
+          "correct": true
+        },
+        {
+          "text": "The FID calculation has a bug",
+          "correct": false
+        },
+        {
+          "text": "The GAN is overfitting to the training set",
+          "correct": false
+        }
+      ],
+      "explanation": "IS relies on the Inception classifier producing confident per-class predictions and diverse marginal class coverage. If a GAN generates realistic images that don\u2019t map neatly onto ImageNet categories (e.g., abstract textures, medical images), IS will be low even though FID \u2014 which compares feature distributions directly \u2014 correctly reflects the quality. This is why FID is the preferred primary metric."
+    },
+    {
+      "id": "m7-q8",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "WGAN-GP",
+      "question": "In WGAN-GP, the gradient penalty is computed on interpolated samples x\u0302 = \u03b5x_real + (1\u2212\u03b5)x_fake. Why are interpolated samples used instead of just real or fake samples?",
+      "options": [
+        {
+          "text": "To reduce computational cost by halving the batch size needed",
+          "correct": false
+        },
+        {
+          "text": "Because the 1-Lipschitz constraint must hold everywhere, and interpolations sample the region between the real and generated manifolds where the critic\u2019s gradient matters most",
+          "correct": true
+        },
+        {
+          "text": "Because the gradient is always zero on real and fake samples",
+          "correct": false
+        },
+        {
+          "text": "To implement a form of data augmentation that improves discriminator generalization",
+          "correct": false
+        }
+      ],
+      "explanation": "The Kantorovich-Rubinstein duality requires the critic to be 1-Lipschitz everywhere, but enforcing this globally is intractable. Gulrajani et al. (2017) showed that for optimal critics the gradient norm is 1 almost everywhere along straight lines between pairs of points from p_data and p_g. Interpolations sample exactly this region \u2014 the 'transport path' between distributions \u2014 where violations of the Lipschitz constraint would most affect the Wasserstein estimate."
+    },
+    {
+      "id": "m7-q9",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Conditional GANs",
+      "question": "In a projection discriminator for conditional GANs (Miyato & Koyama, 2018), how is the class label y incorporated into the discriminator's decision?",
+      "options": [
+        {
+          "text": "The class label is concatenated with the image as an additional input channel",
+          "correct": false
+        },
+        {
+          "text": "The discriminator's feature vector is projected (inner product) with a learned class embedding, adding a class-specific bias to the realness score",
+          "correct": true
+        },
+        {
+          "text": "A separate classification head predicts the class, and its loss is added to the adversarial loss",
+          "correct": false
+        },
+        {
+          "text": "Class-conditional batch normalization replaces all normalization layers in the discriminator",
+          "correct": false
+        }
+      ],
+      "explanation": "The projection discriminator computes an inner product between the discriminator's feature representation φ(x) and a learned class embedding ψ(y), effectively adding a class-specific term to the discriminator score. This is more stable than naive concatenation (option A, which dilutes the conditioning signal) and avoids the training interference of auxiliary classifiers (option C, which is AC-GAN). Class-conditional batch norm (option D) is used in the generator (e.g., BigGAN), not the discriminator."
+    },
+    {
+      "id": "m7-q10",
+      "type": "multiple-choice",
+      "difficulty": "easy",
+      "topic": "Diffusion Models",
+      "question": "What is the main advantage of diffusion models over GANs?",
+      "options": [
+        {
+          "text": "Diffusion models generate images in a single forward pass, making them faster",
+          "correct": false
+        },
+        {
+          "text": "Diffusion models use stable training (no adversarial game) and achieve better mode coverage, but require many iterative denoising steps at inference",
+          "correct": true
+        },
+        {
+          "text": "Diffusion models require no neural networks, only statistical sampling",
+          "correct": false
+        },
+        {
+          "text": "Diffusion models always produce higher resolution images than GANs",
+          "correct": false
+        }
+      ],
+      "explanation": "Diffusion models train a denoiser with a simple MSE loss (no adversarial instability) and naturally cover the full data distribution (no mode collapse). The trade-off is inference speed: generating a single image requires hundreds of sequential denoising steps (though techniques like DDIM and consistency models reduce this). GANs remain faster at inference (single forward pass) but harder to train stably."
+    },
+    {
+      "id": "m7-q11",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Progressive Growing",
+      "question": "In Progressive Growing of GANs (PGGAN), what is the purpose of the fade-in mechanism when adding new higher-resolution layers?",
+      "options": [
+        {
+          "text": "It pre-trains the new layers independently before connecting them to the rest of the network",
+          "correct": false
+        },
+        {
+          "text": "It linearly interpolates between the upsampled lower-resolution output and the new higher-resolution layers using a blending factor α that increases from 0 to 1 during training",
+          "correct": true
+        },
+        {
+          "text": "It freezes the existing layers and only trains the new ones until they converge",
+          "correct": false
+        },
+        {
+          "text": "It doubles the learning rate for the new layers to help them catch up with the trained layers",
+          "correct": false
+        }
+      ],
+      "explanation": "The fade-in mechanism smoothly transitions from one resolution to the next by blending: G_new = (1-α)·upsample(G_old) + α·G_additional, where α linearly increases from 0 to 1. This prevents the sudden introduction of untrained layers from destabilizing the already-learned lower-resolution representations. Option A is wrong because the layers are not pretrained in isolation. Option C is wrong because all layers continue training during fade-in. Option D is wrong because no learning rate doubling is used."
+    },
+    {
+      "id": "m7-q12",
+      "type": "multiple-choice",
+      "difficulty": "easy",
+      "topic": "DCGAN Architecture",
+      "question": "Which architectural guideline from the DCGAN paper (Radford et al., 2016) replaces deterministic spatial pooling layers in the discriminator?",
+      "options": [
+        {
+          "text": "Max pooling with larger kernel sizes",
+          "correct": false
+        },
+        {
+          "text": "Strided convolutions, allowing the network to learn its own spatial downsampling",
+          "correct": true
+        },
+        {
+          "text": "Average pooling followed by a fully connected layer",
+          "correct": false
+        },
+        {
+          "text": "Dilated convolutions to increase receptive field without reducing resolution",
+          "correct": false
+        }
+      ],
+      "explanation": "DCGAN replaced all pooling layers with strided convolutions (discriminator) and fractional-strided convolutions (generator). This lets the network learn its own downsampling/upsampling functions rather than using fixed pooling operations. Combined with batch normalization, ReLU in the generator, and LeakyReLU in the discriminator, these guidelines became the standard recipe for convolutional GANs. Max pooling (option A) loses spatial information deterministically. Average pooling + FC (option C) was the pre-DCGAN approach. Dilated convolutions (option D) don't downsample at all."
+    },
+    {
+      "id": "m7-q13",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "Truncation Trick",
+      "question": "In BigGAN, the 'truncation trick' resamples latent vectors z from a truncated normal distribution N(0, I; |z_i| < ψ). What is the effect of decreasing the truncation threshold ψ from 2.0 to 0.5?",
+      "options": [
+        {
+          "text": "Generated images become more diverse but lower quality, as the model explores unusual regions of latent space",
+          "correct": false
+        },
+        {
+          "text": "Generated images become higher quality but less diverse, as latent vectors concentrate near the distribution's mean",
+          "correct": true
+        },
+        {
+          "text": "Training becomes more stable because extreme gradient values are avoided",
+          "correct": false
+        },
+        {
+          "text": "The discriminator becomes easier to fool because truncated inputs are always classified as real",
+          "correct": false
+        }
+      ],
+      "explanation": "The truncation trick trades diversity for quality at inference time (it does not affect training — option C is wrong). A smaller ψ constrains z closer to the origin where the generator has seen the most training signal, producing higher-fidelity but less varied samples. A larger ψ allows exploration of the latent space periphery, increasing diversity but risking artifacts. This is a post-hoc inference-time control — the BigGAN paper showed that IS improves monotonically as ψ decreases, while FID has a sweet spot (too low ψ hurts FID due to lost diversity). Option D is wrong because the truncation trick operates at inference, not during adversarial training."
     }
   ]
 }

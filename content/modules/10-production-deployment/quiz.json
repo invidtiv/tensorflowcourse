@@ -131,6 +131,162 @@
         }
       ],
       "explanation": "Concept drift manifests as degraded predictive performance on fresh labeled data; monitoring live accuracy/calibration detects it."
+    },
+    {
+      "id": "m10-q6",
+      "type": "multiple-choice",
+      "difficulty": "easy",
+      "topic": "Pruning",
+      "question": "What is the primary goal of weight pruning in a trained neural network?",
+      "options": [
+        {
+          "text": "Replace the optimizer with a smaller one",
+          "correct": false
+        },
+        {
+          "text": "Remove low-magnitude weights to produce a sparser, smaller model with minimal accuracy loss",
+          "correct": true
+        },
+        {
+          "text": "Increase the number of parameters to improve generalization",
+          "correct": false
+        },
+        {
+          "text": "Convert all floating-point weights to integers",
+          "correct": false
+        }
+      ],
+      "explanation": "Pruning zeroes out weights with small magnitudes, creating sparsity that reduces model size and can speed up inference. Fine-tuning afterward recovers most lost accuracy. Option D describes quantization, not pruning."
+    },
+    {
+      "id": "m10-q7",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "Knowledge Distillation",
+      "question": "In knowledge distillation, why is the temperature parameter T set greater than 1 when computing soft targets from the teacher model?",
+      "options": [
+        {
+          "text": "To sharpen the probability distribution so the student learns hard labels faster",
+          "correct": false
+        },
+        {
+          "text": "To soften the probability distribution, exposing inter-class similarity information (dark knowledge) that hard labels discard",
+          "correct": true
+        },
+        {
+          "text": "To reduce the teacher's inference latency during distillation training",
+          "correct": false
+        },
+        {
+          "text": "To prevent the student model from overfitting to the teacher's exact weights",
+          "correct": false
+        }
+      ],
+      "explanation": "Higher T produces softer (more uniform) probability distributions that reveal how the teacher rates the relative similarity of incorrect classes — the 'dark knowledge'. At T=1 the distribution is peaked, and at T→∞ it becomes uniform. Typical T values are 3–20. Option A is backwards (higher T softens, not sharpens)."
+    },
+    {
+      "id": "m10-q8",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "A/B Testing",
+      "question": "When A/B testing two ML models in production, which practice is MOST important for obtaining statistically valid results?",
+      "options": [
+        {
+          "text": "Running both models on the same GPU to control for hardware variance",
+          "correct": false
+        },
+        {
+          "text": "Randomly assigning users to model variants with sufficient sample size and pre-defined success metrics",
+          "correct": true
+        },
+        {
+          "text": "Always routing more traffic to the newer model to speed up evaluation",
+          "correct": false
+        },
+        {
+          "text": "Comparing training loss curves instead of production metrics",
+          "correct": false
+        }
+      ],
+      "explanation": "Valid A/B testing requires random user assignment to prevent selection bias, sufficient sample size for statistical power, and pre-defined metrics to avoid p-hacking. Option C introduces bias; option D conflates offline and online evaluation."
+    },
+    {
+      "id": "m10-q9",
+      "type": "multiple-choice",
+      "difficulty": "easy",
+      "topic": "Canary Deployment",
+      "question": "In a canary deployment for ML models, what is the primary advantage over a full rollout?",
+      "options": [
+        {
+          "text": "It eliminates the need for model versioning",
+          "correct": false
+        },
+        {
+          "text": "A small percentage of traffic is routed to the new model first, allowing early detection of regressions before full exposure",
+          "correct": true
+        },
+        {
+          "text": "It automatically retrains the model on production data",
+          "correct": false
+        },
+        {
+          "text": "It reduces the model's inference latency by 50%",
+          "correct": false
+        }
+      ],
+      "explanation": "Canary deployments route a small fraction of traffic (e.g., 5–10%) to the new model version while the majority continues using the proven version. If the canary shows regressions in latency, error rate, or business metrics, it can be rolled back with minimal user impact. This is not about retraining or performance optimization — it's a risk-mitigation strategy."
+    },
+    {
+      "id": "m10-q10",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "Data Drift Detection",
+      "question": "When using the Population Stability Index (PSI) to detect covariate shift in production features, a PSI value of 0.35 indicates:",
+      "options": [
+        {
+          "text": "No significant distribution change — the model is stable",
+          "correct": false
+        },
+        {
+          "text": "Minor shift that requires continued monitoring but no immediate action",
+          "correct": false
+        },
+        {
+          "text": "Significant distribution change (PSI > 0.25) — investigation and potential model retraining are warranted",
+          "correct": true
+        },
+        {
+          "text": "The feature should be permanently removed from the model",
+          "correct": false
+        }
+      ],
+      "explanation": "PSI thresholds are: <0.10 = no significant change, 0.10–0.25 = moderate shift (monitor closely), >0.25 = significant shift (action required). A PSI of 0.35 falls clearly in the 'significant' range, indicating the feature's distribution has changed enough to potentially degrade model performance. This warrants investigation and likely retraining — but removing the feature entirely (option D) is an overreaction without further analysis."
+    },
+    {
+      "id": "m10-q11",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Feature Store",
+      "question": "What is the PRIMARY problem that a feature store solves in production ML systems?",
+      "options": [
+        {
+          "text": "Replacing the need for a model registry by storing trained model weights",
+          "correct": false
+        },
+        {
+          "text": "Ensuring training-serving consistency by providing a single source of truth for feature definitions, transformations, and values",
+          "correct": true
+        },
+        {
+          "text": "Automatically selecting the best features for a model via feature importance ranking",
+          "correct": false
+        },
+        {
+          "text": "Compressing feature vectors to reduce storage costs in the data warehouse",
+          "correct": false
+        }
+      ],
+      "explanation": "The core value of a feature store is eliminating training-serving skew: the same feature transformation logic and values are used in both the offline training pipeline and the online serving path. This prevents subtle bugs where training preprocesses data differently than serving. Feature stores also enable feature reuse across teams and models, versioning, and point-in-time correctness — but consistency is the primary motivation. Option A confuses feature stores with model registries; option C describes feature selection, a separate concern."
     }
   ]
 }

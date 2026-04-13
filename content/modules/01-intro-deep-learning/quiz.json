@@ -131,6 +131,188 @@
         }
       ],
       "explanation": "The deep learning revolution was driven by data, compute (GPUs), and algorithmic advances. Quantum computing was not a contributor."
+    },
+    {
+      "id": "m1-q6",
+      "type": "multiple-choice",
+      "difficulty": "easy",
+      "topic": "NumPy Broadcasting",
+      "question": "Given `a` with shape (3, 1) and `b` with shape (1, 4), what is the shape of `a + b` after NumPy broadcasting?",
+      "options": [
+        {
+          "text": "(3, 4)",
+          "correct": true
+        },
+        {
+          "text": "(1, 1)",
+          "correct": false
+        },
+        {
+          "text": "(3, 1)",
+          "correct": false
+        },
+        {
+          "text": "Error — shapes are incompatible",
+          "correct": false
+        }
+      ],
+      "explanation": "Broadcasting stretches each dimension of size 1 to match the other operand, so (3,1) and (1,4) both become (3,4). A common student mistake is to assume the arrays must have identical shapes before addition."
+    },
+    {
+      "id": "m1-q7",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Gradient Descent Pitfalls",
+      "question": "You set a very large learning rate and the loss starts oscillating and then diverges to NaN. What is the most likely cause?",
+      "options": [
+        {
+          "text": "The step size is too large, causing updates to overshoot the minimum and amplify each iteration",
+          "correct": true
+        },
+        {
+          "text": "The model has too few parameters to fit the data",
+          "correct": false
+        },
+        {
+          "text": "The batch size is too small to estimate the gradient",
+          "correct": false
+        },
+        {
+          "text": "The dataset is not shuffled between epochs",
+          "correct": false
+        }
+      ],
+      "explanation": "With a learning rate above the stability threshold (roughly 2/L for an L-smooth loss), each step overshoots the minimum by more than it corrects, producing growing oscillations that eventually overflow to NaN. Shrinking the learning rate or using a schedule typically fixes it."
+    },
+    {
+      "id": "m1-q8",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "TensorFlow Autodiff",
+      "question": "Inside a `tf.GradientTape()` block, you compute `y = x * x` where `x` is a `tf.constant`. Calling `tape.gradient(y, x)` returns `None`. Why?",
+      "options": [
+        {
+          "text": "Gradients with respect to non-trainable tensors are not tracked by default; `x` must be a `tf.Variable` or watched explicitly via `tape.watch(x)`",
+          "correct": true
+        },
+        {
+          "text": "`tf.GradientTape` only records operations on GPU tensors",
+          "correct": false
+        },
+        {
+          "text": "`y = x * x` has a zero gradient at the origin, so TensorFlow returns `None` as an optimization",
+          "correct": false
+        },
+        {
+          "text": "The tape was not placed inside a `@tf.function`",
+          "correct": false
+        }
+      ],
+      "explanation": "By default, `tf.GradientTape` only records operations on trainable `tf.Variable`s. Constants are ignored unless you call `tape.watch(x)` to add them explicitly — a common gotcha when first learning autodiff in TF 2.x."
+    },
+    {
+      "id": "m1-q9",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Weight Initialization",
+      "question": "Why is initializing all weights to zero a bad idea for a multi-layer neural network?",
+      "options": [
+        {
+          "text": "Zero weights cause division-by-zero errors during training",
+          "correct": false
+        },
+        {
+          "text": "All neurons in a layer compute the same function and receive identical gradient updates, so the network never learns diverse features",
+          "correct": true
+        },
+        {
+          "text": "TensorFlow raises an error if weights are initialized to zero",
+          "correct": false
+        },
+        {
+          "text": "Zero initialization causes exploding gradients in the first backward pass",
+          "correct": false
+        }
+      ],
+      "explanation": "With all-zero weights, every neuron in a layer produces the same output and receives the same gradient — this is called the 'symmetry problem'. The network effectively behaves as if it has one neuron per layer no matter how wide it is. Random initialization (e.g., He or Xavier) breaks this symmetry."
+    },
+    {
+      "id": "m1-q10",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "NumPy Memory Layout",
+      "question": "A NumPy array `a` is created with `np.zeros((1000, 1000), order='C')`. Which access pattern will be faster and why?",
+      "options": [
+        {
+          "text": "Iterating over rows (a[i, :]) is faster because C-order stores rows contiguously in memory, enabling CPU cache line prefetching",
+          "correct": true
+        },
+        {
+          "text": "Iterating over columns (a[:, j]) is faster because C-order prioritizes column access",
+          "correct": false
+        },
+        {
+          "text": "Both patterns are equally fast because NumPy always optimizes memory access",
+          "correct": false
+        },
+        {
+          "text": "Neither is fast — NumPy arrays of this size always use disk-backed storage",
+          "correct": false
+        }
+      ],
+      "explanation": "C-order (row-major) arrays store elements row by row in contiguous memory. Accessing a[i, :] reads consecutive memory addresses, which the CPU cache prefetcher handles efficiently. Column access (a[:, j]) jumps 1000 elements between reads, causing frequent cache misses. For column-major access patterns, use order='F' (Fortran order). This is covered in Chapter 3 on NumPy internals."
+    },
+    {
+      "id": "m1-q11",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Adam Optimizer",
+      "question": "Adam combines ideas from two earlier optimizers. Which two techniques does Adam unify?",
+      "options": [
+        {
+          "text": "Momentum (first moment of the gradient) and RMSprop-style adaptive learning rates (second moment of the gradient)",
+          "correct": true
+        },
+        {
+          "text": "AdaGrad's accumulated gradient and Nesterov's look-ahead correction",
+          "correct": false
+        },
+        {
+          "text": "Learning rate warmup and cosine annealing",
+          "correct": false
+        },
+        {
+          "text": "Weight decay and gradient clipping",
+          "correct": false
+        }
+      ],
+      "explanation": "Adam maintains two exponential moving averages: m_t (first moment, like momentum) and v_t (second moment, like RMSprop). It then applies bias correction to both before computing the update. This is why Adam often works well out-of-the-box — it adapts per-parameter learning rates while also smoothing gradient noise via momentum."
+    },
+    {
+      "id": "m1-q12",
+      "type": "hard",
+      "difficulty": "hard",
+      "topic": "tf.function Tracing",
+      "question": "You decorate a function with `@tf.function` and call it first with a tensor of shape (32, 10) and then with shape (64, 10). What happens on the second call?",
+      "options": [
+        {
+          "text": "TensorFlow retraces the function because the input signature changed, creating a second cached graph",
+          "correct": true
+        },
+        {
+          "text": "TensorFlow reuses the first graph since both inputs are 2-D tensors",
+          "correct": false
+        },
+        {
+          "text": "TensorFlow raises a ValueError because the shape doesn't match the first trace",
+          "correct": false
+        },
+        {
+          "text": "The function runs in eager mode since @tf.function only traces once",
+          "correct": false
+        }
+      ],
+      "explanation": "tf.function traces a new concrete function for each unique input signature (shape + dtype). The second call has a different first dimension (64 vs 32), so TF retraces and caches a second graph. This is why you may see 'retracing' warnings if you call a tf.function with many different shapes — use input_signature to constrain it. Covered in Section 4.4.3."
     }
   ]
 }

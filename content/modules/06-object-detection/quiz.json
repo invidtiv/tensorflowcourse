@@ -131,6 +131,188 @@
         }
       ],
       "explanation": "FPN builds a top-down pathway with lateral connections, producing feature maps at multiple scales with rich semantics at each."
+    },
+    {
+      "id": "m6-q6",
+      "type": "multiple-choice",
+      "difficulty": "easy",
+      "topic": "Two-stage vs One-stage",
+      "question": "What is the key architectural difference between two-stage detectors (e.g., Faster R-CNN) and one-stage detectors (e.g., YOLO)?",
+      "options": [
+        {
+          "text": "Two-stage detectors use a separate region proposal step before classification, while one-stage detectors predict boxes and classes in a single pass",
+          "correct": true
+        },
+        {
+          "text": "Two-stage detectors only work on grayscale images",
+          "correct": false
+        },
+        {
+          "text": "One-stage detectors require more training data than two-stage detectors",
+          "correct": false
+        },
+        {
+          "text": "Two-stage detectors do not use convolutional neural networks",
+          "correct": false
+        }
+      ],
+      "explanation": "Two-stage detectors like Faster R-CNN first generate region proposals (via an RPN), then classify and refine each proposal. One-stage detectors like YOLO and SSD skip the proposal step entirely and predict bounding boxes and class probabilities directly from the feature map in a single forward pass, trading some accuracy for significantly faster inference."
+    },
+    {
+      "id": "m6-q7",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "YOLO Grid Cell",
+      "question": "In YOLOv1, an object's center falls into one grid cell. That cell predicts B bounding boxes. Which statement about this design is correct?",
+      "options": [
+        {
+          "text": "Only the grid cell containing the object's center is responsible for detecting that object",
+          "correct": true
+        },
+        {
+          "text": "All grid cells that the bounding box overlaps are responsible for detecting the object",
+          "correct": false
+        },
+        {
+          "text": "The grid cell with the highest IoU always detects the object, regardless of center location",
+          "correct": false
+        },
+        {
+          "text": "Each grid cell is responsible for exactly one object across all scales",
+          "correct": false
+        }
+      ],
+      "explanation": "YOLOv1 assigns detection responsibility based solely on which grid cell contains the object's center point, not which cells the box overlaps. This center-assignment rule is a core design choice: it guarantees each object is predicted by exactly one cell, avoiding duplicate detections at the architecture level (though NMS is still applied to the B per-cell predictions). A common student mistake is thinking overlap determines responsibility — it doesn't."
+    },
+    {
+      "id": "m6-q8",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "mAP Calculation",
+      "question": "When computing mean Average Precision (mAP) for object detection, detections are first sorted by confidence. A detection is a True Positive if its IoU with a ground-truth box exceeds a threshold AND that ground-truth has not already been matched. What happens to mAP if you lower the IoU threshold from 0.75 to 0.50?",
+      "options": [
+        {
+          "text": "mAP generally increases because more detections qualify as True Positives",
+          "correct": true
+        },
+        {
+          "text": "mAP generally decreases because the evaluation becomes stricter",
+          "correct": false
+        },
+        {
+          "text": "mAP is unaffected because it depends only on confidence scores",
+          "correct": false
+        },
+        {
+          "text": "mAP becomes undefined at thresholds below 0.75",
+          "correct": false
+        }
+      ],
+      "explanation": "Lowering the IoU threshold makes it easier for a predicted box to be counted as a True Positive (it needs less overlap with the ground truth). This increases recall at each precision level, raising the area under the Precision-Recall curve — i.e., AP per class and therefore mAP. This is exactly why COCO reports mAP@[.5:.95] (averaging over multiple thresholds) while Pascal VOC used the more lenient mAP@0.50: the threshold directly controls evaluation stringency. A model's mAP@0.50 is almost always higher than its mAP@0.75."
+    },
+    {
+      "id": "m6-q9",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Transformer Detectors",
+      "question": "DETR (Detection Transformer) replaces several hand-designed components of traditional detectors. Which component does DETR eliminate by using Hungarian matching during training?",
+      "options": [
+        {
+          "text": "The backbone CNN feature extractor",
+          "correct": false
+        },
+        {
+          "text": "Hand-crafted anchor boxes and the heuristic label assignment step",
+          "correct": true
+        },
+        {
+          "text": "The bounding box regression head",
+          "correct": false
+        },
+        {
+          "text": "The need for labeled training data",
+          "correct": false
+        }
+      ],
+      "explanation": "DETR uses a fixed set of learnable object queries and bipartite Hungarian matching to establish a one-to-one assignment between predictions and ground-truth objects. This eliminates the need for predefined anchor boxes and the heuristic rules (IoU thresholds, positive/negative sampling) used by traditional detectors to assign labels to anchors. The backbone CNN and regression head are still present — DETR replaces the proposal/anchor mechanism, not the feature extraction or box prediction itself."
+    },
+    {
+      "id": "m6-q10",
+      "type": "multiple-choice",
+      "difficulty": "easy",
+      "topic": "TF Object Detection API",
+      "question": "When using the TensorFlow Object Detection API, training data must be provided in which format?",
+      "options": [
+        {
+          "text": "TFRecord format with serialized tf.train.Example protocol buffers",
+          "correct": true
+        },
+        {
+          "text": "Raw JPEG images in a flat directory with a CSV label file",
+          "correct": false
+        },
+        {
+          "text": "COCO JSON annotation format directly (no conversion needed)",
+          "correct": false
+        },
+        {
+          "text": "HDF5 files with bounding box arrays",
+          "correct": false
+        }
+      ],
+      "explanation": "The TF Object Detection API expects data in TFRecord format, where each record is a serialized tf.train.Example containing the image bytes, bounding box coordinates, and class labels. While tools exist to convert from COCO JSON or Pascal VOC XML to TFRecords, the API's training pipeline (model_main_tf2.py) reads TFRecords natively. This binary format enables efficient sequential I/O and integrates with tf.data pipelines for prefetching and parallel reads."
+    },
+    {
+      "id": "m6-q11",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "CIoU Loss",
+      "question": "Complete IoU (CIoU) loss adds two penalty terms beyond GIoU. One penalizes the distance between predicted and ground-truth box centers. What does the second penalty address?",
+      "options": [
+        {
+          "text": "The consistency of aspect ratio between predicted and ground-truth boxes",
+          "correct": true
+        },
+        {
+          "text": "The difference in class confidence scores",
+          "correct": false
+        },
+        {
+          "text": "The total number of predicted boxes per image",
+          "correct": false
+        },
+        {
+          "text": "The L2 distance between feature vectors of predicted and ground-truth regions",
+          "correct": false
+        }
+      ],
+      "explanation": "CIoU = IoU − (ρ²(b, b_gt) / c²) − αv, where ρ² is the squared center distance, c is the diagonal of the smallest enclosing box, and v measures aspect ratio consistency via v = (4/π²)(arctan(w_gt/h_gt) − arctan(w/h))². The aspect ratio term encourages the predicted box to match the ground-truth shape, not just location and overlap. GIoU only penalizes the gap area; DIoU adds center distance; CIoU further adds aspect ratio — each variant addresses a limitation of the previous one."
+    },
+    {
+      "id": "m6-q12",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Anchor-Free Detection",
+      "question": "In anchor-free detectors like FCOS, each spatial location in the feature map predicts distances to the four sides of a bounding box (l, t, r, b). How does FCOS handle the ambiguity when a location falls inside multiple ground-truth boxes?",
+      "options": [
+        {
+          "text": "It assigns the location to the smallest ground-truth box (minimum area), and uses multi-level prediction so each FPN level handles a specific object size range",
+          "correct": true
+        },
+        {
+          "text": "It predicts all overlapping boxes simultaneously and relies on NMS to filter duplicates",
+          "correct": false
+        },
+        {
+          "text": "It discards any location that falls inside more than one ground-truth box during training",
+          "correct": false
+        },
+        {
+          "text": "It randomly assigns the location to one of the overlapping boxes with equal probability",
+          "correct": false
+        }
+      ],
+      "explanation": "FCOS resolves multi-box ambiguity with two mechanisms: (1) each spatial location is assigned to the ground-truth box with the smallest area, and (2) multi-level FPN prediction restricts which object size range each feature level handles (e.g., P3 for small objects, P7 for large). Together these ensure almost every location is unambiguously assigned. Additionally, FCOS predicts a 'centerness' score that down-weights detections far from the object center, reducing low-quality predictions from boundary locations."
     }
   ]
 }

@@ -104,7 +104,7 @@
           "correct": false
         }
       ],
-      "explanation": "For N parameters the Hessian is N\u00d7N \u2014 prohibitive for millions of parameters. Approximations like K-FAC or Hessian-vector products are used instead."
+      "explanation": "For N parameters the Hessian is N×N — prohibitive for millions of parameters. Approximations like K-FAC or Hessian-vector products are used instead."
     },
     {
       "id": "m4-q5",
@@ -130,7 +130,189 @@
           "correct": false
         }
       ],
-      "explanation": "L2 weight decay adds \u03bb\u00b7||w||\u00b2 to the loss, discouraging large weights and improving generalization."
+      "explanation": "L2 weight decay adds λ·||w||² to the loss, discouraging large weights and improving generalization."
+    },
+    {
+      "id": "m4-q6",
+      "type": "multiple-choice",
+      "difficulty": "easy",
+      "topic": "Dropout",
+      "question": "When using `tf.keras.layers.Dropout(0.5)`, what happens at inference time (i.e. `model(x, training=False)` or `model.predict`)?",
+      "options": [
+        {
+          "text": "Dropout is disabled; all units pass through and no rescaling is needed because Keras uses inverted dropout during training",
+          "correct": true
+        },
+        {
+          "text": "Half of the activations are still randomly zeroed out to match training behavior",
+          "correct": false
+        },
+        {
+          "text": "Dropout is disabled and all activations are multiplied by 0.5 to compensate",
+          "correct": false
+        },
+        {
+          "text": "Dropout behaves identically to training mode",
+          "correct": false
+        }
+      ],
+      "explanation": "Keras implements *inverted* dropout: during training, surviving activations are divided by the keep-probability (1 - rate), so at inference the layer is simply an identity. The common beginner bug is assuming you need a manual 0.5 scaling at test time — Keras already handles it."
+    },
+    {
+      "id": "m4-q7",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "LR Scheduling",
+      "question": "In the 1cycle policy (Smith, 2018), what is the correct shape of the learning-rate schedule over a single training run?",
+      "options": [
+        {
+          "text": "LR ramps up from a low value to a high peak, then ramps back down below the starting LR, usually paired with inverse momentum",
+          "correct": true
+        },
+        {
+          "text": "LR is held constant and then decayed once at the end",
+          "correct": false
+        },
+        {
+          "text": "LR oscillates between two bounds forever, never decaying",
+          "correct": false
+        },
+        {
+          "text": "LR decays exponentially from a high starting value to zero",
+          "correct": false
+        }
+      ],
+      "explanation": "1cycle does a linear/cosine warm-up to a max LR, then a symmetric cool-down to a value *lower* than the starting LR (the 'annihilation' phase). Momentum is typically scheduled inversely — high when LR is low and vice-versa. This is distinct from cyclical LR (CLR), which keeps oscillating without an annihilation tail."
+    },
+    {
+      "id": "m4-q8",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "Optimizers",
+      "question": "Why does `tf.keras.optimizers.AdamW` often generalize better than `Adam(..., kernel_regularizer=l2(...))` even when the L2 coefficient is tuned?",
+      "options": [
+        {
+          "text": "AdamW decouples weight decay from the adaptive-rate update, so the decay is not scaled by the per-parameter `1/(sqrt(v_hat)+eps)` factor the way an L2 term added to the loss would be",
+          "correct": true
+        },
+        {
+          "text": "AdamW uses a second-order Hessian approximation that standard Adam lacks",
+          "correct": false
+        },
+        {
+          "text": "AdamW applies weight decay only to the bias parameters, which standard Adam ignores",
+          "correct": false
+        },
+        {
+          "text": "AdamW is just a renamed Adam; the generalization gap is attributable to different default hyperparameters",
+          "correct": false
+        }
+      ],
+      "explanation": "Loshchilov & Hutter (2019) showed that when you add an L2 term to the loss, the resulting gradient contribution gets divided by Adam's adaptive denominator, so parameters with large historical gradients are decayed *less* — the opposite of what you want. AdamW applies `w ← w - lr * (m_hat / (sqrt(v_hat) + eps) + wd * w)` so the `wd * w` term is applied directly to the weight, independent of the adaptive rate. This is why the AdamW paper is titled *Decoupled Weight Decay Regularization*."
+    },
+    {
+      "id": "m4-q9",
+      "type": "multiple-choice",
+      "difficulty": "easy",
+      "topic": "Mixed Precision Training",
+      "question": "In mixed precision training, why is a \"loss scaling\" step needed when using FP16?",
+      "options": [
+        {
+          "text": "FP16 has a narrow representable range, so small gradient values underflow to zero; loss scaling amplifies them into representable range before the backward pass",
+          "correct": true
+        },
+        {
+          "text": "FP16 cannot represent negative numbers, so loss scaling shifts values to be positive",
+          "correct": false
+        },
+        {
+          "text": "Loss scaling converts the loss from FP16 to FP32 format automatically",
+          "correct": false
+        },
+        {
+          "text": "Loss scaling is only needed for inference, not training",
+          "correct": false
+        }
+      ],
+      "explanation": "FP16 has limited dynamic range (~6x10^-8 to 65504). Many gradient values during backpropagation are small enough to underflow to zero in FP16. Loss scaling multiplies the loss by a large factor (e.g., 1024) before the backward pass, which scales all gradients into representable FP16 range. The gradients are then unscaled before the optimizer step. Master weights are kept in FP32 for the actual parameter update."
+    },
+    {
+      "id": "m4-q10",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "Cosine Annealing",
+      "question": "Cosine annealing with warm restarts (SGDR) periodically resets the learning rate to a high value. What is the primary theoretical motivation for these restarts?",
+      "options": [
+        {
+          "text": "Restarts allow the optimizer to escape sharp local minima and explore wider basins of the loss landscape, potentially finding flatter minima that generalize better",
+          "correct": true
+        },
+        {
+          "text": "Restarts are needed to re-initialize the Adam moment estimates which become stale over time",
+          "correct": false
+        },
+        {
+          "text": "Restarts double the batch size each cycle to improve GPU utilization",
+          "correct": false
+        },
+        {
+          "text": "Restarts force the model to forget previous training data, acting as a form of data augmentation",
+          "correct": false
+        }
+      ],
+      "explanation": "Loshchilov & Hutter (2017) showed that periodic LR restarts allow the optimizer to \"jump out\" of sharp minima (which tend to generalize poorly) and settle into wider, flatter basins. Each restart cycle typically gets longer (e.g., T0, 2*T0, 4*T0), giving the optimizer progressively more time to converge to better solutions. This is related to the observation that flat minima correlate with better generalization (Hochreiter & Schmidhuber, 1997)."
+    },
+    {
+      "id": "m4-q11",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "tf.data Pipeline",
+      "question": "Which `tf.data` optimization technique allows the CPU to prepare the NEXT batch while the GPU is training on the CURRENT batch?",
+      "options": [
+        {
+          "text": "`dataset.prefetch(tf.data.AUTOTUNE)` — overlaps data loading/preprocessing with model execution",
+          "correct": true
+        },
+        {
+          "text": "`dataset.cache()` — stores all data in RAM so the GPU never waits",
+          "correct": false
+        },
+        {
+          "text": "`dataset.batch(batch_size)` — larger batches keep the GPU busy longer",
+          "correct": false
+        },
+        {
+          "text": "`dataset.repeat()` — repeating the dataset ensures the pipeline never stalls",
+          "correct": false
+        }
+      ],
+      "explanation": "`prefetch` decouples the data production (CPU) from the data consumption (GPU/TPU) by preparing elements in advance in a background thread. `AUTOTUNE` dynamically adjusts the buffer size. While `cache()` avoids re-reading from disk, and larger batches improve GPU utilization, neither specifically overlaps CPU prep with GPU execution the way `prefetch` does. This is arguably the single most impactful `tf.data` optimization."
+    },
+    {
+      "id": "m4-q12",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "Normalization",
+      "question": "Why do Transformer architectures (e.g., BERT, GPT) use Layer Normalization instead of Batch Normalization?",
+      "options": [
+        {
+          "text": "LayerNorm normalizes across features within each sample independently, so it works with variable-length sequences and doesn't depend on batch statistics — critical for autoregressive decoding where batch size may be 1",
+          "correct": true
+        },
+        {
+          "text": "LayerNorm is mathematically simpler and faster to compute than BatchNorm",
+          "correct": false
+        },
+        {
+          "text": "BatchNorm was not invented until after Transformers were already established",
+          "correct": false
+        },
+        {
+          "text": "LayerNorm introduces more trainable parameters, giving the model greater capacity",
+          "correct": false
+        }
+      ],
+      "explanation": "BatchNorm computes statistics across the batch dimension, which creates two problems for Transformers: (1) variable-length sequences make the batch statistics meaningless across positions, and (2) at inference with batch_size=1 (e.g., autoregressive generation), there's no batch to normalize over — you'd rely on running statistics that may not match. LayerNorm computes statistics across the feature dimension for each sample independently, making it invariant to batch size and sequence length. This is covered in Section 6 of the theory: GroupNorm and InstanceNorm also avoid batch-dependency but LayerNorm (G=1 in GroupNorm notation) became the standard for NLP/Transformers."
     }
   ]
 }

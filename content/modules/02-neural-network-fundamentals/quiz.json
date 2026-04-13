@@ -131,6 +131,188 @@
         }
       ],
       "explanation": "Simply enlarging the batch size does not address gradient vanishing or exploding; normalization, skip connections, and proper init do."
+    },
+    {
+      "id": "m2-q6",
+      "type": "multiple-choice",
+      "difficulty": "easy",
+      "topic": "Softmax",
+      "question": "Why is softmax typically applied to the final layer of a multi-class classifier rather than being baked into the loss computation manually?",
+      "options": [
+        {
+          "text": "It is the only function that produces values in [0, 1]",
+          "correct": false
+        },
+        {
+          "text": "It normalizes logits into a probability distribution that sums to 1 across classes",
+          "correct": true
+        },
+        {
+          "text": "It speeds up backpropagation by avoiding the chain rule",
+          "correct": false
+        },
+        {
+          "text": "It eliminates the need for an activation function in hidden layers",
+          "correct": false
+        }
+      ],
+      "explanation": "Softmax exponentiates each logit and divides by the sum, producing non-negative values that sum to 1 — a valid categorical distribution. Sigmoid also outputs [0, 1] but per-unit, not normalized across classes; that is why sigmoid is for binary or multi-label, not mutually exclusive multi-class."
+    },
+    {
+      "id": "m2-q7",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Weight Initialization",
+      "question": "You build a 20-layer fully-connected ReLU network and initialize all weights from N(0, 1). Training loss stays flat. What is the most likely cause?",
+      "options": [
+        {
+          "text": "The learning rate is too low",
+          "correct": false
+        },
+        {
+          "text": "Activations explode or saturate because the variance is not scaled to the fan-in (He init was not used)",
+          "correct": true
+        },
+        {
+          "text": "ReLU is incompatible with fully-connected layers",
+          "correct": false
+        },
+        {
+          "text": "Categorical cross-entropy needs to be replaced with MSE",
+          "correct": false
+        }
+      ],
+      "explanation": "With N(0, 1) weights, the variance of activations grows with depth and ReLUs either explode or die. He initialization (N(0, 2/fan_in)) keeps the forward/backward variance roughly stable across layers, which is exactly what deep ReLU networks need. A low learning rate would still show *some* movement; here the signal itself is broken."
+    },
+    {
+      "id": "m2-q8",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "Batch Normalization",
+      "question": "A student applies BatchNormalization AFTER the ReLU in every block and also calls `model.fit(..., training=True)` during evaluation by mistake. Which statement best describes the two bugs?",
+      "options": [
+        {
+          "text": "Both bugs are harmless because BN is order-invariant and `training=True` is the default anyway",
+          "correct": false
+        },
+        {
+          "text": "BN-after-ReLU only normalizes non-negative activations (skewing the distribution), and `training=True` at eval uses batch statistics instead of the stored moving averages, leaking train-time variance into predictions",
+          "correct": true
+        },
+        {
+          "text": "BN-after-ReLU is fine, but `training=True` at eval disables dropout",
+          "correct": false
+        },
+        {
+          "text": "BN must always come after ReLU, and `training=True` is required during evaluation for correct gradients",
+          "correct": false
+        }
+      ],
+      "explanation": "The canonical placement is Linear → BN → ReLU: normalizing *before* the non-linearity lets BN actually recenter the pre-activation distribution. Placing BN after ReLU means it only sees values in [0, ∞), which is biased and defeats half the point. Separately, `training=True` at eval time forces BN to use the current mini-batch's mean/variance instead of the population estimates it accumulated during training — so predictions become batch-size-dependent and non-deterministic."
+    },
+    {
+      "id": "m2-q9",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Keras APIs",
+      "question": "You need to build a model that takes both an image and a text description as inputs and produces a single classification output. Which Keras API is the simplest correct choice?",
+      "options": [
+        {
+          "text": "Sequential API with two separate models concatenated at the end",
+          "correct": false
+        },
+        {
+          "text": "Functional API with multiple Input layers merged via a concatenate layer",
+          "correct": true
+        },
+        {
+          "text": "Model Subclassing — multi-input models always require subclassing",
+          "correct": false
+        },
+        {
+          "text": "Sequential API with a custom preprocessing layer that merges inputs",
+          "correct": false
+        }
+      ],
+      "explanation": "The Functional API natively supports multiple inputs and outputs by defining separate Input tensors and merging them with layers like Concatenate. The Sequential API strictly requires a single linear stack — it cannot accept multiple inputs. Model Subclassing would also work but is overkill for this use case; the Functional API is the simplest correct approach."
+    },
+    {
+      "id": "m2-q10",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "Perceptron Limitations",
+      "question": "Minsky and Papert's 1969 proof showed that a single-layer perceptron cannot compute XOR. Which property of XOR makes it impossible for a linear classifier?",
+      "options": [
+        {
+          "text": "XOR has too many input features for a single perceptron to handle",
+          "correct": false
+        },
+        {
+          "text": "XOR's positive and negative examples are not linearly separable — no single hyperplane can divide the four input-output pairs correctly",
+          "correct": true
+        },
+        {
+          "text": "XOR requires continuous outputs but perceptrons can only produce binary values",
+          "correct": false
+        },
+        {
+          "text": "XOR is a non-deterministic function that produces different outputs for the same input",
+          "correct": false
+        }
+      ],
+      "explanation": "XOR maps (0,0)→0, (0,1)→1, (1,0)→1, (1,1)→0. If you plot these four points in 2D, the positive class (1) points are at opposite corners from the negative class (0) points — no single straight line (hyperplane) can separate them. This is the definition of non-linear separability. Adding a hidden layer creates a feature transformation that remaps the points into a space where they become separable."
+    },
+    {
+      "id": "m2-q11",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Weight Initialization",
+      "question": "You switch a 15-layer network from tanh activations to ReLU but keep Xavier initialization (variance = 1/fan_in). Training loss barely decreases. What is the most likely fix?",
+      "options": [
+        {
+          "text": "Switch to He initialization (variance = 2/fan_in) which accounts for ReLU zeroing out half the distribution",
+          "correct": true
+        },
+        {
+          "text": "Initialize all weights to small constants like 0.01",
+          "correct": false
+        },
+        {
+          "text": "Switch the optimizer from SGD to Adam, which auto-corrects for initialization scale",
+          "correct": false
+        },
+        {
+          "text": "Add more layers so the network has more capacity to learn",
+          "correct": false
+        }
+      ],
+      "explanation": "Xavier initialization assumes the activation is approximately linear near zero (true for tanh/sigmoid). ReLU zeroes out roughly half its inputs, halving the effective variance at each layer. He initialization compensates by doubling the variance (2/fan_in instead of 1/fan_in), keeping activation magnitudes stable across layers. Small constant init causes symmetry breaking failure, Adam helps with gradient scaling but doesn't fix the fundamental variance collapse, and more layers would make the problem worse."
+    },
+    {
+      "id": "m2-q12",
+      "type": "hard",
+      "difficulty": "hard",
+      "topic": "Loss Functions",
+      "question": "You train a binary classifier using MSE loss instead of binary cross-entropy. The model achieves reasonable accuracy but trains significantly slower. What is the primary mathematical reason for the slower convergence?",
+      "options": [
+        {
+          "text": "MSE is not differentiable at the decision boundary",
+          "correct": false
+        },
+        {
+          "text": "When sigmoid output saturates near 0 or 1, the MSE gradient becomes vanishingly small (proportional to σ'(z)), whereas the cross-entropy gradient simplifies to (ŷ - y) which stays informative",
+          "correct": true
+        },
+        {
+          "text": "MSE requires the output to be in (-∞, +∞) which conflicts with sigmoid's [0, 1] range",
+          "correct": false
+        },
+        {
+          "text": "MSE cannot handle class imbalance while cross-entropy can",
+          "correct": false
+        }
+      ],
+      "explanation": "With sigmoid output σ(z) and MSE loss, the gradient includes the σ'(z) term which approaches zero when the sigmoid saturates (z very positive or very negative). The combined gradient is (ŷ - y) · σ'(z), which vanishes even when the prediction is very wrong but confident. Cross-entropy cancels the σ'(z) factor, leaving the clean gradient (ŷ - y). This is why cross-entropy + sigmoid is the natural pairing for binary classification — it keeps the gradient signal proportional to the error regardless of confidence."
     }
   ]
 }

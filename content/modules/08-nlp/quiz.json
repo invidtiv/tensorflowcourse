@@ -131,6 +131,214 @@
         }
       ],
       "explanation": "Self-attention is permutation-invariant, so positional encodings (sinusoidal or learned) are added to embeddings to preserve sequence order information."
+    },
+    {
+      "id": "m8-q6",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "LSTM Gating",
+      "question": "In an LSTM cell, what is the role of the forget gate?",
+      "options": [
+        {
+          "text": "It decides which information from the previous cell state to discard by outputting values between 0 and 1 via a sigmoid activation",
+          "correct": true
+        },
+        {
+          "text": "It forgets the current input so the model focuses on long-term memory only",
+          "correct": false
+        },
+        {
+          "text": "It resets the hidden state to zero at the end of each sequence",
+          "correct": false
+        },
+        {
+          "text": "It prevents the model from overfitting by randomly dropping connections",
+          "correct": false
+        }
+      ],
+      "explanation": "The forget gate applies a sigmoid to the concatenation of the previous hidden state and current input, producing values in [0,1] that element-wise multiply the previous cell state. A value near 0 means 'forget this dimension', near 1 means 'keep it'. This selective forgetting is what allows LSTMs to learn long-range dependencies without gradient decay through the cell state highway."
+    },
+    {
+      "id": "m8-q7",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "BERT Pretraining",
+      "question": "BERT's Masked Language Model (MLM) objective randomly masks 15% of input tokens. Of those masked tokens, 80% are replaced with [MASK], 10% with a random token, and 10% are kept unchanged. Why not replace all masked tokens with [MASK]?",
+      "options": [
+        {
+          "text": "To reduce the pretrain–finetune discrepancy: [MASK] never appears during fine-tuning, so the model must also learn to predict from non-masked contexts",
+          "correct": true
+        },
+        {
+          "text": "To make training faster by reducing the number of masked positions",
+          "correct": false
+        },
+        {
+          "text": "To implement dropout-like regularization at the token level",
+          "correct": false
+        },
+        {
+          "text": "To ensure the vocabulary embedding for [MASK] does not dominate the representation space",
+          "correct": false
+        }
+      ],
+      "explanation": "If all selected tokens were replaced with [MASK], the model would learn that it only needs to predict at [MASK] positions and would never see [MASK] during fine-tuning — creating a mismatch. The 80/10/10 split forces the model to maintain a good representation for every token (not just [MASK] positions), because any token might need to be predicted. The random-token replacement also prevents the model from relying on the identity of the input token as a shortcut."
+    },
+    {
+      "id": "m8-q8",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Attention Variants",
+      "question": "What is the key difference between Bahdanau (additive) attention and Luong (multiplicative) attention?",
+      "options": [
+        {
+          "text": "Bahdanau uses a learned feed-forward network to compute alignment scores, while Luong uses a dot product (or bilinear form) between decoder and encoder states",
+          "correct": true
+        },
+        {
+          "text": "Bahdanau attention only works with GRU cells, while Luong attention only works with LSTMs",
+          "correct": false
+        },
+        {
+          "text": "Luong attention uses the previous decoder state, while Bahdanau uses the current one",
+          "correct": false
+        },
+        {
+          "text": "Bahdanau computes a single global attention vector, while Luong always uses local windowed attention",
+          "correct": false
+        }
+      ],
+      "explanation": "Bahdanau attention computes alignment via a small neural network: score(s_i, h_j) = v^T tanh(W_1 s_i + W_2 h_j). Luong attention simplifies this to a dot product s_i^T h_j or a bilinear s_i^T W h_j, which is computationally cheaper. Note that distractor C reverses the actual timing: Bahdanau uses the previous decoder state (s_{i-1}), and Luong uses the current one (s_i). Luong also proposed local attention as one option, but is not restricted to it."
+    },
+    {
+      "id": "m8-q9",
+      "type": "multiple-choice",
+      "difficulty": "easy",
+      "topic": "RNN Vanishing Gradient",
+      "question": "Why do vanilla RNNs struggle with long-range dependencies?",
+      "options": [
+        {
+          "text": "Gradients are multiplied by the recurrent weight matrix at each time step, causing them to shrink exponentially when the largest eigenvalue is less than 1",
+          "correct": true
+        },
+        {
+          "text": "RNNs can only process sequences shorter than 10 tokens",
+          "correct": false
+        },
+        {
+          "text": "The softmax output saturates for long sequences",
+          "correct": false
+        },
+        {
+          "text": "RNNs do not use backpropagation, so gradients cannot flow backward",
+          "correct": false
+        }
+      ],
+      "explanation": "During backpropagation through time (BPTT), the gradient of the loss with respect to early inputs involves a product of Jacobians ∂h_i/∂h_{i-1}. When the largest eigenvalue of W_hh is < 1, this product shrinks exponentially with the number of time steps, making it impossible for the network to learn dependencies beyond ~10-20 steps. LSTMs address this with a cell state that provides an additive (rather than multiplicative) gradient path."
+    },
+    {
+      "id": "m8-q10",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "GloVe vs Word2Vec",
+      "question": "How does GloVe differ from Word2Vec in its use of corpus statistics?",
+      "options": [
+        {
+          "text": "GloVe explicitly factorizes the log co-occurrence matrix with a weighted loss, while Word2Vec learns embeddings through local context prediction windows",
+          "correct": true
+        },
+        {
+          "text": "GloVe uses character n-grams while Word2Vec uses whole words",
+          "correct": false
+        },
+        {
+          "text": "GloVe trains on individual sentences while Word2Vec requires the entire corpus in memory",
+          "correct": false
+        },
+        {
+          "text": "GloVe produces contextual embeddings while Word2Vec produces static ones",
+          "correct": false
+        }
+      ],
+      "explanation": "GloVe (Global Vectors) explicitly constructs a global word-word co-occurrence matrix X and optimizes word vectors so that w_i · w_j + biases ≈ log(X_ij), weighted by f(X_ij) to downweight very frequent pairs. Word2Vec (Skip-gram/CBOW) instead uses local sliding windows to predict context words from target words (or vice versa). GloVe's key insight is that ratios of co-occurrence probabilities — not raw counts — encode meaning, which it captures through its matrix factorization objective. Distractor B describes FastText, not GloVe."
+    },
+    {
+      "id": "m8-q11",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Multi-Head Attention",
+      "question": "In a Transformer with d_model = 512 and h = 8 attention heads, what is the dimensionality of each head's key, query, and value projections, and why is this design choice important?",
+      "options": [
+        {
+          "text": "d_k = d_v = 64 (512/8); this keeps the total computational cost comparable to single-head attention with full dimensionality while allowing each head to attend to different representational subspaces",
+          "correct": true
+        },
+        {
+          "text": "d_k = d_v = 512; each head operates on the full dimension independently",
+          "correct": false
+        },
+        {
+          "text": "d_k = d_v = 8; the number of heads equals the per-head dimension",
+          "correct": false
+        },
+        {
+          "text": "d_k = d_v = 256; each head gets half the model dimension to reduce overfitting",
+          "correct": false
+        }
+      ],
+      "explanation": "Multi-head attention splits the model dimension across heads: d_k = d_v = d_model / h = 512/8 = 64. Each head learns independent Q, K, V projections of size d_model × d_k, so the total parameter count for all heads (h × 3 × d_model × d_k = 8 × 3 × 512 × 64) is the same as a single attention with 3 × d_model × d_model projections. The key benefit is that different heads can specialize — some may track syntactic dependencies, others positional relationships, and others semantic similarity — without competing for the same representational capacity."
+    },
+    {
+      "id": "m8-q12",
+      "type": "multiple-choice",
+      "difficulty": "easy",
+      "topic": "FastText Subword Embeddings",
+      "question": "How does FastText improve upon Word2Vec for handling out-of-vocabulary (OOV) words?",
+      "options": [
+        {
+          "text": "It represents each word as the sum of its character n-gram embeddings, so unseen words can be composed from known subword pieces",
+          "correct": true
+        },
+        {
+          "text": "It uses a larger vocabulary that includes all possible words in all languages",
+          "correct": false
+        },
+        {
+          "text": "It assigns a special [UNK] embedding trained on all rare words collectively",
+          "correct": false
+        },
+        {
+          "text": "It falls back to character-level RNN encoding for any word not in the vocabulary",
+          "correct": false
+        }
+      ],
+      "explanation": "FastText (Bojanowski et al., 2017) extends Skip-gram by representing each word as a bag of character n-grams (e.g., 'where' → '<wh', 'whe', 'her', 'ere', 're>'). The word embedding is the sum of its n-gram embeddings. For OOV words, the same decomposition produces a meaningful vector from known n-grams, unlike Word2Vec which has no representation at all for unseen words. Distractor B is impossible (infinite vocabulary), C collapses all rare words to one vector (losing semantics), and D describes a different architecture entirely."
+    },
+    {
+      "id": "m8-q13",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "T5 Text-to-Text Framework",
+      "question": "What is the key architectural insight of T5 (Text-to-Text Transfer Transformer) that distinguishes it from BERT and GPT?",
+      "options": [
+        {
+          "text": "T5 frames every NLP task — classification, translation, summarization, Q&A — as a text-to-text problem with task-specific prefixes, using a single encoder-decoder architecture for all tasks",
+          "correct": true
+        },
+        {
+          "text": "T5 uses a bidirectional encoder like BERT but generates output tokens autoregressively, making it strictly superior to both BERT and GPT on all benchmarks",
+          "correct": false
+        },
+        {
+          "text": "T5 eliminates positional encodings entirely, relying on causal masking alone to encode sequence order",
+          "correct": false
+        },
+        {
+          "text": "T5 pretrains with a standard next-token prediction objective identical to GPT, but at much larger scale",
+          "correct": false
+        }
+      ],
+      "explanation": "T5 (Raffel et al., 2020) unifies all NLP tasks into a single sequence-to-sequence format: the input is 'task prefix: input text' and the output is always text. For example, classification becomes 'classify: The movie was great' → 'positive'; translation becomes 'translate English to German: Hello' → 'Hallo'. This text-to-text framework means the same model, loss function, and hyperparameters work for every task. T5 does use an encoder-decoder architecture (distractor B is partially right but wrong to claim strict superiority), it uses relative positional encodings (not none — distractor C), and it uses a span-corruption denoising objective (not GPT-style next-token — distractor D)."
     }
   ]
 }
