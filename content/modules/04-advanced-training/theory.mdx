@@ -45,6 +45,8 @@ lastConverted: "2026-04-10T19:38:38.484Z"
 10. [Mixed Precision Training](#10-mixed-precision)
 11. [Distributed Training Strategies](#11-distributed-training)
 12. [Practical Considerations and Best Practices](#12-practical-considerations)
+    - 12.0 [Gradient Clipping](#120-gradient-clipping)
+    - 12.1 [Optimizer Selection Guide](#121-optimizer-selection-guide)
 
 ---
 
@@ -1289,6 +1291,60 @@ For very large models (e.g., GPT-3):
 ---
 
 ## 12. Practical Considerations and Best Practices
+
+### 12.0 Gradient Clipping
+
+**The Exploding Gradient Problem:**
+
+During backpropagation through deep or recurrent networks, gradients can grow
+exponentially large — a phenomenon called the **exploding gradient problem**. Left
+unchecked, a single large gradient update can destroy weights that took thousands
+of steps to learn.
+
+**Two Clipping Strategies:**
+
+| Strategy | Formula | TF/Keras argument | When to use |
+|----------|---------|-------------------|-------------|
+| **Global norm clipping** (`clipnorm`) | g̃ = g × min(1, C / ‖g‖₂) | `clipnorm=C` | RNNs, LSTMs, Transformers — preserves gradient direction |
+| **Value clipping** (`clipvalue`) | g̃ᵢ = clamp(gᵢ, −C, C) | `clipvalue=C` | Simple use-cases; can distort gradient direction |
+
+Global norm clipping is almost always preferred because it rescales the entire
+gradient vector uniformly — the **direction** of the update is preserved, only the
+**magnitude** is capped. Value clipping clips each dimension independently, which
+can change the direction of the update.
+
+**TensorFlow Usage:**
+
+```python
+# Global norm clipping (recommended for RNNs and Transformers)
+optimizer = tf.keras.optimizers.Adam(learning_rate=1e-3, clipnorm=1.0)
+
+# Value clipping
+optimizer = tf.keras.optimizers.SGD(learning_rate=0.01, clipvalue=0.5)
+
+# Manual clipping in a custom training loop
+with tf.GradientTape() as tape:
+    loss = model(x, training=True)
+gradients = tape.gradient(loss, model.trainable_variables)
+gradients, global_norm = tf.clip_by_global_norm(gradients, clip_norm=1.0)
+optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+```
+
+**Recommended Clip Norms by Architecture:**
+
+| Architecture | Typical `clipnorm` |
+|-------------|-------------------|
+| LSTM / RNN | 1.0 – 5.0 |
+| Transformer | 1.0 |
+| CNN (standard) | Usually not needed |
+| RL policy gradients | 0.5 – 1.0 |
+
+<Callout type="tip" title="Diagnosing gradient explosion">
+Monitor `global_norm` during training. If it regularly exceeds your clip threshold
+(i.e., clipping is always active), the underlying cause is likely a learning rate
+that is too high, a poorly initialized network, or missing batch normalization —
+clipping is a safety net, not a cure.
+</Callout>
 
 ### 12.1 Optimizer Selection Guide
 
