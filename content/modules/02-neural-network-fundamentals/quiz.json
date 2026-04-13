@@ -290,7 +290,7 @@
     },
     {
       "id": "m2-q12",
-      "type": "hard",
+      "type": "multiple-choice",
       "difficulty": "hard",
       "topic": "Loss Functions",
       "question": "You train a binary classifier using MSE loss instead of binary cross-entropy. The model achieves reasonable accuracy but trains significantly slower. What is the primary mathematical reason for the slower convergence?",
@@ -313,6 +313,32 @@
         }
       ],
       "explanation": "With sigmoid output σ(z) and MSE loss, the gradient includes the σ'(z) term which approaches zero when the sigmoid saturates (z very positive or very negative). The combined gradient is (ŷ - y) · σ'(z), which vanishes even when the prediction is very wrong but confident. Cross-entropy cancels the σ'(z) factor, leaving the clean gradient (ŷ - y). This is why cross-entropy + sigmoid is the natural pairing for binary classification — it keeps the gradient signal proportional to the error regardless of confidence."
+    },
+    {
+      "id": "m2-q13",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Regularization / Dropout",
+      "question": "During training, Dropout randomly zeros a neuron's activation with probability p. At inference time, no neurons are dropped. Which correction is applied at inference, and why?",
+      "options": [
+        {
+          "text": "Each activation is multiplied by p so that the expected output of a dropped unit matches training",
+          "correct": false
+        },
+        {
+          "text": "Each activation is multiplied by (1 − p) so that the expected value of each unit's output is the same as its expected value during training",
+          "correct": true
+        },
+        {
+          "text": "No correction is needed — the model learns to compensate automatically",
+          "correct": false
+        },
+        {
+          "text": "Each activation is divided by p to amplify the signal lost from dropped units",
+          "correct": false
+        }
+      ],
+      "explanation": "During training, a unit's activation survives with probability (1−p), so its expected contribution is (1−p)·x. At inference, all units are active, contributing x. To match expected values, inference activations are scaled by (1−p). In practice, most frameworks implement *inverted dropout*: divide surviving activations by (1−p) during training so that inference activations need no scaling — the expectation is corrected at training time rather than inference time. Either approach is mathematically equivalent; inverted dropout is preferred for deployment simplicity."
     }
   ]
 }

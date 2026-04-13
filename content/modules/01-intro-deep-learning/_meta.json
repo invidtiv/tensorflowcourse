@@ -16,5 +16,14 @@
   ],
   "icon": "brain",
   "color": "#00d4ff",
-  "videoId": "aircAruvnKk"
+  "videoId": "aircAruvnKk",
+  "videoCaptions": [
+    {
+      "src": "/videos/captions/01-intro-en.vtt",
+      "srclang": "en",
+      "label": "English",
+      "default": true,
+      "kind": "captions"
+    }
+  ]
 }

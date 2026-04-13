@@ -1,0 +1,55 @@
+WEBVTT
+Kind: captions
+Language: en
+
+NOTE
+=============================================================
+PLACEHOLDER CAPTION FILE — Module 01: Introduction to Deep Learning
+=============================================================
+This is a placeholder WebVTT file. Replace with real captions
+generated from the recorded lecture transcript.
+
+Recommended tooling:
+  - Whisper (OpenAI) for auto-transcription: whisper lecture.mp4 --language en
+  - Caption.Ed or Rev.com for human-verified captions
+  - ffmpeg for .srt → .vtt conversion: ffmpeg -i captions.srt captions.vtt
+
+Format reference: https://developer.mozilla.org/en-US/docs/Web/API/WebVTT_API
+
+TODO (Phase 5b — Video Delivery):
+  - Record module 01 lecture (≥1080p / 30fps / 44.1kHz mono)
+  - Run Whisper to generate initial .srt
+  - Convert to .vtt and review for accuracy
+  - Add speaker identification cues (e.g., ">> Instructor:")
+  - Populate the real transcript below, replacing these placeholder cues
+=============================================================
+
+00:00:00.000 --> 00:00:05.000
+[Placeholder] Welcome to Module 1: Introduction to Deep Learning and TensorFlow.
+
+00:00:05.001 --> 00:00:12.000
+[Placeholder] In this module we will trace the history of AI from the 1950s perceptron to modern deep learning.
+
+00:00:12.001 --> 00:00:20.000
+[Placeholder] We will master NumPy for numerical computing and install TensorFlow in our development environment.
+
+00:00:20.001 --> 00:00:30.000
+[Placeholder] By the end of this module you will implement gradient descent from scratch using TensorFlow's GradientTape API.
+
+00:00:30.001 --> 00:00:40.000
+[Placeholder] Let's start with the question: what is deep learning and why has it revolutionized AI since 2012?
+
+00:00:40.001 --> 00:00:50.000
+[Placeholder] Deep learning is a subset of machine learning that uses multi-layer neural networks to learn hierarchical representations from data.
+
+00:00:50.001 --> 00:01:00.000
+[Placeholder] The 2012 ImageNet breakthrough by Krizhevsky, Sutskever, and Hinton — AlexNet — demonstrated that deep CNNs could outperform hand-crafted features by a large margin.
+
+00:01:00.001 --> 00:01:10.000
+[Placeholder] Three ingredients drove this success: large datasets, GPU compute, and algorithmic advances like ReLU and dropout.
+
+00:01:10.001 --> 00:01:20.000
+[Placeholder] TensorFlow, released by Google Brain in 2015, made distributed deep learning accessible to practitioners worldwide.
+
+00:01:20.001 --> 00:01:30.000
+[Placeholder] End of placeholder captions. Replace this file with the real transcript before launch.

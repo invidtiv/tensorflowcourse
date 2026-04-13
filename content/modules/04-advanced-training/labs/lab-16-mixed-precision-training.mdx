@@ -146,5 +146,70 @@ results = compare_mixed_precision()
 
 ---
 
+<Callout type="info" title="Validation Checkpoint">
+
+Run these assertions after `compare_mixed_precision()` completes to confirm your mixed-precision setup is correct:
+
+```python
+import tensorflow as tf
+
+# 1. Confirm the global policy was restored to float32 after the benchmark
+assert tf.keras.mixed_precision.global_policy().name == 'float32', \
+    "Policy was not restored — call reset_to_float32() or set_global_policy('float32')"
+
+# 2. Confirm BF16/FP16 accuracy stays within 2% of FP32 baseline
+if results.get('float32') and results.get('mixed_float16'):
+    fp32_acc   = results['float32']['test_accuracy']
+    mp_acc     = results['mixed_float16']['test_accuracy']
+    acc_drop   = fp32_acc - mp_acc
+    assert acc_drop < 0.02, \
+        f"Mixed precision accuracy drop too large: {acc_drop:.4f}. Check loss scaling or output layer dtype."
+    print(f"✅ Accuracy parity OK — FP32: {fp32_acc:.4f}, Mixed FP16: {mp_acc:.4f} (drop: {acc_drop:.4f})")
+
+# 3. Confirm output layer is float32 (required for numerical stability with softmax + cross-entropy)
+tf.keras.mixed_precision.set_global_policy('mixed_float16')
+test_model = create_model_with_dtype()
+output_dtype = test_model.output.dtype
+tf.keras.mixed_precision.set_global_policy('float32')
+assert output_dtype == tf.float32, \
+    f"Output layer dtype is {output_dtype}, expected float32 — add dtype='float32' to final Dense layer"
+print(f"✅ Output layer dtype: {output_dtype} ✓")
+
+print("All validation checks passed ✅")
+```
+
+</Callout>
+
+<Callout type="warning" title="Common Pitfalls">
+
+**Pitfall 1: Forgetting `dtype='float32'` on the output layer.**
+When mixed precision is active, all layers default to float16. The final Dense layer + softmax computed in FP16 is numerically unstable — softmax can overflow/underflow, producing NaN loss. Always explicitly set `dtype='float32'` on the last Dense (or any loss-sensitive) layer. Keras will handle the automatic up-cast.
+
+**Pitfall 2: `LossScaleOptimizer` is deprecated in Keras 3.**
+In TF 2.x / Keras 3, wrapping the optimizer manually with `tf.keras.mixed_precision.LossScaleOptimizer(optimizer)` is no longer needed when using `Policy('mixed_float16')` — the policy handles loss scaling automatically. Manual wrapping in Keras 3 raises a warning or error. Check your TF version: if `tf.__version__ >= '2.14'`, rely on the policy alone.
+
+**Pitfall 3: Enabling mixed precision on CPU or non-Tensor-Core GPUs.**
+Mixed precision provides no speedup (and adds overhead) on CPU or on older NVIDIA GPUs (pre-Volta, i.e., before GTX 1080 Ti). Tensor Core acceleration requires at least Volta (V100) for FP16, Ampere (A100) for BF16. Always check `tf.config.list_physical_devices('GPU')` and confirm your hardware before enabling MP in production.
+
+**Pitfall 4: Using `mixed_float16` when BF16 hardware is available.**
+If you have an A100, H100, or a TPU, prefer `Policy('mixed_bfloat16')` — BF16 has the same exponent range as FP32 so it avoids underflow without any loss scaling. `mixed_float16` on these devices is not wrong but is unnecessarily complex.
+
+</Callout>
+
+<Callout type="tip" title="Stretch Goals">
+
+**Stretch Goal 1 — BF16 Comparison:**
+Add `'mixed_bfloat16'` as a third mode in `compare_mixed_precision()`. Compare training time and accuracy across all three (`float32`, `mixed_float16`, `mixed_bfloat16`). If your hardware doesn't support BF16, catch the `InvalidArgumentError` and skip gracefully with a message explaining the requirement.
+
+**Stretch Goal 2 — Custom Training Loop with Explicit Loss Scaling:**
+Implement the FP16 training benchmark using a `tf.GradientTape` custom loop and **manual** dynamic loss scaling (without relying on `LossScaleOptimizer`). Track the scaling factor across iterations and plot it. This is the lowest-level view of how AMP works and is required knowledge for implementing mixed precision in JAX or raw CUDA.
+
+**Stretch Goal 3 — Gradient Histogram Analysis:**
+During FP16 training, use `tf.summary.histogram` to log the raw (pre-unscaling) and unscaled gradient distributions to TensorBoard. Confirm that (a) the scaled gradients are safely above the FP16 underflow threshold, and (b) after unscaling they match the FP32 gradient magnitudes. This is the diagnostic you would run when suspecting silent underflow in production.
+
+</Callout>
+
+---
+
 <a name="section-5-normalization-layers"></a>
 # Section 5: Normalization Layers (3 Labs)

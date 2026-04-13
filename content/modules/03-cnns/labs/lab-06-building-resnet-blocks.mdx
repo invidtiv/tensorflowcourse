@@ -547,6 +547,58 @@ print("Lab 3.5 Complete!")
 print("=" * 60)
 ```
 
+---
+
+<Callout type="tip" title="Validation Checkpoint">
+Before moving on, verify your ResNet implementation meets these benchmarks:
+
+```python
+# === Validation Checkpoint ===
+import numpy as np
+
+# 1. ResNet model must exist and be a Keras Model
+assert resnet_model is not None, "ResNet model should be defined"
+assert hasattr(resnet_model, 'layers'), "resnet_model must be a Keras Model"
+
+# 2. ResNet should outperform (or match) the plain CNN on validation accuracy
+resnet_val_acc = max(history_resnet.history['val_accuracy'])
+plain_val_acc = max(history_plain.history['val_accuracy'])
+assert resnet_val_acc >= plain_val_acc * 0.95, (
+    f"ResNet val acc {resnet_val_acc:.2%} is more than 5% below plain CNN "
+    f"{plain_val_acc:.2%} — check skip connection shapes and strides"
+)
+print(f"✅ ResNet val acc: {resnet_val_acc:.2%} vs plain CNN: {plain_val_acc:.2%}")
+
+# 3. ResNet should have at least one residual block (Lambda or Add layer expected)
+layer_types = [type(l).__name__ for l in resnet_model.layers]
+has_add = 'Add' in layer_types or any('add' in n.lower() for n in [l.name for l in resnet_model.layers])
+assert has_add, "No 'Add' layer found — skip connections are missing from your ResNet"
+print("✅ Skip connection (Add layer) detected in ResNet")
+
+# 4. ResNet should train more stably: final epoch loss should be lower than epoch-1 loss
+final_loss = history_resnet.history['loss'][-1]
+initial_loss = history_resnet.history['loss'][0]
+assert final_loss < initial_loss, (
+    f"ResNet loss did not decrease: initial={initial_loss:.4f}, final={final_loss:.4f} — check learning rate or skip connection dimensions"
+)
+print(f"✅ ResNet loss decreased: {initial_loss:.4f} → {final_loss:.4f}")
+```
+</Callout>
+
+<Callout type="warning" title="Common Pitfalls">
+- **Dimension mismatch in skip connections** — When the main path changes spatial size (stride > 1) or channel count, the skip must use a 1×1 Conv2D with the same stride + BN to match dimensions. Forgetting this gives a shape error during the `Add()` call. Always check that `x.shape == shortcut.shape` before adding.
+- **Activation before or after Add?** — The original ResNet (He et al., 2015) places ReLU *after* the Add: `out = ReLU(F(x) + x)`. Pre-activation ResNet (He et al., 2016 follow-up) moves BN+ReLU *before* each Conv: `out = x + Conv(ReLU(BN(Conv(ReLU(BN(x))))))`. They behave differently — the original is more common in Keras applications; pre-activation improves gradient flow for very deep networks (1000+ layers).
+- **Forgetting to pass `training` flag to BatchNorm** — `BatchNormalization` behaves differently during training (normalizes batch statistics) vs inference (uses moving average). When writing custom training loops with `@tf.function`, always pass `training=True` during forward pass in training, or Keras will silently use inference mode and your model won't converge.
+- **Identity shortcut when channels differ** — A plain identity shortcut (`output = F(x) + x`) fails when the number of channels changes (e.g., going from 64 → 128 filters in the next stage). You need a projection shortcut: `shortcut = Conv2D(filters, 1, strides=stride, padding='same')(x)` followed by `BatchNormalization()`.
+</Callout>
+
+<Callout type="info" title="Stretch Goals">
+1. **Pre-activation ResNet variant** — Implement He et al.'s 2016 "identity mappings" variant (BN → ReLU → Conv → BN → ReLU → Conv, with identity skip). Compare training curves with the original post-activation version. Does it converge faster on CIFAR-10?
+2. **ResNeXt cardinality** — Extend the basic block to support grouped convolutions (`groups` parameter in `Conv2D` in TF 2.x). Implement a ResNeXt-style block where cardinality=32 and each group processes 4 channels. Count parameters and compare accuracy vs. the basic block with the same budget.
+3. **Gradient flow visualization** — After training both ResNet and plain CNN, use `tf.GradientTape` to compute the gradient of the loss w.r.t. activations at each residual stage. Plot the gradient norm per layer for both models. Does ResNet maintain larger, more uniform gradients in early layers?
+4. **Wide ResNet experiment** — Instead of going deeper (more layers), go wider (more filters per layer). Double the filter count at each stage (64 → 128, 128 → 256, 256 → 512) while halving the number of blocks. Compare parameter counts and CIFAR-10 accuracy. Reference: Zagoruyko & Komodakis, "Wide Residual Networks" (2016).
+</Callout>
+
 
 ---
 

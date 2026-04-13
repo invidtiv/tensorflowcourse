@@ -244,4 +244,53 @@ print("4. Works well for most common architectures")
 print("5. Limitations: single input/output, no shared layers, no branching")
 ```
 
+## ✅ Validation Checkpoint
+
+Run the assertions below after completing the lab. All four must pass before submitting.
+
+```python
+# ── Validation Checkpoint ────────────────────────────────────────
+# Expected after ~20 epochs on the synthetic classification task.
+# Adjust thresholds if you significantly changed the architecture.
+
+assert test_acc >= 0.80, (
+    f"Test accuracy {test_acc:.4f} is below 0.80. "
+    "Check: learning rate, number of epochs, class imbalance, or missing He init."
+)
+
+assert loaded_acc >= test_acc - 0.01, (
+    f"Loaded model accuracy {loaded_acc:.4f} diverges from in-memory "
+    f"accuracy {test_acc:.4f} by more than 1%. Save/load may be broken."
+)
+
+assert len(model.layers) >= 3, (
+    f"Model has only {len(model.layers)} layer(s). "
+    "Ensure at least one hidden layer + output layer + input is present."
+)
+
+# Verify the model accepts the expected input shape
+_dummy = np.zeros((1,) + X_test.shape[1:], dtype=np.float32)
+_out = model.predict(_dummy, verbose=0)
+assert _out.shape[-1] == y_test_cat.shape[-1], (
+    f"Output classes ({_out.shape[-1]}) don't match label classes "
+    f"({y_test_cat.shape[-1]}). Check the final Dense layer units."
+)
+
+print("✅ All validation checks passed!")
+```
+
+<Callout type="warning" title="Common Pitfalls">
+- **Wrong input_shape:** In Keras 3, pass `input_shape` to the **first layer**, not to `model.add(tf.keras.layers.InputLayer(...))`. The old `input_dim` shorthand still works for 1D inputs only.
+- **Saving to a bad path:** `/mnt/okcomputer/output/` is a lab-runner mount point. If running locally, substitute a real path (e.g. `./output/sequential_model.keras`). Create the directory first with `os.makedirs("output", exist_ok=True)`.
+- **Dropout at inference time:** If you add `Dropout` layers and call `model.predict()`, Keras automatically uses `training=False` (no dropout). Calling `model(x, training=True)` at inference is a common mistake that leads to non-deterministic predictions.
+- **`model.summary()` before `build()`:** The Sequential API delays building until `compile()` or the first call. If `summary()` shows `None` for output shapes, call `model.build((None, input_dim))` first.
+</Callout>
+
+<Callout type="tip" title="Stretch Goals">
+1. **Regularization comparison** — Add `kernel_regularizer=tf.keras.regularizers.l2(1e-4)` to each Dense layer and compare train/val accuracy curves. Does validation loss spike later?
+2. **Architecture search stub** — Loop over `[32, 64, 128]` hidden units and `[1, 2, 3]` hidden layers. Plot a 3×3 heatmap of final validation accuracy. Which combination wins?
+3. **Inverted dropout verification** — Add a `Dropout(0.5)` layer, train for 5 epochs, then call `model(X_test[:16], training=True)` ten times and record the variance of outputs. Contrast with `training=False`. Does the variance collapse to near zero as expected?
+4. **TensorBoard callback** — Add `tf.keras.callbacks.TensorBoard(log_dir="./logs")` to `model.fit()` and launch TensorBoard locally (`tensorboard --logdir ./logs`) to visualize training curves in real time.
+</Callout>
+
 ---

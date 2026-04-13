@@ -289,6 +289,32 @@
       "explanation": "Depthwise separable convolution factorizes the standard convolution into two steps: (1) depthwise — one 3×3 filter per input channel (no cross-channel mixing), giving (3×3×1+1)×64 = 640 params, and (2) pointwise — a 1×1 convolution to mix channels, giving (1×1×64+1)×128 = 8,320 params. Total: 8,960, which is ~8× fewer than the standard 73,856. This is the core trick behind MobileNet (Howard et al., 2017) and Xception (Chollet, 2017)."
     },
     {
+      "id": "m3-q13",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Transposed Convolution Output Size",
+      "question": "A transposed convolution (ConvTranspose2D) is applied to a 14×14 feature map with kernel size 3, stride 2, and no padding. What is the output spatial size?",
+      "options": [
+        {
+          "text": "26",
+          "correct": false
+        },
+        {
+          "text": "29",
+          "correct": true
+        },
+        {
+          "text": "30",
+          "correct": false
+        },
+        {
+          "text": "14",
+          "correct": false
+        }
+      ],
+      "explanation": "Transposed convolution output size: W_out = (W_in − 1) × S + K − 2P = (14 − 1) × 2 + 3 − 0 = 26 + 3 = 29. The common mistake is computing (14 × 2) = 28 (treating it like upsampling by factor S) or (14 − 1) × 2 = 26 (forgetting to add the kernel span). Transposed convolutions are used in decoders (U-Net, DCGAN) to expand spatial resolution — understanding their output formula is essential for designing encoder-decoder architectures."
+    },
+    {
       "id": "m3-q12",
       "type": "multiple-choice",
       "difficulty": "hard",
