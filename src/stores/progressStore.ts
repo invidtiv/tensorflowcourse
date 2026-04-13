@@ -9,6 +9,9 @@ interface ProgressStore {
   overall: OverallProgress;
 
   // Actions
+  markVideoWatched: (moduleId: string) => void;
+  updateVideoProgress: (moduleId: string, percent: number) => void;
+  markVideoFinished: (moduleId: string) => void;
   markTheoryRead: (moduleId: string) => void;
   updateTheoryScroll: (moduleId: string, percent: number) => void;
   markLabCompleted: (moduleId: string, labId: string) => void;
@@ -26,6 +29,9 @@ const defaultModuleProgress: ModuleProgress = {
   labsCompleted: [],
   quizScore: null,
   quizPassed: false,
+  videoWatched: false,
+  videoWatchedPercent: 0,
+  videoFinishedAt: "",
   lastAccessed: "",
   timeSpentMinutes: 0,
 };
@@ -44,6 +50,54 @@ export const useProgressStore = create<ProgressStore>()(
     (set, get) => ({
       modules: {},
       overall: { ...defaultOverall },
+
+      markVideoWatched: (moduleId) =>
+        set((state) => ({
+          modules: {
+            ...state.modules,
+            [moduleId]: {
+              ...(state.modules[moduleId] || { ...defaultModuleProgress }),
+              videoWatched: true,
+              lastAccessed: new Date().toISOString(),
+            },
+          },
+        })),
+
+      updateVideoProgress: (moduleId, percent) =>
+        set((state) => {
+          const current = state.modules[moduleId] || { ...defaultModuleProgress };
+          const clamped = Math.min(100, Math.max(0, Math.round(percent)));
+          const isFinished = clamped >= 90 && !current.videoFinishedAt;
+          return {
+            modules: {
+              ...state.modules,
+              [moduleId]: {
+                ...current,
+                videoWatchedPercent: Math.max(current.videoWatchedPercent, clamped),
+                videoWatched: true,
+                ...(isFinished ? { videoFinishedAt: new Date().toISOString() } : {}),
+                lastAccessed: new Date().toISOString(),
+              },
+            },
+          };
+        }),
+
+      markVideoFinished: (moduleId) =>
+        set((state) => {
+          const current = state.modules[moduleId] || { ...defaultModuleProgress };
+          return {
+            modules: {
+              ...state.modules,
+              [moduleId]: {
+                ...current,
+                videoWatched: true,
+                videoWatchedPercent: 100,
+                videoFinishedAt: current.videoFinishedAt || new Date().toISOString(),
+                lastAccessed: new Date().toISOString(),
+              },
+            },
+          };
+        }),
 
       markTheoryRead: (moduleId) =>
         set((state) => ({

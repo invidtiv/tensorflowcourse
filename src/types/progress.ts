@@ -4,6 +4,12 @@ export interface ModuleProgress {
   labsCompleted: string[];
   quizScore: number | null;
   quizPassed: boolean;
+  /** Whether the student has started watching the module video. */
+  videoWatched: boolean;
+  /** Percentage of the video the student has watched (0–100). Updated via onTimeUpdate. */
+  videoWatchedPercent: number;
+  /** ISO timestamp when the student watched ≥90% of the video (or it ended). */
+  videoFinishedAt: string;
   lastAccessed: string;
   timeSpentMinutes: number;
 }

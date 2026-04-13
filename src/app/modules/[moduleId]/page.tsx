@@ -7,6 +7,7 @@ import { getModule, getAdjacentModules } from "@/lib/modules";
 import Breadcrumb from "@/components/layout/Breadcrumb";
 import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
+import { useProgressStore } from "@/stores/progressStore";
 
 export default function ModuleOverviewPage() {
   const params = useParams();
@@ -24,6 +25,14 @@ export default function ModuleOverviewPage() {
 
   const { prev, next } = getAdjacentModules(moduleId);
   const diffVariant = mod.difficulty === "beginner" ? "beginner" : mod.difficulty === "intermediate" ? "intermediate" : "advanced";
+
+  const moduleProgress = useProgressStore((s) => s.modules[moduleId]);
+  const theoryRead = moduleProgress?.theoryRead ?? false;
+  const labsDone = moduleProgress?.labsCompleted?.length ?? 0;
+  const quizPassed = moduleProgress?.quizPassed ?? false;
+  const quizScore = moduleProgress?.quizScore;
+  const videoWatched = moduleProgress?.videoWatched ?? false;
+  const videoPct = moduleProgress?.videoWatchedPercent ?? 0;
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
@@ -79,6 +88,47 @@ export default function ModuleOverviewPage() {
               </li>
             ))}
           </ul>
+        </div>
+
+        {/* Progress Breakdown */}
+        <div className="mb-8 p-5 rounded-xl border border-white/[0.06] bg-surface-1/20">
+          <h2 className="text-sm font-heading font-semibold text-text-muted uppercase tracking-wider mb-4">
+            Your Progress
+          </h2>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {/* Theory */}
+            <div className={`rounded-lg p-3 border ${theoryRead ? "border-emerald-500/30 bg-emerald-500/5" : "border-white/[0.06] bg-surface-1/30"}`}>
+              <div className="text-lg mb-1">{theoryRead ? "✅" : "📖"}</div>
+              <div className="text-xs font-semibold text-text-primary">Theory</div>
+              <div className="text-[10px] text-text-muted mt-0.5">
+                {theoryRead ? "Completed" : "Not started"}
+              </div>
+            </div>
+            {/* Labs */}
+            <div className={`rounded-lg p-3 border ${labsDone >= mod.labCount ? "border-emerald-500/30 bg-emerald-500/5" : labsDone > 0 ? "border-neon-purple/30 bg-neon-purple/5" : "border-white/[0.06] bg-surface-1/30"}`}>
+              <div className="text-lg mb-1">{labsDone >= mod.labCount ? "✅" : "💻"}</div>
+              <div className="text-xs font-semibold text-text-primary">Labs</div>
+              <div className="text-[10px] text-text-muted mt-0.5">
+                {labsDone}/{mod.labCount} completed
+              </div>
+            </div>
+            {/* Quiz */}
+            <div className={`rounded-lg p-3 border ${quizPassed ? "border-emerald-500/30 bg-emerald-500/5" : quizScore !== null ? "border-tf-orange/30 bg-tf-orange/5" : "border-white/[0.06] bg-surface-1/30"}`}>
+              <div className="text-lg mb-1">{quizPassed ? "✅" : "🧪"}</div>
+              <div className="text-xs font-semibold text-text-primary">Quiz</div>
+              <div className="text-[10px] text-text-muted mt-0.5">
+                {quizPassed ? "Passed" : quizScore !== null ? `Score: ${quizScore}` : "Not attempted"}
+              </div>
+            </div>
+            {/* Video */}
+            <div className={`rounded-lg p-3 border ${videoPct >= 90 ? "border-emerald-500/30 bg-emerald-500/5" : videoWatched ? "border-neon-cyan/30 bg-neon-cyan/5" : "border-white/[0.06] bg-surface-1/30"}`}>
+              <div className="text-lg mb-1">{videoPct >= 90 ? "✅" : "🎬"}</div>
+              <div className="text-xs font-semibold text-text-primary">Video</div>
+              <div className="text-[10px] text-text-muted mt-0.5">
+                {videoPct >= 90 ? "Watched" : videoWatched ? `${videoPct}% watched` : "Not started"}
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Content Links */}

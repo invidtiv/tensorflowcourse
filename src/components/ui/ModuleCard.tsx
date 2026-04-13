@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { ModuleMeta } from "@/types/module";
 import Badge from "./Badge";
 import ProgressRing from "../progress/ProgressRing";
+import { useProgressStore } from "@/stores/progressStore";
 
 interface ModuleCardProps {
   module: ModuleMeta;
@@ -11,6 +12,9 @@ interface ModuleCardProps {
 }
 
 export default function ModuleCard({ module, progress = 0 }: ModuleCardProps) {
+  const moduleProgress = useProgressStore((s) => s.modules[module.id]);
+  const videoWatched = moduleProgress?.videoWatched ?? false;
+  const videoPercent = moduleProgress?.videoWatchedPercent ?? 0;
   const difficultyVariant = module.difficulty === "beginner"
     ? "beginner"
     : module.difficulty === "intermediate"
@@ -54,7 +58,20 @@ export default function ModuleCard({ module, progress = 0 }: ModuleCardProps) {
 
         {/* Footer */}
         <div className="flex items-center justify-between">
-          <Badge variant={difficultyVariant}>{module.difficulty}</Badge>
+          <div className="flex items-center gap-2">
+            <Badge variant={difficultyVariant}>{module.difficulty}</Badge>
+            {videoWatched && (
+              <span
+                className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full bg-neon-cyan/10 text-neon-cyan border border-neon-cyan/20"
+                title={videoPercent >= 90 ? "Video completed" : `Video ${videoPercent}% watched`}
+              >
+                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M8 5v14l11-7z" />
+                </svg>
+                {videoPercent >= 90 ? "✓" : `${videoPercent}%`}
+              </span>
+            )}
+          </div>
           <span className="text-xs text-text-muted">
             {module.labCount} labs · {module.duration}
           </span>
