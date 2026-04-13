@@ -309,3 +309,58 @@ Best Optimizer: AdamW (Accuracy: 0.8512)
 ```
 
 ---
+
+### Validation Checkpoint
+
+After running the benchmark, verify your results programmatically:
+
+```python
+# ============================================
+# Validation Checkpoint
+# ============================================
+print("\n🔍 Running validation checks...")
+
+# 1. All optimizers trained successfully
+assert len(results) == 5, f"Expected 5 optimizers, got {len(results)}"
+print("✅ All 5 optimizers produced results")
+
+# 2. All test accuracies are reasonable (> 60% on CIFAR-10 with this architecture)
+for name, data in results.items():
+    assert data['test_accuracy'] > 0.60, \
+        f"{name} accuracy {data['test_accuracy']:.4f} is suspiciously low — check for bugs"
+print("✅ All optimizers achieved >60% test accuracy")
+
+# 3. Adam/AdamW should generally outperform plain Adagrad on CIFAR-10
+adam_acc = results['Adam']['test_accuracy']
+adagrad_acc = results['Adagrad']['test_accuracy']
+if adam_acc > adagrad_acc:
+    print("✅ Adam outperformed Adagrad (expected for CIFAR-10 CNNs)")
+else:
+    print("⚠️  Adagrad outperformed Adam — unusual, consider checking hyperparameters")
+
+# 4. Training times are within reasonable range (not infinite loops)
+for name, data in results.items():
+    assert data['training_time'] < 1800, \
+        f"{name} took {data['training_time']:.0f}s — possible infinite loop"
+print("✅ All training runs completed in reasonable time (<30 min each)")
+
+print("\n✨ All validation checks passed!")
+```
+
+<Callout type="pitfall" title="Common Pitfalls">
+
+- **Unfair hyperparameter comparison**: Using Adam's default LR (0.001) while using SGD's default (0.01) makes the comparison unfair. Always tune each optimizer's LR independently, or use a consistent LR sweep for all.
+- **Not resetting the model**: If you reuse the same model object across optimizers, weights carry over. Always call `create_model()` fresh for each optimizer run.
+- **Ignoring random seed per run**: Even with global seeds, GPU non-determinism means results vary between runs. Run each optimizer 3+ times and report mean ± std for reliable comparisons.
+- **Drawing conclusions from 30 epochs**: Some optimizers (especially SGD) need 100+ epochs to converge. Short benchmarks favor fast-converging adaptive methods, which biases the comparison.
+
+</Callout>
+
+### Stretch Goals
+
+1. **Add AdaFactor and LAMB optimizers** — these are used for large-batch training (GPT, BERT). Compare their convergence and memory footprint against Adam/AdamW.
+2. **Implement a learning rate sweep** — for each optimizer, train with LR ∈ {1e-4, 3e-4, 1e-3, 3e-3, 1e-2} and plot accuracy vs LR as a heatmap to find each optimizer's sweet spot.
+3. **Profile GPU memory usage** — use `tf.config.experimental.get_memory_info('GPU:0')` to track peak memory per optimizer. Adaptive methods store extra state (momentum, variance) — quantify the overhead.
+4. **Extend to 200 epochs with cosine annealing** — re-run the benchmark with cosine LR decay and compare whether SGD catches up to or surpasses Adam/AdamW at longer horizons (testing the Wilson et al. 2017 finding).
+
+---

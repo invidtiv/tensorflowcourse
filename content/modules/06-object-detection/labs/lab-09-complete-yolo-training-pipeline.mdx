@@ -404,3 +404,57 @@ if __name__ == "__main__":
 ```
 
 ---
+
+## Validation Checkpoint
+
+Run the assertions below after completing the lab to verify your pipeline works end-to-end:
+
+```python
+# === Validation Checkpoint ===
+# Run this cell after training to verify your YOLO pipeline.
+
+# 1. Model should have multi-scale outputs (at least 2 prediction heads)
+assert len(predictions) >= 2, (
+    f"Expected at least 2 output scales (multi-scale detection), got {len(predictions)}. "
+    "Check your FPN / detection head architecture."
+)
+
+# 2. Each prediction tensor should have 5 + num_classes channels per anchor
+#    (tx, ty, tw, th, objectness, class_probs...)
+for i, pred in enumerate(predictions):
+    last_dim = pred.shape[-1]
+    assert last_dim >= 6, (
+        f"Scale P{i+3} last dim = {last_dim}, expected >= 6 "
+        "(4 box coords + 1 objectness + at least 1 class). "
+        "Check your detection head output channels."
+    )
+
+# 3. Training loss should have decreased
+assert loss_history[-1] < loss_history[0], (
+    f"Final loss ({loss_history[-1]:.4f}) >= initial loss ({loss_history[0]:.4f}). "
+    "Training did not converge. Check learning rate, loss function, or data pipeline."
+)
+
+# 4. Loss should be finite (no NaN / Inf from numerical issues)
+import math
+assert all(math.isfinite(l) for l in loss_history), (
+    "Loss history contains NaN or Inf values. "
+    "Check for division by zero in IoU computation or unnormalized inputs."
+)
+
+print("All validation checks passed!")
+```
+
+<Callout type="pitfall" title="Common Pitfalls">
+- **Coordinate format mismatch**: YOLO predicts (cx, cy, w, h) relative to grid cells, but IoU computation requires (x1, y1, x2, y2) absolute coordinates. Forgetting to convert between formats causes silently wrong loss values.
+- **Objectness target leakage**: The objectness target should be the IoU between the predicted box and matched ground-truth (or binary 0/1). Using the class label as objectness confuses the model.
+- **No-object cells dominating the loss**: In a 13×13 grid with 3 anchors, you have 507 cells but typically only 1–5 contain objects. Weight the object loss higher (e.g., `lambda_obj=5`) or the model learns to predict "no object" everywhere.
+- **Forgetting sigmoid on tx, ty**: The cell offsets must be passed through sigmoid to constrain them to [0, 1] within the cell. Without this, predictions can "escape" their assigned grid cell, causing training instability.
+</Callout>
+
+<Callout type="tip" title="Stretch Goals">
+- **Real dataset**: Replace the synthetic data generator with VOC 2012 or COCO-mini and add proper data augmentation (mosaic, random crop, color jitter).
+- **mAP evaluation loop**: Add a COCO-style evaluation after training that computes mAP@0.50 and mAP@[.50:.95] on a held-out validation set.
+- **Anchor clustering**: Run k-means on your dataset's bounding box dimensions (as in YOLOv2) to derive dataset-specific anchors instead of using hand-picked priors.
+- **TensorBoard integration**: Log loss components (box, objectness, class) separately to TensorBoard to diagnose which loss term is bottlenecking performance.
+</Callout>

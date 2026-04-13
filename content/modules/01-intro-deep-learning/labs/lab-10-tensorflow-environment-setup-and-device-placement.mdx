@@ -1,0 +1,205 @@
+---
+title: "TensorFlow Environment Setup and Device Placement"
+module: 1
+labNumber: 10
+difficulty: "easy"
+estimatedTime: "45-60 minutes"
+source: "authored-by-claude-2026-04-11"
+---
+
+## Objective
+
+Get TensorFlow installed, verify it sees your CPU (and GPU, if you have one),
+understand the difference between `tf.constant`, `tf.Variable`, and
+`tf.Tensor`, and learn how to explicitly place computation on a device. By the
+end of the lab you'll know why your first model might be running 10x slower
+than it could be — and how to fix it.
+
+This lab closes a real gap: every other Module 1 lab assumes TensorFlow is
+installed and "just works." Here we actually do the setup and the sanity
+checks.
+
+## Prerequisites
+
+- Python 3.9–3.12 (TF 2.16+ supports 3.9–3.12 as of writing)
+- `pip` (or `uv`, `conda`, `poetry` — any Python package manager)
+- Completed Lab 09 (NumPy Fundamentals) so you have a mental model of arrays
+
+## Part 1 — Install and verify
+
+```bash
+# CPU-only install (works everywhere, no GPU drivers needed)
+pip install --upgrade "tensorflow>=2.16,<2.18"
+
+# Or, if you have a recent NVIDIA GPU with CUDA 12.x drivers installed:
+pip install --upgrade "tensorflow[and-cuda]>=2.16,<2.18"
+```
+
+Then in a Python shell or notebook:
+
+```python
+import tensorflow as tf
+
+print("TensorFlow version :", tf.__version__)
+print("Keras version      :", tf.keras.__version__)
+print("Eager execution    :", tf.executing_eagerly())
+
+# List physical devices
+cpus = tf.config.list_physical_devices("CPU")
+gpus = tf.config.list_physical_devices("GPU")
+print(f"CPUs: {len(cpus)}")
+print(f"GPUs: {len(gpus)}")
+for gpu in gpus:
+    print(" -", gpu)
+
+# Quick sanity check: multiply two matrices
+a = tf.constant([[1.0, 2.0], [3.0, 4.0]])
+b = tf.constant([[5.0, 6.0], [7.0, 8.0]])
+print("a @ b =\n", (a @ b).numpy())
+```
+
+### What to observe
+
+- `tf.executing_eagerly()` should print `True`. TF 2.x is eager by default.
+- If you have an NVIDIA GPU but `len(gpus) == 0`, TensorFlow didn't find the
+  CUDA runtime. Check `nvidia-smi` works, then re-install with
+  `tensorflow[and-cuda]`.
+- On Apple Silicon, install `tensorflow-macos` and (optionally)
+  `tensorflow-metal` to get GPU acceleration via Metal. The device type will
+  show up as `GPU` in the list above.
+
+## Part 2 — GPU memory growth (important!)
+
+By default, TensorFlow grabs all GPU memory on the first allocation. If you're
+sharing the machine with other users (or another process in the same script),
+enable memory growth before you create any tensors:
+
+```python
+gpus = tf.config.list_physical_devices("GPU")
+for gpu in gpus:
+    try:
+        tf.config.experimental.set_memory_growth(gpu, True)
+    except RuntimeError as e:
+        # Must happen before any GPU ops
+        print(f"Could not set memory growth: {e}")
+```
+
+Put this **at the very top** of your training scripts. Forgetting it is the
+#1 reason a second TensorFlow notebook on the same machine fails with
+`CUDA_ERROR_OUT_OF_MEMORY`.
+
+## Part 3 — `tf.constant`, `tf.Variable`, `tf.Tensor`
+
+```python
+# tf.constant: immutable, dtype & shape fixed at creation
+c = tf.constant([1.0, 2.0, 3.0])
+print("c:", c, "dtype:", c.dtype, "shape:", c.shape)
+
+# tf.Variable: MUTABLE state; this is what model parameters are
+w = tf.Variable(0.0, name="w")
+w.assign(3.14)            # in-place update, no new object
+w.assign_add(0.1)         # w += 0.1
+print("w:", w.numpy())
+
+# tf.Tensor: the result of an op. You rarely construct one directly;
+# it's what you get back from tf.constant, arithmetic ops, layers, etc.
+t = c * 2.0 + 1.0          # this is a tf.Tensor
+print("t:", t.numpy(), type(t).__name__)
+```
+
+### Key rules
+
+- **Model parameters are `tf.Variable`.** Everything else (inputs, intermediate
+  activations, losses) is a `tf.Tensor`.
+- `tf.constant` is a convenience for literal values you know at graph-build
+  time. Don't use it for training data — use `tf.data.Dataset` or NumPy arrays
+  that get converted implicitly.
+- You can convert any `tf.Tensor` or `tf.Variable` to NumPy with `.numpy()`.
+
+## Part 4 — Explicit device placement
+
+```python
+import time
+
+# Force a big matrix multiply onto the CPU
+with tf.device("/CPU:0"):
+    x_cpu = tf.random.normal((2048, 2048))
+    y_cpu = tf.random.normal((2048, 2048))
+    start = time.perf_counter()
+    for _ in range(5):
+        _ = tf.matmul(x_cpu, y_cpu)
+    cpu_ms = (time.perf_counter() - start) / 5 * 1000
+
+print(f"CPU matmul (2048x2048): {cpu_ms:.1f} ms / iter")
+
+# Same thing on GPU if available
+if tf.config.list_physical_devices("GPU"):
+    with tf.device("/GPU:0"):
+        x_gpu = tf.random.normal((2048, 2048))
+        y_gpu = tf.random.normal((2048, 2048))
+        # Warmup (first op includes kernel compilation)
+        _ = tf.matmul(x_gpu, y_gpu)
+        start = time.perf_counter()
+        for _ in range(5):
+            _ = tf.matmul(x_gpu, y_gpu)
+        gpu_ms = (time.perf_counter() - start) / 5 * 1000
+    print(f"GPU matmul (2048x2048): {gpu_ms:.1f} ms / iter")
+    print(f"Speedup: {cpu_ms / gpu_ms:.1f}x")
+else:
+    print("No GPU available — skipping GPU benchmark.")
+```
+
+### What to observe
+
+- On a modern laptop CPU you'll see somewhere around 30–120 ms per iteration.
+- On a mid-range GPU (e.g. RTX 3060) the same matmul is typically **under
+  2 ms**, a 20–60x speedup. On an H100 it's microseconds.
+- The **first** GPU op is always slow because TF has to compile kernels — that's
+  why we do a warmup iteration before timing.
+
+## Part 5 — Seeding for reproducibility
+
+```python
+tf.random.set_seed(42)            # global
+x = tf.random.normal((3,))
+print("seeded sample:", x.numpy())
+
+# Per-op seeding (preferred for parallel workloads)
+y = tf.random.stateless_normal((3,), seed=(1, 2))
+print("stateless sample:", y.numpy())
+```
+
+Use `tf.random.set_seed` for simple scripts. Use
+`tf.random.stateless_*(seed=(s1, s2))` when you need reproducibility across
+parallel calls (data augmentation, distributed training), because stateless
+ops don't depend on global RNG state.
+
+## Exercises
+
+1. **Print your install summary.** Write a 10-line script that prints TF
+   version, number of CPUs, number of GPUs, whether eager is enabled, and the
+   CUDA/cuDNN versions TF was built against (`tf.sysconfig.get_build_info()`).
+2. **Find the crossover point.** At what matrix size does the GPU become faster
+   than the CPU on your machine? Benchmark `tf.matmul` at shapes `(64, 64)`,
+   `(256, 256)`, `(1024, 1024)`, `(4096, 4096)`. The smallest sizes should
+   actually be *slower* on GPU because of kernel launch overhead.
+3. **Mutate a Variable without rebuilding.** Create a `tf.Variable` of shape
+   `(100,)`, then update only the first 10 entries using `v.scatter_nd_update`.
+   Read the docs, this is tricky the first time.
+4. **Memory growth experiment.** Open two Python shells. In shell 1, create
+   `tf.random.normal((10000, 10000))` without memory growth. In shell 2, try
+   the same thing. What happens? Now restart both shells, enable memory growth
+   at the top, and try again.
+
+## Key takeaways
+
+- `tf.executing_eagerly()` should be `True` — that's the TF 2.x default.
+- **Enable GPU memory growth** at the top of every training script. It's one
+  line and saves hours of debugging.
+- `tf.Variable` = mutable, training parameters. `tf.constant`/`tf.Tensor` =
+  immutable, computation results.
+- `with tf.device("/GPU:0"):` gives you explicit control; you rarely need it
+  because TF places things well automatically, but it's invaluable for
+  debugging and benchmarking.
+- GPUs dominate at large tensor sizes. For tiny ops the launch overhead can
+  actually make them slower than CPU.

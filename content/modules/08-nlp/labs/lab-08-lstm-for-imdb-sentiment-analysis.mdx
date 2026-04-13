@@ -397,6 +397,103 @@ for variant, acc in results.items():
 
 
 # ============================================================
+# VALIDATION CHECKPOINT
+# ============================================================
+
+print("\n" + "=" * 60)
+print("VALIDATION CHECKPOINT")
+print("=" * 60)
+
+# Verify end-to-end pipeline correctness
+assert model.input_shape == (None, max_length), \
+    f"Expected input shape (None, {max_length}), got {model.input_shape}"
+assert model.output_shape == (None, 1), \
+    f"Expected output shape (None, 1) for binary classification, got {model.output_shape}"
+
+final_val_acc = history.history['val_accuracy'][-1]
+assert final_val_acc > 0.75, \
+    f"Validation accuracy {final_val_acc:.4f} is below 0.75 — check hyperparameters or data preprocessing"
+
+# Check that the model is not trivially predicting all-same-class
+test_preds = model.predict(x_test[:100], verbose=0)
+pred_variance = np.var(test_preds)
+assert pred_variance > 0.01, \
+    f"Prediction variance {pred_variance:.6f} is near zero — model may be predicting constant output (collapsed)"
+
+print(f"  Input shape:        {model.input_shape} ✓")
+print(f"  Output shape:       {model.output_shape} ✓")
+print(f"  Val accuracy:       {final_val_acc:.4f} (> 0.75) ✓")
+print(f"  Prediction variance: {pred_variance:.4f} (> 0.01) ✓")
+print("\n✅ All validation checks passed!")
+
+
+# ============================================================
+# COMMON PITFALLS
+# ============================================================
+
+print("\n" + "=" * 60)
+print("COMMON PITFALLS")
+print("=" * 60)
+
+pitfalls = """
+⚠️  Pitfall 1: Not padding/truncating sequences to the same length
+    → tf.keras.preprocessing.sequence.pad_sequences must be called
+      with both maxlen and truncating='post' (or 'pre') to ensure
+      uniform input shapes. Forgetting this causes shape errors.
+
+⚠️  Pitfall 2: Using too large a vocabulary (vocab_size)
+    → Setting vocab_size=50000+ for IMDB dramatically increases
+      the embedding matrix size without improving accuracy. Most
+      information is captured in the top 10,000-20,000 words.
+
+⚠️  Pitfall 3: Forgetting to set mask_zero=True in the Embedding layer
+    → Without masking, the LSTM treats padding zeros as real tokens,
+      diluting the learned representations. Use mask_zero=True or
+      add a Masking layer after the embedding.
+
+⚠️  Pitfall 4: Training too many epochs without early stopping
+    → LSTM sentiment models overfit quickly on IMDB (~3-5 epochs).
+      Always use EarlyStopping with patience=2-3 and
+      restore_best_weights=True to avoid degraded test performance.
+"""
+
+print(pitfalls)
+
+
+# ============================================================
+# STRETCH GOALS
+# ============================================================
+
+print("\n" + "=" * 60)
+print("STRETCH GOALS")
+print("=" * 60)
+
+stretch_goals = """
+🎯 Stretch Goal 1: Bidirectional LSTM
+   Replace tf.keras.layers.LSTM with tf.keras.layers.Bidirectional(LSTM(...))
+   and compare accuracy. Bidirectional models capture both forward and
+   backward context — expect ~1-2% accuracy improvement on IMDB.
+
+🎯 Stretch Goal 2: Attention over LSTM hidden states
+   Instead of using only the last hidden state, implement a simple
+   attention layer that computes a weighted average over all time steps.
+   Compare the attention weights for positive vs negative reviews.
+
+🎯 Stretch Goal 3: GloVe-initialized embeddings
+   Download GloVe 6B 100d vectors, build an embedding matrix from the
+   IMDB word index, and initialize the Embedding layer with weights=[matrix].
+   Compare frozen vs fine-tuned embeddings on validation accuracy.
+
+🎯 Stretch Goal 4: Learning curve analysis
+   Plot training and validation accuracy/loss curves. Identify the
+   exact epoch where overfitting begins. Experiment with dropout rates
+   (0.2, 0.3, 0.5) and recurrent_dropout to find the sweet spot.
+"""
+
+print(stretch_goals)
+
+
+# ============================================================
 # EXERCISES
 # ============================================================
 

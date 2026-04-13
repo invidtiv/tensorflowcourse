@@ -414,3 +414,60 @@ plt.show()
 ```
 
 ---
+
+## Validation Checkpoint
+
+Run the following assertions to verify your CelebA face generation pipeline is working correctly:
+
+```python
+# =============================================================================
+# Validation Checkpoint: Verify face generation pipeline
+# =============================================================================
+
+print("Running validation checks...")
+
+# 1. Generator output shape and range
+test_noise = tf.random.normal([16, 100])
+test_faces = gan.generator(test_noise, training=False)
+assert test_faces.shape == (16, 64, 64, 3), \
+    f"Expected output shape (16, 64, 64, 3), got {test_faces.shape}"
+assert tf.reduce_min(test_faces) >= -1.0 and tf.reduce_max(test_faces) <= 1.0, \
+    f"Output range should be [-1, 1], got [{tf.reduce_min(test_faces):.3f}, {tf.reduce_max(test_faces):.3f}]"
+
+# 2. Discriminator produces valid probabilities
+test_scores = gan.discriminator(test_faces, training=False)
+assert tf.reduce_all(test_scores >= 0.0) and tf.reduce_all(test_scores <= 1.0), \
+    f"Discriminator scores should be in [0, 1]"
+
+# 3. Training loss decreased (G loss should not diverge)
+final_g_loss = history.history['g_loss'][-1]
+assert final_g_loss < 10.0, \
+    f"Generator loss diverged: {final_g_loss:.4f} (expected < 10.0)"
+
+# 4. Output diversity — faces should not all be identical (mode collapse check)
+pairwise_diff = tf.reduce_mean(tf.abs(test_faces[0] - test_faces[1]))
+assert pairwise_diff > 0.01, \
+    f"Generated faces appear identical (mean diff = {pairwise_diff:.6f}). Possible mode collapse."
+
+print("All validation checks passed!")
+print(f"  - Generator output shape: {test_faces.shape}")
+print(f"  - Pixel range: [{tf.reduce_min(test_faces):.3f}, {tf.reduce_max(test_faces):.3f}]")
+print(f"  - Final G loss: {final_g_loss:.4f}")
+print(f"  - Pairwise diversity: {pairwise_diff:.4f}")
+```
+
+<Callout type="pitfall" title="Common Pitfalls">
+1. **CelebA center-crop matters** — CelebA images are 178×218. If you resize directly without center-cropping to 178×178 first, faces are vertically squished, and the discriminator learns the distortion instead of face features.
+2. **tanh output + wrong normalization** — The generator uses `tanh` (output in [-1, 1]), so input images must be normalized to [-1, 1] not [0, 1]. Mismatch causes the discriminator to trivially distinguish real from fake by pixel range alone.
+3. **Learning rate too high for 64×64** — Default Adam LR of 1e-3 is too aggressive for face generation. Use 2e-4 with β₁=0.5 (the DCGAN recipe) or the training oscillates wildly.
+4. **Batch size too small for diversity** — Batch sizes below 32 give the discriminator very noisy gradient estimates, leading to mode collapse. Use 64–128 for CelebA.
+</Callout>
+
+<Callout type="tip" title="Stretch Goals">
+1. **Real CelebA data** — Download the actual CelebA dataset and train for 100+ epochs. Compare FID at epoch 50 vs 100 using Lab 15's FID implementation.
+2. **Latent space arithmetic** — Implement vector arithmetic in z-space: find average z for "smiling woman", "neutral woman", and "neutral man", then compute z_smiling_man = z_neutral_man + (z_smiling_woman − z_neutral_woman).
+3. **Progressive resolution** — Start training at 32×32, then fine-tune at 64×64 using progressive growing (freeze early layers, add new ones with fade-in).
+4. **FID monitoring during training** — Compute FID every 10 epochs against a held-out real set and plot FID vs. epoch to find the optimal stopping point.
+</Callout>
+
+---

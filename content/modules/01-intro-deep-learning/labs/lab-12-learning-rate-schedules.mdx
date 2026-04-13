@@ -1,0 +1,251 @@
+---
+title: "Learning Rate Schedules: Step, Exponential, and Cosine"
+module: 1
+labNumber: 12
+difficulty: "medium"
+estimatedTime: "60-75 minutes"
+source: "authored-by-claude-2026-04-11"
+---
+
+## Objective
+
+A constant learning rate is almost never the right answer. In this lab you'll
+implement four schedules — **step decay**, **exponential decay**, **cosine
+annealing**, and **linear warmup + cosine** — plot their shapes, then actually
+train a small model with each and compare how they affect the loss curve. By
+the end you'll understand *why* every modern recipe (ResNet, BERT, GPT, stable
+diffusion) uses a warmup + cosine schedule.
+
+## Prerequisites
+
+- Completed Lab 11 (Mini-Batch SGD)
+- Familiar with `tf.keras.optimizers.SGD`
+
+## Background
+
+Early in training, large learning rates help you **explore**: you move fast
+through the loss landscape and escape poor initializations. Late in training,
+small learning rates help you **settle**: you converge to a minimum instead
+of bouncing around it. A schedule encodes this intuition.
+
+Four common schedules, all parameterized by training step $t$ and initial
+rate $\eta_0$:
+
+- **Step decay**: drop by a factor $\gamma$ every $k$ steps.
+  $\eta_t = \eta_0 \cdot \gamma^{\lfloor t/k \rfloor}$
+- **Exponential decay**: smooth version of the above.
+  $\eta_t = \eta_0 \cdot e^{-\lambda t}$
+- **Cosine annealing** (Loshchilov & Hutter, 2017): smoothly interpolate from
+  $\eta_0$ down to $\eta_\min$ over $T$ steps using a cosine curve.
+  $\eta_t = \eta_\min + \frac{1}{2}(\eta_0 - \eta_\min)\bigl(1 + \cos(\pi t / T)\bigr)$
+- **Linear warmup + cosine**: ramp up linearly from 0 to $\eta_0$ over
+  `warmup_steps`, then cosine-anneal the rest of the way.
+
+Warmup solves a practical problem: at step 0, the parameters are random, so
+big gradients can point in absurd directions and wreck training. A short
+warmup gives the optimizer a few hundred "safe" steps to build up reasonable
+statistics (important for Adam's second moment, BatchNorm statistics, etc.).
+
+## Part 1 — Plot all four schedules
+
+```python
+import numpy as np
+import matplotlib.pyplot as plt
+
+total_steps = 1000
+eta0 = 0.1
+eta_min = 1e-4
+
+def step_decay(t, gamma=0.5, drop_every=200):
+    return eta0 * (gamma ** (t // drop_every))
+
+def exp_decay(t, lam=3e-3):
+    return eta0 * np.exp(-lam * t)
+
+def cosine(t, T=total_steps, mn=eta_min):
+    return mn + 0.5 * (eta0 - mn) * (1.0 + np.cos(np.pi * t / T))
+
+def warmup_cosine(t, warmup=100, T=total_steps, mn=eta_min):
+    if t < warmup:
+        return eta0 * (t + 1) / warmup
+    progress = (t - warmup) / (T - warmup)
+    return mn + 0.5 * (eta0 - mn) * (1.0 + np.cos(np.pi * progress))
+
+ts = np.arange(total_steps)
+schedules = {
+    "constant":        np.full_like(ts, eta0, dtype=np.float64),
+    "step decay":      np.array([step_decay(t) for t in ts]),
+    "exponential":     np.array([exp_decay(t)  for t in ts]),
+    "cosine":          np.array([cosine(t)     for t in ts]),
+    "warmup + cosine": np.array([warmup_cosine(t) for t in ts]),
+}
+
+fig, ax = plt.subplots(figsize=(9, 5))
+for name, vals in schedules.items():
+    ax.plot(ts, vals, label=name, linewidth=2)
+ax.set_xlabel("training step")
+ax.set_ylabel("learning rate")
+ax.set_title(f"Learning rate schedules (eta0={eta0})")
+ax.legend()
+ax.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.show()
+```
+
+### What to observe
+
+- **Step decay** is piecewise constant with sharp drops. It's simple but the
+  discontinuities can cause loss spikes at the drop boundaries.
+- **Exponential decay** is the smooth analog. One fewer hyperparameter.
+- **Cosine** spends most of its time at moderate rates and eases gently into
+  `eta_min` at the end — you can almost always stop training late into a
+  cosine schedule and get a sensible model.
+- **Warmup + cosine** is what you want 95% of the time for transformers and
+  big CNNs. The warmup is short (1–10% of total steps) and prevents the
+  first-step disaster.
+
+## Part 2 — Train a small model with each schedule
+
+We'll reuse the regression setup from Lab 11 and train a 1-hidden-layer MLP.
+
+```python
+import tensorflow as tf
+
+rng = np.random.default_rng(42)
+N, d = 5000, 10
+X = rng.standard_normal((N, d)).astype(np.float32)
+w_true = rng.standard_normal(d).astype(np.float32)
+y = (X @ w_true + 1.5 + 0.3 * rng.standard_normal(N).astype(np.float32))
+
+def build_model():
+    tf.keras.utils.set_random_seed(0)
+    return tf.keras.Sequential([
+        tf.keras.layers.Dense(32, activation="relu", input_shape=(d,)),
+        tf.keras.layers.Dense(1),
+    ])
+
+def train_with_schedule(schedule_fn, name, epochs=40, batch_size=64):
+    model = build_model()
+    optimizer = tf.keras.optimizers.SGD(learning_rate=eta0, momentum=0.9)
+    loss_fn = tf.keras.losses.MeanSquaredError()
+
+    ds = tf.data.Dataset.from_tensor_slices((X, y)).shuffle(512, seed=0).batch(batch_size)
+    steps_per_epoch = N // batch_size
+    history = []
+    step = 0
+
+    for epoch in range(epochs):
+        epoch_loss = 0.0
+        n_batches = 0
+        for xb, yb in ds:
+            # Update LR from schedule BEFORE this step
+            optimizer.learning_rate.assign(float(schedule_fn(step)))
+            with tf.GradientTape() as tape:
+                pred = tf.squeeze(model(xb, training=True), axis=-1)
+                loss = loss_fn(yb, pred)
+            grads = tape.gradient(loss, model.trainable_variables)
+            optimizer.apply_gradients(zip(grads, model.trainable_variables))
+            epoch_loss += float(loss)
+            n_batches += 1
+            step += 1
+        history.append(epoch_loss / n_batches)
+    print(f"{name:18s}  final loss: {history[-1]:.5f}")
+    return history
+
+# Make the per-step schedule functions use the TOTAL steps for this run
+total_steps = 40 * (5000 // 64)       # epochs * steps_per_epoch
+print(f"Training for {total_steps} total steps")
+
+results = {}
+for name, fn in [
+    ("constant",        lambda t: eta0),
+    ("step decay",      lambda t: step_decay(t, drop_every=total_steps // 5)),
+    ("exponential",     lambda t: exp_decay(t, lam=3.0 / total_steps)),
+    ("cosine",          lambda t: cosine(t, T=total_steps)),
+    ("warmup + cosine", lambda t: warmup_cosine(t, warmup=total_steps // 20, T=total_steps)),
+]:
+    results[name] = train_with_schedule(fn, name)
+```
+
+## Part 3 — Compare the loss curves
+
+```python
+fig, ax = plt.subplots(figsize=(9, 5))
+for name, losses in results.items():
+    ax.plot(losses, label=name, linewidth=2)
+ax.set_yscale("log")
+ax.set_xlabel("Epoch")
+ax.set_ylabel("Train MSE (log scale)")
+ax.set_title("Same model, same data, different LR schedules")
+ax.legend()
+ax.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.show()
+```
+
+### What you'll typically see
+
+- **Constant** starts fine but plateaus. You can *see* the loss flattening
+  while the other schedules are still dropping.
+- **Step decay** shows characteristic "elbows" — loss drops suddenly after
+  each scheduled cut.
+- **Cosine** and **warmup + cosine** dominate in the last third of training,
+  when they're at small learning rates and making careful final adjustments.
+- Whether warmup beats plain cosine on this tiny problem is noise-level —
+  warmup wins decisively on deep networks with LayerNorm/BatchNorm, not on
+  tiny MLPs.
+
+## Part 4 — Using Keras's built-in schedulers (the production way)
+
+Implementing schedules manually is great for understanding. In real code, use
+the built-in `tf.keras.optimizers.schedules` classes so Keras handles step
+tracking for you:
+
+```python
+total_steps = 40 * (5000 // 64)
+
+schedule = tf.keras.optimizers.schedules.CosineDecay(
+    initial_learning_rate=eta0,
+    decay_steps=total_steps,
+    alpha=eta_min / eta0,   # final LR as a fraction of initial
+)
+# CosineDecay with warmup exists in tf.keras.optimizers.schedules as of TF 2.13+
+# under the name CosineDecay(warmup_steps=..., warmup_target=...)
+optimizer = tf.keras.optimizers.SGD(learning_rate=schedule, momentum=0.9)
+model = build_model()
+model.compile(optimizer=optimizer, loss="mse")
+model.fit(X, y, epochs=40, batch_size=64, verbose=0)
+```
+
+Notice we passed the `schedule` object where Keras expects a float — the
+optimizer calls it every step automatically. This is the canonical pattern.
+
+## Exercises
+
+1. **Find the best `eta0`.** For each of the five schedules, do a log-space
+   sweep over `eta0 in [0.001, 0.01, 0.03, 0.1, 0.3]`. Which schedule is most
+   forgiving (smallest gap between best and worst `eta0`)?
+2. **Warmup length matters.** Fix the schedule at warmup+cosine and vary the
+   warmup length in `{0, 20, 100, 500}` steps. Plot the first 200 steps of the
+   loss on a linear axis. You should see that `warmup=0` has the worst initial
+   behavior.
+3. **Restart cosine.** Implement "cosine annealing with warm restarts"
+   (Loshchilov & Hutter): every `T_i` steps, snap the LR back to `eta0` and
+   cosine-decay again. Does it beat single-shot cosine on a longer (80-epoch)
+   run?
+4. **Use a scheduled learning rate with `model.fit` and a `LearningRateScheduler`
+   callback** — an alternative to passing a schedule object. Compare both
+   approaches for the same cosine schedule; the loss curves should be
+   identical.
+
+## Key takeaways
+
+- A constant learning rate leaves performance on the table. Use a schedule.
+- **Step decay** is the historical default (ResNet 2015). **Cosine** is the
+  modern default (most vision/NLP recipes since ~2019).
+- **Warmup** is cheap insurance against a catastrophic first few hundred
+  steps. Always use it with adaptive optimizers (Adam, AdamW).
+- Prefer `tf.keras.optimizers.schedules.*` objects in production code so the
+  optimizer handles step tracking for you.
+- The schedule matters much more at the start and end of training than in the
+  middle — that's where most of the gain over "constant" comes from.

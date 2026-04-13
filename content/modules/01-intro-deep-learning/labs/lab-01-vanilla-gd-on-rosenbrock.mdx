@@ -6,7 +6,34 @@ difficulty: "easy"
 estimatedTime: "45-60 minutes"
 source: "lab-01-complete.md"
 ---
-return (1 - x[0])**2 + 100 * (x[1] - x[0]**2)**2
+
+# Lab 1.1: Vanilla Gradient Descent on the Rosenbrock Function
+
+In this lab you will implement **vanilla gradient descent** from scratch and test it on the classic [Rosenbrock (banana) function](https://en.wikipedia.org/wiki/Rosenbrock_function) — a standard benchmark for optimization algorithms. You will then compare vanilla GD with **momentum-based GD** and visualize how each method navigates the narrow, curved valley.
+
+<Callout type="tip" title="What you will learn">
+
+- How to code a gradient-descent loop in pure NumPy (no TensorFlow yet).
+- Why the Rosenbrock function is hard to optimize (ill-conditioning).
+- The dramatic speed-up that momentum provides in curved loss landscapes.
+
+</Callout>
+
+## Prerequisites
+
+```python
+import numpy as np
+import matplotlib.pyplot as plt
+```
+
+## Part 1 — Define the Rosenbrock Function and its Gradient
+
+The Rosenbrock function is defined as $f(x, y) = (1 - x)^2 + 100(y - x^2)^2$. Its global minimum is at $(1, 1)$ where $f = 0$.
+
+```python
+def rosenbrock(x):
+    """Rosenbrock (banana) function."""
+    return (1 - x[0])**2 + 100 * (x[1] - x[0]**2)**2
 
 def rosenbrock_grad(x):
     """Gradient of Rosenbrock."""
@@ -198,5 +225,41 @@ print("\n" + "=" * 70)
 print("Lab 3.2 Complete!")
 print("=" * 70)
 ```
+
+---
+
+## Validation Checkpoint
+
+Run the following cell to verify your implementation is correct:
+
+```python
+# === Validation ===
+assert rosenbrock(np.array([1.0, 1.0])) == 0.0, "Rosenbrock minimum should be 0 at (1,1)"
+assert np.allclose(rosenbrock_grad(np.array([1.0, 1.0])), [0.0, 0.0], atol=1e-10), \
+    "Gradient at minimum should be zero"
+# Momentum should converge closer than vanilla in same iterations
+val_vanilla = rosenbrock(x_rosen_vanilla)
+val_momentum = rosenbrock(x_rosen_momentum)
+assert val_momentum < val_vanilla * 10, \
+    f"Momentum ({val_momentum:.4f}) should be significantly better than vanilla ({val_vanilla:.4f})"
+print("All validations passed!")
+```
+
+<Callout type="warning" title="Common Pitfalls">
+
+- **Learning rate too large for Rosenbrock**: lr > 0.002 often causes divergence because the narrow valley has very different curvatures along its two axes. If your loss explodes to NaN, halve the learning rate.
+- **Forgetting to store history**: Make sure your GD loop appends a *copy* of the current position (`x.copy()`) — otherwise the entire history array points to the same mutable object.
+- **Momentum too high**: β = 0.99 on Rosenbrock can overshoot the valley walls. Start with 0.9 and increase carefully.
+
+</Callout>
+
+## Stretch Goals
+
+For learners who finish early and want to go deeper:
+
+1. **Implement Nesterov Accelerated Gradient (NAG)**: modify your momentum function to compute the gradient at the "look-ahead" position `θ - γ·v` instead of at the current position. Compare convergence speed vs. standard momentum on Rosenbrock.
+2. **Adaptive learning rate**: implement a simple line search that tries 2-3 step sizes per iteration and picks the one with the lowest loss. How many total function evaluations does it take to converge vs. fixed lr?
+3. **Visualize the loss landscape in 3D**: use `matplotlib`'s `plot_surface` to render the Rosenbrock function and overlay the GD trajectory as a 3D scatter. Rotate the view to see how the optimizer navigates the valley.
+4. **Measure condition number**: compute the Hessian of Rosenbrock at the starting point and at (1,1). What's the condition number (ratio of largest to smallest eigenvalue)? How does this relate to convergence speed?
 
 ---

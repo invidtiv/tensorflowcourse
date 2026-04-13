@@ -443,4 +443,53 @@ print("=" * 60)
 
 ---
 
+<Callout type="tip" title="Validation Checkpoint">
+Before moving on, verify your implementation meets these benchmarks:
+
+```python
+# === Validation Checkpoint ===
+# 1. Model compiles and trains without errors
+assert model is not None, "Model should be defined"
+assert len(model.layers) >= 5, "CNN should have at least 5 layers (conv + pool + dense)"
+
+# 2. Accuracy sanity check — a reasonable CNN on CIFAR-10 should exceed 70% test accuracy
+#    (random guessing = 10% for 10 classes)
+test_loss, test_acc = model.evaluate(x_test, y_test, verbose=0)
+assert test_acc > 0.65, f"Test accuracy {test_acc:.2%} is too low — check architecture and training"
+print(f"✅ Test accuracy: {test_acc:.2%} (target: >70%)")
+
+# 3. Check the model isn't trivially overfitting
+train_loss, train_acc = model.evaluate(x_train[:5000], y_train[:5000], verbose=0)
+overfit_gap = train_acc - test_acc
+assert overfit_gap < 0.20, f"Overfitting gap {overfit_gap:.2%} is too large — add regularization"
+print(f"✅ Overfit gap: {overfit_gap:.2%} (target: <20%)")
+
+# 4. Per-class accuracy — no class should be below 40%
+import numpy as np
+y_pred = np.argmax(model.predict(x_test, verbose=0), axis=1)
+y_true = np.argmax(y_test, axis=1) if len(y_test.shape) > 1 else y_test
+for cls in range(10):
+    mask = y_true == cls
+    cls_acc = np.mean(y_pred[mask] == y_true[mask])
+    assert cls_acc > 0.40, f"Class {cls} accuracy {cls_acc:.2%} is too low"
+print("✅ All per-class accuracies above 40%")
+```
+</Callout>
+
+<Callout type="warning" title="Common Pitfalls">
+- **Not normalizing pixel values** — CIFAR-10 images are uint8 [0, 255]. Forgetting `x_train = x_train.astype('float32') / 255.0` causes training to diverge or converge very slowly because gradients scale with input magnitude.
+- **Too many FC parameters after flattening** — A 32×32 image after several conv/pool layers can still produce a large flatten vector. Use Global Average Pooling instead of Flatten → Dense(512) to reduce parameters by 10–50×.
+- **No data augmentation** — CIFAR-10 has only 50K training images. Without augmentation (random flips, shifts, rotations), even a small CNN will overfit. `tf.keras.layers.RandomFlip` and `RandomTranslation` are the minimum.
+- **Learning rate too high for deep models** — Starting at lr=0.01 with Adam often works for shallow CNNs but diverges for deeper architectures. Try lr=0.001 or use a warmup schedule.
+</Callout>
+
+<Callout type="info" title="Stretch Goals">
+1. **Implement BatchNorm + ResNet-style skip connections** — Add skip connections to your custom CNN and compare training curves with the plain CNN. Does the skip-connected version train faster or reach higher accuracy?
+2. **Implement Grad-CAM visualization** — After training, generate Grad-CAM heatmaps for correctly and incorrectly classified images. Do the attention regions align with the object? (Hint: see Lab 10 for Grad-CAM reference.)
+3. **Learning rate finder** — Implement the LR range test (Smith, 2017): train for one epoch while exponentially increasing LR from 1e-7 to 1. Plot loss vs. LR and pick the steepest descent region. Retrain with that LR.
+4. **CIFAR-100 generalization** — Swap the dataset to CIFAR-100 (100 classes, 500 images/class). How much does accuracy drop? What architectural changes help? This tests whether your CNN design generalizes beyond the specific dataset.
+</Callout>
+
+---
+
 <a name="lab-35"></a>

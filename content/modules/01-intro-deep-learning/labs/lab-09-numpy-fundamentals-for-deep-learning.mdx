@@ -1,0 +1,180 @@
+---
+title: "NumPy Fundamentals for Deep Learning"
+module: 1
+labNumber: 9
+difficulty: "easy"
+estimatedTime: "45-60 minutes"
+source: "authored-by-claude-2026-04-11"
+---
+
+## Objective
+
+Get fluent with the NumPy operations that show up in every single deep learning
+codebase: creating arrays, reshaping tensors, indexing and slicing, element-wise
+math, and reductions. By the end you'll be able to read a line like
+`X.reshape(-1, 784).astype(np.float32) / 255.0` and know exactly what each piece
+is doing.
+
+This lab is the gentle onramp to the more advanced Labs 4 (Vectorization) and
+5 (Broadcasting Deep Dive). If you already use NumPy daily, skim the exercises
+and move on.
+
+## Prerequisites
+
+- Python 3.9+ installed
+- `pip install numpy matplotlib`
+
+## Background
+
+A NumPy `ndarray` is a homogeneous, fixed-dtype, fixed-shape block of memory.
+Three attributes matter more than anything else:
+
+- `arr.shape` — a tuple of dimension sizes. `(60000, 28, 28)` is 60k grayscale
+  images of 28x28 pixels.
+- `arr.dtype` — the element type. Almost every deep learning pipeline works in
+  `float32` (or `float16` for mixed-precision).
+- `arr.ndim` — the number of axes. A scalar is 0-d, a vector 1-d, a matrix 2-d,
+  a batch of images 4-d `(N, H, W, C)`.
+
+Understanding those three is 80% of the battle.
+
+## Part 1 — Creating arrays
+
+```python
+import numpy as np
+
+# From a Python list
+a = np.array([1, 2, 3, 4], dtype=np.float32)
+print(a, a.shape, a.dtype)            # [1. 2. 3. 4.] (4,) float32
+
+# Common constructors
+zeros  = np.zeros((2, 3))              # 2x3 zeros
+ones   = np.ones((2, 3), dtype=np.int32)
+eye    = np.eye(4)                     # 4x4 identity
+rng    = np.random.default_rng(seed=0) # seeded generator (preferred over np.random.seed)
+uniform = rng.uniform(-1, 1, size=(4, 4))
+normal  = rng.standard_normal(size=(4, 4))
+
+# Sequences
+linspace = np.linspace(0, 1, 11)       # 11 evenly-spaced points in [0, 1]
+arange   = np.arange(0, 10, 2)         # [0 2 4 6 8]
+
+print("zeros:\n", zeros)
+print("eye:\n", eye)
+print("uniform[0]:", uniform[0])
+```
+
+### What to observe
+
+- The dtype defaults to `float64` unless you say otherwise — almost always cast
+  to `float32` for deep learning so your GPU memory stays happy.
+- `np.random.default_rng(seed)` is the modern reproducible RNG. The older
+  `np.random.seed(...)` still works but mutates global state.
+
+## Part 2 — Shape manipulation
+
+```python
+# 60k MNIST images stored as a flat table
+X = rng.uniform(0, 255, size=(60000, 784)).astype(np.float32)
+print("X:", X.shape, X.dtype)
+
+# Reshape to (N, H, W) to visualize
+X_images = X.reshape(60000, 28, 28)
+print("X_images:", X_images.shape)
+
+# Add a channel axis for a CNN: (N, H, W, C)
+X_cnn = X_images[..., np.newaxis]      # or: X_images.reshape(60000, 28, 28, 1)
+print("X_cnn:", X_cnn.shape)
+
+# Use -1 to let NumPy infer one axis
+flat = X_cnn.reshape(60000, -1)        # back to (60000, 784)
+print("flat:", flat.shape)
+
+# Transpose / swap axes
+X_chw = X_cnn.transpose(0, 3, 1, 2)    # NHWC -> NCHW
+print("X_chw:", X_chw.shape)
+```
+
+### Key rule
+
+`reshape` never copies data — it only reinterprets how the same bytes are laid
+out. `transpose` returns a view with swapped strides. If you need an honest
+copy, call `.copy()` explicitly.
+
+## Part 3 — Indexing, slicing, and boolean masks
+
+```python
+v = np.arange(10)                      # [0 1 2 3 4 5 6 7 8 9]
+print(v[3])                            # scalar: 3
+print(v[2:6])                          # slice: [2 3 4 5]
+print(v[::-1])                         # reversed: [9 8 7 ... 0]
+print(v[[1, 4, 7]])                    # fancy indexing: [1 4 7]
+
+M = np.arange(12).reshape(3, 4)
+#  [[ 0  1  2  3]
+#   [ 4  5  6  7]
+#   [ 8  9 10 11]]
+print(M[0])          # first row  -> [0 1 2 3]
+print(M[:, 1])       # second col -> [1 5 9]
+print(M[1:, 2:])     # bottom-right 2x2
+
+# Boolean mask: keep only even entries
+mask = M % 2 == 0
+print("evens:", M[mask])
+```
+
+## Part 4 — Element-wise math and reductions
+
+```python
+a = np.array([1.0, 2.0, 3.0, 4.0])
+b = np.array([10.0, 20.0, 30.0, 40.0])
+
+print(a + b)                 # [11. 22. 33. 44.]
+print(a * b)                 # elementwise
+print(np.exp(a))             # elementwise exp
+print(np.sqrt(a))
+
+# Reductions along an axis
+M = rng.standard_normal((3, 4))
+print("mean over all:   ", M.mean())
+print("mean per column: ", M.mean(axis=0))   # shape (4,)
+print("mean per row:    ", M.mean(axis=1))   # shape (3,)
+print("argmax per row:  ", M.argmax(axis=1)) # index of max per row
+
+# Normalization — a one-liner you'll see everywhere
+X_standardized = (M - M.mean(axis=0)) / (M.std(axis=0) + 1e-8)
+print("normalized col mean:", X_standardized.mean(axis=0).round(6))
+print("normalized col std: ", X_standardized.std(axis=0).round(6))
+```
+
+### What to observe
+
+- `axis=0` reduces across rows (result has one entry per column).
+- `axis=1` reduces across columns (result has one entry per row).
+- The `+ 1e-8` in the standardization prevents division by zero when a column is
+  constant. This idiom shows up constantly in batch normalization, softmax, etc.
+
+## Exercises
+
+1. **Reproduce `np.linspace(0, 1, 11)` using `np.arange`.** Watch out for the
+   endpoint — `linspace` includes it, `arange` doesn't.
+2. **One-hot encode a label array.** Given `y = np.array([0, 2, 1, 2, 0])` and
+   `num_classes = 3`, produce a `(5, 3)` array where row `i` has a `1` in
+   column `y[i]`. Hint: `np.eye(num_classes)[y]`.
+3. **Per-sample normalization.** Given `X` of shape `(100, 10)`, scale each
+   sample (row) to unit L2 norm. Verify `np.linalg.norm(X_out, axis=1)` is all
+   ones.
+4. **Find the two closest rows.** Given a random `(20, 5)` matrix, compute the
+   pairwise Euclidean distance matrix (shape `(20, 20)`), mask out the diagonal,
+   and return the `(i, j)` pair with the smallest distance. You don't need a
+   loop — `X[:, None, :] - X[None, :, :]` + broadcasting does it in three lines.
+
+## Key takeaways
+
+- `shape`, `dtype`, `ndim` are the three attributes you'll check a hundred
+  times a day when debugging a model.
+- Reshapes are free (no data copy); transposes return views with reordered
+  strides.
+- Axis-aware reductions (`axis=0` vs `axis=1`) are the most common source of
+  bugs for newcomers — always say the axis out loud when you write one.
+- `np.random.default_rng(seed)` is the modern reproducible RNG. Use it.

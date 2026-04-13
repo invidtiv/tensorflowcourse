@@ -446,7 +446,49 @@ print("""
    - Monitor dead neurons and gradient flow
 """)
 
+# ============================================================
+# VALIDATION CHECKPOINT
+# ============================================================
+print("\n[VALIDATION] Running assertions to verify your implementation...")
+
+# Verify sigmoid properties
+assert abs(ActivationFunctions.sigmoid(0) - 0.5) < 1e-6, "Sigmoid(0) should be 0.5"
+assert ActivationFunctions.sigmoid(100) > 0.999, "Sigmoid(large) should approach 1"
+assert ActivationFunctions.sigmoid(-100) < 0.001, "Sigmoid(very negative) should approach 0"
+
+# Verify ReLU properties
+assert ActivationFunctions.relu(-5) == 0, "ReLU(negative) should be 0"
+assert ActivationFunctions.relu(5) == 5, "ReLU(positive) should pass through unchanged"
+
+# Verify derivative consistency
+x_test = np.array([0.5])
+sig_deriv = ActivationFunctions.sigmoid_derivative(x_test)[0]
+sig_val = ActivationFunctions.sigmoid(x_test)[0]
+assert abs(sig_deriv - sig_val * (1 - sig_val)) < 1e-6, "Sigmoid derivative should be σ(x)·(1-σ(x))"
+
+print("✅ All validation checks passed!")
+
 print("\n" + "=" * 60)
 print("LAB 2.4 COMPLETED SUCCESSFULLY!")
 print("=" * 60)
 ```
+
+<Callout type="warning" title="Common Pitfalls">
+
+- **Numerical overflow in sigmoid:** Computing `exp(-x)` for large positive `x` can overflow. Use `np.clip` or the numerically stable form `1 / (1 + exp(-x))` which NumPy handles via `np.exp`.
+- **Dead ReLU neurons:** If most inputs are negative (e.g., due to poor initialization or large negative biases), ReLU outputs zero and its gradient is zero — the neuron stops learning permanently. Monitor the fraction of zero activations during training.
+- **Comparing activations without controlling other variables:** When benchmarking activation functions, keep initialization, learning rate, and architecture identical. He init with ReLU vs Xavier init with tanh is not a fair comparison of the activation functions.
+
+</Callout>
+
+---
+
+## Stretch Goals
+
+1. **Implement GELU from scratch:** The Gaussian Error Linear Unit (GELU) used in Transformers is defined as `x · Φ(x)` where Φ is the standard Gaussian CDF. Implement both the exact version (using `scipy.special.erf`) and the fast approximation (`0.5x(1 + tanh(√(2/π)(x + 0.044715x³)))`). Compare them on [-5, 5] and verify the approximation error is < 0.01.
+
+2. **Gradient flow visualization:** Build a function that takes a network depth (5, 10, 20, 50 layers) and activation function, runs a random forward pass, then plots the mean and variance of activations at each layer. Reproduce the "activation collapse" phenomenon with sigmoid at 50 layers and show that ReLU + He init keeps variance stable.
+
+3. **Custom activation with learnable parameters:** Implement a `PReLU` (Parametric ReLU) where the negative slope `α` is a trainable parameter. Train it on MNIST and compare the learned `α` values across layers — do deeper layers learn different slopes?
+
+4. **Activation function ablation on CIFAR-10:** Train a small ConvNet (3 conv + 2 dense layers) on CIFAR-10 with ReLU, LeakyReLU, ELU, SELU, Swish, and GELU. Record training curves, final accuracy, and wall-clock time. Which activation gives the best accuracy/time tradeoff?

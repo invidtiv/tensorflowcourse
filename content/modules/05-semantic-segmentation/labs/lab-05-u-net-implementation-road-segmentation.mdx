@@ -552,6 +552,76 @@ Key Takeaways:
 
 Next: Lab 5.5 will apply U-Net to medical image segmentation.
 """)
+
+# =============================================================================
+# Validation Checkpoint
+# =============================================================================
+
+print("\n" + "="*60)
+print("VALIDATION CHECKPOINT")
+print("="*60)
+
+# 1. Model architecture check
+encoder_layers = [l for l in road_unet.layers if 'conv2d' in l.name or 'up_sampling' in l.name or 'concatenate' in l.name]
+assert len(encoder_layers) >= 10, f"Expected >=10 conv/upsample/concat layers in U-Net, got {len(encoder_layers)}"
+print(f"✅ Model architecture: {len(encoder_layers)} structural layers (conv/upsample/concat)")
+
+# 2. Output shape check
+pred_shape = road_unet.predict(X_test[:1], verbose=0).shape
+assert pred_shape[1:3] == X_test.shape[1:3], f"Output spatial dims {pred_shape[1:3]} != input {X_test.shape[1:3]}"
+print(f"✅ Output shape matches input spatial dimensions: {pred_shape[1:3]}")
+
+# 3. Dice score sanity check (should be > 0.5 on synthetic data)
+test_preds = road_unet.predict(X_test, verbose=0)
+dice_scores = []
+for i in range(len(X_test)):
+    p = (test_preds[i].squeeze() > 0.5).astype(float)
+    g = y_test[i].squeeze()
+    intersection = np.sum(p * g)
+    dice = (2.0 * intersection + 1e-7) / (np.sum(p) + np.sum(g) + 1e-7)
+    dice_scores.append(dice)
+mean_dice = np.mean(dice_scores)
+assert mean_dice > 0.5, f"Mean Dice {mean_dice:.3f} < 0.5 — model did not converge"
+print(f"✅ Mean Dice score on test set: {mean_dice:.3f} (threshold: >0.5)")
+
+# 4. Post-processing should not degrade quality
+processed_dice = []
+for i in range(min(10, len(X_test))):
+    raw = (test_preds[i].squeeze() > 0.5).astype(float)
+    proc = post_process_mask(raw, min_area=100, kernel_size=5)
+    g = y_test[i].squeeze()
+    d_raw = (2.0 * np.sum(raw * g) + 1e-7) / (np.sum(raw) + np.sum(g) + 1e-7)
+    d_proc = (2.0 * np.sum(proc * g) + 1e-7) / (np.sum(proc) + np.sum(g) + 1e-7)
+    processed_dice.append(d_proc - d_raw)
+mean_delta = np.mean(processed_dice)
+print(f"{'✅' if mean_delta >= -0.05 else '⚠️'} Post-processing Dice delta: {mean_delta:+.3f} (acceptable if >= -0.05)")
+
+print("\n🎉 All validation checks passed!" if mean_dice > 0.5 else "\n⚠️ Some checks need attention.")
+```
+
+<Callout type="pitfall" title="Common Pitfalls">
+
+**1. Forgetting to normalize images to [0, 1].** U-Net with sigmoid output expects inputs scaled to [0, 1] or standardized. Feeding uint8 [0, 255] images causes gradient explosion and NaN losses in the first epoch.
+
+**2. Using standard BCE on heavily imbalanced masks.** Road pixels may be only 15-30% of the image. Standard BCE optimizes for pixel accuracy, so the model learns to predict "all background" and still gets 70%+ accuracy. Always use Dice loss or weighted BCE.
+
+**3. Not applying the same augmentation to image and mask.** Geometric transforms (rotation, flip, crop) must be applied identically to both. Using separate random augmentation pipelines for image and mask produces misaligned training pairs, causing the model to learn noise.
+
+**4. Setting `min_area` too aggressively in post-processing.** Removing small connected components helps clean noise, but setting the threshold too high (e.g., 1000 pixels on 256×256 images) can delete valid narrow road segments. Always visualize before choosing the threshold.
+
+</Callout>
+
+<Callout type="tip" title="Stretch Goals">
+
+**1. Replace synthetic data with a real dataset.** Download the KITTI Road dataset or CamVid and adapt the data loading pipeline. Compare Dice scores between synthetic and real — expect a significant drop that motivates better augmentation.
+
+**2. Implement a learning rate finder.** Sweep LR from 1e-7 to 1e-1 over one epoch, plot loss vs LR, and pick the steepest descent point. Compare convergence speed vs the fixed LR used in this lab.
+
+**3. Add boundary-aware loss.** Implement a boundary Dice loss that upweights pixels within 3px of mask edges. Compare boundary F1 score with and without this loss term.
+
+**4. Benchmark inference speed.** Measure FPS on GPU and CPU for the trained U-Net at 256×256 and 512×512. Profile with `tf.profiler` to identify bottleneck layers. Explore whether `tf.lite` conversion maintains Dice score within 2%.
+
+</Callout>
 ```
 
 ---
