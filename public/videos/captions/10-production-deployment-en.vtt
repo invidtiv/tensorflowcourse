@@ -1,0 +1,37 @@
+WEBVTT
+Kind: captions
+Language: en
+
+NOTE
+=============================================================
+PLACEHOLDER CAPTION FILE — Module 10: Production Deployment
+=============================================================
+This is a placeholder WebVTT file. Replace with real captions
+generated from the recorded lecture transcript.
+
+Recommended tooling:
+  - Whisper (OpenAI) for auto-transcription: whisper lecture.mp4 --language en
+  - Caption.Ed or Rev.com for human-verified captions
+  - ffmpeg for .srt -> .vtt conversion: ffmpeg -i captions.srt captions.vtt
+
+Format reference: https://developer.mozilla.org/en-US/docs/Web/API/WebVTT_API
+
+YouTube video reference: https://www.youtube.com/watch?v=WbARPbJXmg0
+(For localhost/self-hosted: record own lecture and replace .mp4 source)
+
+TODO (Phase 5b — Video Delivery):
+  - Record module 10 lecture (≥1080p / 30fps / 44.1kHz mono)
+  - Run Whisper to generate initial .srt
+  - Convert to .vtt and review for accuracy
+  - Add speaker identification cues (e.g., ">> Instructor:")
+  - Populate the real transcript below, replacing these placeholder cues
+=============================================================
+
+00:00:00.000 --> 00:00:05.000
+[Placeholder] Welcome to Module 10: Production Deployment.
+
+00:00:05.001 --> 00:00:12.000
+[Placeholder] In this module, we will cover the core concepts and hands-on implementation.
+
+00:00:12.001 --> 00:00:20.000
+[Placeholder] Replace this file with real captions once the lecture is recorded.

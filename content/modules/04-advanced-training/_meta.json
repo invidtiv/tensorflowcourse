@@ -18,5 +18,14 @@
   ],
   "icon": "zap",
   "color": "#f59e0b",
-  "videoId": "IHZwWFHWa-w"
+  "videoId": "IHZwWFHWa-w",
+  "videoCaptions": [
+    {
+      "src": "/videos/captions/04-advanced-training-en.vtt",
+      "srclang": "en",
+      "label": "English",
+      "default": true,
+      "kind": "captions"
+    }
+  ]
 }

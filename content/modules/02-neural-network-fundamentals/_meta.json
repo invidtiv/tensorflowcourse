@@ -18,5 +18,14 @@
   ],
   "icon": "link",
   "color": "#8b5cf6",
-  "videoId": "VMj-3S1tku0"
+  "videoId": "VMj-3S1tku0",
+  "videoCaptions": [
+    {
+      "src": "/videos/captions/02-neural-network-fundamentals-en.vtt",
+      "srclang": "en",
+      "label": "English",
+      "default": true,
+      "kind": "captions"
+    }
+  ]
 }

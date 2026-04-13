@@ -18,5 +18,14 @@
   ],
   "icon": "chart",
   "color": "#14b8a6",
-  "videoId": "VYpAodcdFfA"
+  "videoId": "VYpAodcdFfA",
+  "videoCaptions": [
+    {
+      "src": "/videos/captions/09-time-series-en.vtt",
+      "srclang": "en",
+      "label": "English",
+      "default": true,
+      "kind": "captions"
+    }
+  ]
 }
