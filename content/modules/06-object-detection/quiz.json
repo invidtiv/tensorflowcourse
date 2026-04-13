@@ -313,6 +313,32 @@
         }
       ],
       "explanation": "FCOS resolves multi-box ambiguity with two mechanisms: (1) each spatial location is assigned to the ground-truth box with the smallest area, and (2) multi-level FPN prediction restricts which object size range each feature level handles (e.g., P3 for small objects, P7 for large). Together these ensure almost every location is unambiguously assigned. Additionally, FCOS predicts a 'centerness' score that down-weights detections far from the object center, reducing low-quality predictions from boundary locations."
+    },
+    {
+      "id": "m6-q13",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Soft-NMS",
+      "question": "Standard NMS removes all detections whose IoU with a higher-scoring box exceeds a threshold. Why does this fail in crowded scenes (e.g., a group of pedestrians), and how does Soft-NMS address it?",
+      "options": [
+        {
+          "text": "Standard NMS suppresses partially occluded objects that legitimately overlap the top-scoring detection; Soft-NMS decays their scores proportionally to IoU instead of zeroing them",
+          "correct": true
+        },
+        {
+          "text": "Standard NMS is too slow for crowded scenes; Soft-NMS uses a faster algorithm that avoids sorting",
+          "correct": false
+        },
+        {
+          "text": "Standard NMS only works on single-class detections; Soft-NMS extends it to multi-class",
+          "correct": false
+        },
+        {
+          "text": "Standard NMS fails because it uses IoU; Soft-NMS replaces IoU with Euclidean distance between box centers",
+          "correct": false
+        }
+      ],
+      "explanation": "In crowded scenes, legitimate objects often have high IoU with each other (e.g., two pedestrians side by side may overlap at IoU > 0.5). Standard NMS with threshold 0.5 would suppress one of them entirely, reducing recall. Soft-NMS (Bodla et al., 2017) replaces the hard 0/1 suppression with a continuous decay function: s_i = s_i × f(IoU(b_i, b_max)), where f is either linear (1 − IoU) or Gaussian (exp(−IoU²/σ)). This preserves partially occluded detections with reduced but non-zero scores, significantly improving recall in dense scenes (typically +1–2% mAP on COCO) with zero retraining cost."
     }
   ]
 }

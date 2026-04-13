@@ -287,6 +287,58 @@
         }
       ],
       "explanation": "The core value of a feature store is eliminating training-serving skew: the same feature transformation logic and values are used in both the offline training pipeline and the online serving path. This prevents subtle bugs where training preprocesses data differently than serving. Feature stores also enable feature reuse across teams and models, versioning, and point-in-time correctness — but consistency is the primary motivation. Option A confuses feature stores with model registries; option C describes feature selection, a separate concern."
+    },
+    {
+      "id": "m10-q12",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Quantization",
+      "question": "You apply post-training INT8 quantization to a ResNet-50 image classifier and observe a 3% accuracy drop — unacceptable for your use case. What is the MOST appropriate next step?",
+      "options": [
+        {
+          "text": "Switch to Float16 quantization only, which never degrades accuracy",
+          "correct": false
+        },
+        {
+          "text": "Apply Quantization-Aware Training (QAT), which simulates quantization noise during fine-tuning so the model learns to compensate",
+          "correct": true
+        },
+        {
+          "text": "Increase the number of calibration samples until accuracy recovers",
+          "correct": false
+        },
+        {
+          "text": "Use a larger model and then quantize, as larger models are always more quantization-robust",
+          "correct": false
+        }
+      ],
+      "explanation": "When post-training quantization causes unacceptable accuracy loss — common in accuracy-sensitive tasks or models with non-uniform weight distributions — Quantization-Aware Training (QAT) is the standard remedy. QAT inserts fake quantization nodes during fine-tuning so the model learns weight distributions that are robust to INT8 precision. Option A is wrong: Float16 quantization can also degrade accuracy and delivers less size reduction than INT8. Option C is partially true (more calibration data helps), but rarely recovers a 3% gap; QAT is the right tool. Option D is incorrect — larger models are not inherently more quantization-robust and adding parameters contradicts the optimization goal."
+    },
+    {
+      "id": "m10-q13",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "Federated Learning",
+      "question": "In the Federated Averaging (FedAvg) algorithm, why are local model updates weighted by each client's dataset size (n_k / n) rather than averaged uniformly across clients?",
+      "options": [
+        {
+          "text": "To penalize clients with large datasets for consuming more server bandwidth",
+          "correct": false
+        },
+        {
+          "text": "To ensure clients with more data contribute proportionally more to the global model, reducing variance introduced by small-data clients",
+          "correct": true
+        },
+        {
+          "text": "Because uniform averaging causes gradient explosion in cross-device federated settings",
+          "correct": false
+        },
+        {
+          "text": "To satisfy differential privacy constraints enforced on the central aggregation server",
+          "correct": false
+        }
+      ],
+      "explanation": "FedAvg weights each client's local update by n_k/n (its share of total data) rather than 1/K (uniform). This is statistically motivated: a client with 10,000 samples produces a more reliable gradient estimate than one with 100 samples. Uniform averaging gives equal weight to noisy small-data updates, increasing variance in the aggregated global model. The weighted average approximates the gradient that would result from centralising all data. Option A is backwards — large-dataset clients contribute more, not less. Option C is incorrect; FedAvg was designed to be stable across heterogeneous clients. Option D confuses FedAvg aggregation with differential privacy mechanisms (e.g., adding Gaussian noise), which are a separate add-on layer."
     }
   ]
 }

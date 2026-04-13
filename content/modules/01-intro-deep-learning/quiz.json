@@ -313,6 +313,58 @@
         }
       ],
       "explanation": "tf.function traces a new concrete function for each unique input signature (shape + dtype). The second call has a different first dimension (64 vs 32), so TF retraces and caches a second graph. This is why you may see 'retracing' warnings if you call a tf.function with many different shapes — use input_signature to constrain it. Covered in Section 4.4.3."
+    },
+    {
+      "id": "m1-q13",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Weight Initialization",
+      "question": "You are building a deep network where all hidden layers use ReLU activation. Which weight initialization scheme should you use and why?",
+      "options": [
+        {
+          "text": "Xavier/Glorot initialization (std = sqrt(2 / (fan_in + fan_out))), because it balances variance across layers for symmetric activations",
+          "correct": false
+        },
+        {
+          "text": "He/Kaiming initialization (std = sqrt(2 / fan_in)), because ReLU zeros out half its inputs and He accounts for this by doubling the variance",
+          "correct": true
+        },
+        {
+          "text": "All-zeros initialization, because ReLU outputs are always non-negative and symmetry is not required",
+          "correct": false
+        },
+        {
+          "text": "Uniform random initialization in [-1, 1], because larger initial values help ReLU escape the dead-neuron region",
+          "correct": false
+        }
+      ],
+      "explanation": "Xavier initialization was derived assuming symmetric activations (tanh, sigmoid) where the effective fan is the average of fan_in and fan_out. ReLU kills roughly half its inputs, effectively halving the variance. He initialization corrects for this by using only fan_in (the incoming connections), setting std = sqrt(2/fan_in). Using Xavier with ReLU results in variance shrinking layer by layer, making very deep networks hard to train. In Keras, this is `kernel_initializer='he_normal'`."
+    },
+    {
+      "id": "m1-q14",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "Optimization",
+      "question": "What is the key computational difference between standard Momentum and Nesterov Accelerated Gradient (NAG)?",
+      "options": [
+        {
+          "text": "NAG uses a larger momentum coefficient (γ > 1) to accelerate convergence, whereas standard Momentum clips γ to [0, 1]",
+          "correct": false
+        },
+        {
+          "text": "NAG computes the gradient at the look-ahead position (θ − γv) before updating, whereas standard Momentum computes the gradient at the current position θ",
+          "correct": true
+        },
+        {
+          "text": "NAG normalizes the gradient by its running variance, whereas standard Momentum only accumulates the first moment",
+          "correct": false
+        },
+        {
+          "text": "NAG applies momentum only on the bias terms, whereas standard Momentum applies it uniformly to all parameters",
+          "correct": false
+        }
+      ],
+      "explanation": "Standard Momentum first computes the gradient at the current position θ_t, then moves in the direction of the accumulated velocity v. NAG reverses this order: it first takes the momentum step to the 'look-ahead' position θ_t − γv_t, then evaluates the gradient there. This allows the gradient to 'correct' an overly large momentum step before it is taken, giving NAG better convergence properties on convex problems and making it the preferred variant in practice (e.g., the `nesterov=True` flag in `tf.keras.optimizers.SGD`). Covered in Section 2.5.2."
     }
   ]
 }

@@ -604,6 +604,41 @@ Key Takeaways:
 - Regular review and adjustment of thresholds
 """)
 
+# ============================================================
+# VALIDATION CHECKPOINT
+# ============================================================
+
+print("\n" + "=" * 60)
+print("VALIDATION CHECKPOINT")
+print("=" * 60)
+
+# 1. Monitor should have captured at least some prediction batches
+assert summary['total_batches'] > 0, \
+    "FAIL: Monitor captured 0 batches — check that log_prediction() was called."
+print(f"✅ Captured {summary['total_batches']} batches ({summary['total_predictions']} predictions)")
+
+# 2. Alert counts should be non-negative (alert system initialized correctly)
+assert summary['alert_count'] >= 0, \
+    "FAIL: alert_count is negative — check alert_history structure."
+print(f"✅ Alert system initialized: {summary['alert_count']} total alerts, "
+      f"{summary['critical_alerts']} critical")
+
+# 3. All tracked average metrics should be in a plausible range [0, 1]
+avg_metrics = summary['average_metrics']
+for metric_name, value in avg_metrics.items():
+    assert 0.0 <= value <= 1.0, \
+        f"FAIL: Metric '{metric_name}' = {value:.4f} is outside [0, 1] — check normalization."
+print(f"✅ All {len(avg_metrics)} tracked metrics are within [0, 1]")
+
+# 4. Time range should be non-trivial (start != end)
+time_start = summary['time_range']['start']
+time_end = summary['time_range']['end']
+assert time_start != time_end, \
+    "FAIL: time_range start == end — monitoring ran for zero duration."
+print(f"✅ Monitoring time range: {time_start} → {time_end}")
+
+print("\n✅ All 4 validation checks passed!")
+
 # Cleanup
 import os
 for f in ['metrics_trend.png', 'alerts.log']:
@@ -611,6 +646,26 @@ for f in ['metrics_trend.png', 'alerts.log']:
         os.remove(f)
 print("\nCleanup completed!")
 ```
+
+<Callout type="pitfall" title="Common Pitfalls in Production Monitoring">
+1. **Monitoring too infrequently** — hourly batch checks miss concept drift that degrades high-velocity models within minutes. Use sliding-window statistics with configurable granularity, and tune the window size to your data arrival rate.
+
+2. **Single-threshold alerting** — one static threshold for PSI or accuracy misses gradual degradation. Use tiered severity: `INFO` (PSI 0.10–0.25), `WARNING` (PSI 0.25–0.40), `CRITICAL` (PSI > 0.40), with different escalation paths per tier.
+
+3. **Alert fatigue** — over-alerting on noisy metrics causes on-call engineers to ignore pages. Apply rate limiting (max N alerts per hour), cooldown periods, and alert deduplication before triggering a PagerDuty/Slack notification.
+
+4. **Confusing covariate shift with concept drift** — covariate shift is a change in P(X); concept drift is a change in P(Y|X). They need different detection strategies: statistical distribution tests (KS, PSI) for the former, and fresh labeled data accuracy for the latter. Treating them interchangeably leads to wrong remediation.
+</Callout>
+
+### Stretch Goals
+
+1. **Real Prometheus + Grafana integration** — replace the simulated metric store with a real Prometheus `push_gateway` and visualize drift metrics in a live Grafana dashboard with alert rules. Observe how the time-series charts highlight distribution shifts that tabular logs obscure.
+
+2. **Exponentially Weighted Moving Average (EWMA) alerting** — replace the simple sliding-window average with EWMA (α ≈ 0.1) so recent predictions are weighted more heavily. Compare alert responsiveness to sudden vs. gradual drift against the baseline implementation.
+
+3. **Per-slice monitoring** — break down accuracy and PSI by a sensitive feature (e.g., age bucket, geographic region) and alert if any slice degrades more than the global threshold. This implements a basic algorithmic fairness monitor and catches silent per-group regressions.
+
+4. **Automated retraining trigger** — extend `AlertSystem` to emit a retraining signal (write to a queue or POST to a webhook) when `CRITICAL` drift is detected, closing the MLOps loop to an automated retraining pipeline triggered by production monitoring.
 
 ---
 

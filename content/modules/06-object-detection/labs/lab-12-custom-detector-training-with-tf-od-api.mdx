@@ -570,3 +570,72 @@ if __name__ == "__main__":
 ```
 
 ---
+
+## Validation Checkpoint
+
+Run the assertions below after completing the lab to verify your custom detector training pipeline is correctly configured:
+
+```python
+# === Validation Checkpoint ===
+# Run this cell after completing the lab to verify your TF OD API setup.
+
+from pathlib import Path
+
+work_dir = Path('custom_training')
+
+# 1. Pipeline config should exist and contain required fields
+pipeline_path = work_dir / 'pipeline.config'
+assert pipeline_path.exists(), (
+    "pipeline.config not found. Run the configuration step first."
+)
+config_text = pipeline_path.read_text()
+assert 'ssd' in config_text.lower() or 'faster_rcnn' in config_text.lower(), (
+    "pipeline.config missing model architecture (ssd or faster_rcnn). "
+    "Check the model block in your config file."
+)
+assert 'train_input_reader' in config_text, (
+    "pipeline.config missing train_input_reader block. "
+    "The TF OD API requires this to locate your TFRecord training data."
+)
+
+# 2. Label map should exist and have at least one class
+label_map_path = work_dir / 'label_map.pbtxt'
+assert label_map_path.exists(), "label_map.pbtxt not found."
+label_text = label_map_path.read_text()
+assert 'id:' in label_text.replace(' ', ''), (
+    "label_map.pbtxt has no class entries. "
+    "Each class needs an item { id: N  name: 'class_name' } block."
+)
+
+# 3. Training and export scripts should exist
+assert (work_dir / 'train.py').exists(), "train.py not found."
+assert (work_dir / 'export.py').exists(), "export.py not found."
+
+# 4. Number of training steps should be reasonable
+import re
+steps_match = re.search(r'num_steps:\s*(\d+)', config_text)
+if steps_match:
+    num_steps = int(steps_match.group(1))
+    assert num_steps >= 100, (
+        f"num_steps={num_steps} is very low. "
+        "For fine-tuning, use at least 1000-5000 steps; "
+        "for training from scratch, 50000+."
+    )
+
+print("All validation checks passed!")
+```
+
+<Callout type="pitfall" title="Common Pitfalls">
+- **Wrong label map IDs**: Label map IDs must start at 1, not 0. ID 0 is reserved for the background class in the TF OD API. Starting at 0 silently shifts all your class predictions by one.
+- **Mismatched paths in pipeline.config**: The `fine_tune_checkpoint`, `label_map_path`, and `input_path` fields are absolute paths. If you move your project directory, training fails with cryptic `NotFoundError` messages. Use relative paths or a script that patches them at runtime.
+- **Forgetting `fine_tune_checkpoint_type`**: When fine-tuning from a COCO-pretrained model, set `fine_tune_checkpoint_type: "detection"` (not `"classification"`). Using the wrong type loads only the backbone weights and discards the detection head, causing training to start from scratch on the head.
+- **TFRecord field name mismatch**: The TF OD API expects specific field names (`image/encoded`, `image/object/bbox/xmin`, etc.). Custom TFRecord generation scripts often use different names, causing silent data loading failures where the model trains on images with no annotations.
+- **Batch size too large for GPU memory**: The default configs from the model zoo assume multi-GPU setups. Reduce `batch_size` in `train_config` to 2–4 for single-GPU training, or you'll get OOM errors.
+</Callout>
+
+<Callout type="tip" title="Stretch Goals">
+- **End-to-end fine-tuning on a real dataset**: Download a small subset of Open Images v7, convert annotations to TFRecord, and fine-tune an EfficientDet-D0 or SSD MobileNet v2 for 5000 steps. Evaluate with `object_detection.metrics.coco_tools`.
+- **Model export and TFLite conversion**: After training, export to SavedModel, then convert to TFLite with `tf.lite.TFLiteConverter`. Benchmark inference speed on CPU vs. the original SavedModel.
+- **Hyperparameter sweep**: Vary learning rate warmup steps, total steps, and data augmentation options (random crop, mosaic, color jitter) in pipeline.config. Track mAP across configs to find the best setup for your dataset.
+- **Custom augmentation pipeline**: Add `data_augmentation_options` blocks to pipeline.config — try `random_horizontal_flip`, `random_crop_image`, `ssd_random_crop`, and `random_adjust_brightness` to improve robustness.
+</Callout>

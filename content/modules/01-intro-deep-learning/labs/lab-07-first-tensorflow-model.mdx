@@ -136,3 +136,71 @@ plt.tight_layout(); plt.show()
   around that same loop.
 - Even a one-neuron Dense layer is a legitimate neural network — you just
   built one.
+
+---
+
+## Validation Checkpoint
+
+Run the assertions below after completing all three parts. All should pass
+without error before you move on.
+
+```python
+# === Validation ===
+final_loss = history[-1]
+assert final_loss < 0.15, (
+    f"Expected final MSE < 0.15 after 200 epochs, got {final_loss:.4f}. "
+    "Check your learning rate or number of epochs."
+)
+
+assert abs(w.numpy() - 3.0) < 0.2, (
+    f"Learned w={w.numpy():.3f} is too far from true value 3.0. "
+    "The optimiser may have diverged or not converged."
+)
+
+assert abs(b.numpy() - 2.0) < 0.2, (
+    f"Learned b={b.numpy():.3f} is too far from true value 2.0."
+)
+
+w_keras_val, b_keras_val = model.layers[0].get_weights()
+assert abs(w_keras_val.flatten()[0] - 3.0) < 0.25, (
+    f"Keras w={w_keras_val.flatten()[0]:.3f} diverges from true value 3.0. "
+    "Confirm model compiled with learning_rate=0.1 and 200 epochs."
+)
+
+print("✅ All validation checks passed.")
+```
+
+<Callout type="warning" title="Common Pitfalls">
+
+1. **`tape.gradient` returns `None`** — You used `tf.constant` instead of
+   `tf.Variable` for `w` or `b`. By default, `GradientTape` only watches
+   `tf.Variable`s. Use `tape.watch(x)` to track arbitrary tensors.
+2. **Loss stuck at initial value** — The variable `assign_sub` step is
+   missing or the learning rate is effectively zero. Print
+   `grads[0].numpy()` to confirm non-zero gradients.
+3. **Shape mismatch in `y_pred = w * X + b`** — If `X` has shape `(200,)`
+   and `w` is shape `()`, broadcasting works fine. But if you accidentally
+   reshape `X` to `(200, 1)` you'll get a `(200, 200)` prediction. Always
+   print `y_pred.shape` before computing the loss.
+4. **`input_shape` deprecation in Keras 3** — In Keras 3 (shipped with
+   TF 2.16+) the `input_shape` argument to the first layer is deprecated;
+   use `model.build((None, 1))` after construction, or pass `shape=(1,)` to
+   a leading `tf.keras.layers.Input` layer instead.
+
+</Callout>
+
+## Stretch Goals
+
+1. **Custom optimizer from scratch** — Implement the SGD update rule as a
+   Python class (`__init__`, `apply_gradients`) instead of using
+   `tf.keras.optimizers.SGD`. Verify it converges to the same `(w, b)`.
+2. **Mini-batch training** — Modify the manual loop to sample a random
+   mini-batch of 32 examples per step instead of using all 200. Does
+   convergence speed (wall-clock time × epochs) improve or worsen? Why?
+3. **Multiple features** — Extend to `y = 3x₁ + -1.5x₂ + 2 + noise` with
+   `X` of shape `(200, 2)`. Replace scalar `w` with a `tf.Variable` of
+   shape `(2,)` and check that both learned weights converge correctly.
+4. **Residual plot** — After fitting, plot `(y_pred - y)` against `X`. For
+   a well-specified linear model on homoscedastic noise the residuals should
+   show no pattern. If you see a U-shape, the true relationship is
+   non-linear and you need a deeper model.
