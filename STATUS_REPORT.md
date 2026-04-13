@@ -1,5 +1,148 @@
 # TensorFlow Course Website — Status Report
-**Date:** April 10, 2026 (late-morning update) | **Automated hourly check-in**
+
+---
+
+## April 12, 2026 — Automated hourly check-in (Run 2)
+**Previous report:** April 12, 2026 (Run 1)
+
+### TL;DR
+
+Project continues strong. Video Delivery (Point 5) has jumped from partial to **near-complete**: all 10/10 modules now have `videoId` in `_meta.json` and `<VideoEmbed>` in theory.mdx (was 6/10 last run — modules 07–10 were populated between runs, likely by Tiago or a prior session). Content audit of **Module 02 (NN Fundamentals)** found excellent 1427-line theory and a solid 8-question quiz. Fixed 4 labs with generic "Lab NN" titles from the split-script artifact and added a "Common Misconceptions for Beginners" callout to theory §2.1.4. Disk at 69% (/sessions) and 83% (/tmp) — no immediate space issue.
+
+### Changes landed this run
+
+| File | Edit |
+|------|------|
+| `content/modules/02-neural-network-fundamentals/labs/lab-10-lab-10.mdx` | Fixed frontmatter title: "Lab 10" → "Custom Loss Functions and Metrics" |
+| `content/modules/02-neural-network-fundamentals/labs/lab-12-lab-12.mdx` | Fixed frontmatter title: "Lab 12" → "Backpropagation Visualization" |
+| `content/modules/02-neural-network-fundamentals/labs/lab-14-lab-14.mdx` | Fixed frontmatter title: "Lab 14" → "Auto-MPG Regression with Preprocessing" |
+| `content/modules/02-neural-network-fundamentals/labs/lab-17-lab-17.mdx` | Fixed frontmatter title: "Lab 17" → "Visualizing Gradients During Training" |
+| `content/modules/02-neural-network-fundamentals/theory.mdx` | Added "Common Misconceptions for Beginners" callout (3 items: more neurons ≠ better, backprop vs learning algorithm, ReLU not always best) after §2.1.4 |
+
+### Content audit: module 02
+
+**Theory (theory.mdx, 1427 lines → ~1440 after edit):** Comprehensive coverage of biological inspiration, perceptron (with convergence theorem proof), XOR impossibility proof, feature representation, activation functions, backpropagation (full derivation including vectorized), weight initialization (Xavier/He), loss functions, Keras Sequential/Functional/Subclassing APIs. Has proper `<Callout>`, `<VideoEmbed>`, KaTeX math, tables, and code blocks. Now includes a "Common Misconceptions" callout. Strong — no further theory edits needed this pass.
+
+**Weakness noted (not fixed — propose for future):** Theory stops at Keras 2.x API style (`keras.layers.Dense`). Could benefit from a short note about the Keras 3 multi-backend future (TF, JAX, PyTorch) and `import keras` vs `from tensorflow import keras` distinction. Low priority.
+
+**Quiz (quiz.json, 8 questions):** Meets ≥8 target. Difficulty mix: 3 easy, 3 medium, 2 hard. Topics: activation functions, universal approximation, backpropagation chain rule, loss functions, gradient stabilization, softmax, weight initialization, batch normalization. Explanations are substantive and address *why* the wrong answers are wrong. Quality: excellent — no changes needed.
+
+**Labs (18 files):** Good volume (exceeds 16 target). Content is substantive: covers preprocessing, normalization, Sequential/Functional API, custom losses, backprop visualization, regression workflows, gradient visualization. **Issues fixed:** 4 labs had generic "Lab NN" titles from the split script — replaced with descriptive names derived from their actual content. **Remaining weaknesses:** (a) No labs have "stretch goals" / bonus challenges for advanced learners, (b) no explicit `requirements.txt` or TF version pins, (c) lab filenames still include the generic slug (e.g., `lab-10-lab-10.mdx`) — renaming files is riskier (could break route resolution) so flagged but not changed.
+
+**Next rotation slot:** module 03
+
+### Video Delivery status (Point 5) — light check
+
+| Aspect | State |
+|--------|-------|
+| `VideoEmbed.tsx` component | **Complete** |
+| MDX registration | **Complete** |
+| `ModuleMeta` type (videoId, videoUrl) | **Complete** |
+| Module _meta.json coverage | **Complete** — 10/10 modules now have `videoId` (was 6/10 in Run 1) |
+| Theory MDX `<VideoEmbed>` usage | **Complete** — all 10 theory.mdx files include the component |
+| MP4 / self-hosted | No `videoUrl` set anywhere; `/public/videos/` not created yet |
+| Progress tracking (videoWatched) | **Complete** — `markVideoWatched`, `updateVideoProgress`, `markVideoFinished` all in store |
+| This was NOT a video focus run | Next focus run: **Run 3** |
+
+**Key delta:** Modules 07 (GANs), 08 (NLP), 09 (Time Series), 10 (Production) all got `videoId` populated since Run 1. Video delivery metadata is now 100% populated for the YouTube facade path.
+
+**Remaining for Run 3 (video focus):** Scaffold `/public/videos/` with a README, verify the `<VideoEmbed>` renders correctly in browser (if build is possible), add "watched" tick to module cards (TODO item still open), check `prefers-reduced-motion` compliance.
+
+### Phase rollup
+
+| Phase | Description | Progress | Δ since Run 1 |
+|-------|-------------|----------|----------------|
+| 1 | Foundation | ✅ ~95% | — |
+| 2 | Content System | ✅ ~95% | — |
+| 3 | Page Routes | ✅ ~85% | — |
+| 4 | Interactive (quiz, progress) | 🟡 ~70% | — (ProgressDashboard, CompletionBadge, ContinueLearning still open) |
+| 5 | Polish (animations, responsive) | 🟡 ~40% | — |
+| 6 | Deployment | 🟡 ~40% | — |
+| 7 | Video Delivery (Point 5) | 🟢 ~55% | +20% (10/10 videoId coverage, progress tracking complete) |
+
+**Overall: ~77% (was ~75% in Run 1).** Video delivery jump accounts for most of the gain.
+
+### Top 3 priorities for next run (Run 3 — VIDEO FOCUS)
+
+1. **Video focus run:** Scaffold `/public/videos/` directory with README, verify `<VideoEmbed>` renders in browser if build is feasible, wire "watched" tick on module cards.
+2. **Content audit module 03 (lighter — video focus run):** Quick check on CNNs theory depth, quiz count, lab quality.
+3. **Phase 4 gap:** `ProgressDashboard`, `CompletionBadge`, `ContinueLearning` components are still unchecked — scope and prioritize.
+
+### Blockers / input needed from Tiago
+
+1. **Lab filenames:** 4 labs in module 02 (and likely others across modules) have generic slugs like `lab-10-lab-10.mdx` from the split script. Renaming the files could break route resolution. Tiago: should we batch-rename these, or is the title frontmatter fix sufficient?
+2. **Keras 3 note:** Module 02 theory uses `from tensorflow import keras` style. Worth adding a forward-looking note about Keras 3 multi-backend? Low priority but would future-proof the content.
+3. **Stretch goals policy:** Should labs include bonus challenge sections for advanced learners, or keep them focused on the core exercise?
+
+---
+
+## April 12, 2026 — Automated hourly check-in (Run 1)
+**Previous report:** April 10, 2026 (late-morning update)
+
+### TL;DR
+
+Project is significantly more advanced than the last report captured — git log shows Phase 5 polish work already landed (metadataBase, quiz flow verification, smoke-test report). Video infrastructure (Point 5) is in **partial** state: `VideoEmbed.tsx` is fully built and registered, 6/10 modules have YouTube placeholder IDs, but modules 07–10 are missing video references. Content audit of **Module 01** found the theory is excellent (2713 lines, comprehensive) but lab-01 was truncated by the split script (missing intro/imports). Fixed this run. Added a "Common Misconceptions for Beginners" callout to theory §1.2. Disk space recovered to 69% (3 GB free). TODO.md and IMPLEMENTATION_PLAN.md located at workspace root (outside `tensorflow-course/`). Phase 5b (Video Delivery) section already present in TODO.md with several items checked off from Apr 11–12 runs.
+
+### Changes landed this run
+
+| File | Edit |
+|------|------|
+| `content/modules/01-intro-deep-learning/labs/lab-01-vanilla-gd-on-rosenbrock.mdx` | Added missing intro section, learning objectives callout, prerequisites, and Rosenbrock function definition that were cut off by the split script |
+| `content/modules/01-intro-deep-learning/theory.mdx` | Added "Common Misconceptions for Beginners" callout (3 items) between §1.2.3 and §1.2.4 |
+
+### Content audit: module 01
+
+**Theory (theory.mdx, 2713 lines):** Excellent quality. Covers AI history (1950s–2023), taxonomy (AI/ML/DL), math foundations (linear algebra, calculus, probability), NumPy deep dive, TensorFlow intro, and gradient descent. Has proper `<Callout>`, `<VideoEmbed>`, tables, and ASCII diagrams. Now includes a "Common Misconceptions" callout. Minor weakness: milestones table stops at 2023 — could add 2024–2025 entries (Claude, Gemini, open-weight models).
+
+**Quiz (quiz.json, 8 questions):** Meets ≥8 target. Difficulty mix: 3 easy, 3 medium, 2 hard. Explanations are substantive (not mere answer restatements). Distractors target real student mistakes (e.g., broadcasting shape confusion, tf.constant vs tf.Variable gotcha). Quality: good — no changes needed this run.
+
+**Labs (12 files):** More than the original 8 target. Lab-01 was truncated (started mid-function after frontmatter) — fixed with proper intro, learning objectives, prerequisites, and function definition. Other labs appear intact. Weakness: no labs have "stretch goals" sections for advanced learners; no explicit `requirements.txt` or dependency pins.
+
+**Next rotation slot:** module 02
+
+### Video Delivery status (Point 5) — light check
+
+| Aspect | State |
+|--------|-------|
+| `VideoEmbed.tsx` component | **Complete** — YouTube facade (click-to-load, rel=0, modestbranding=1, cc_load_policy=1) + native MP4 `<video>` support |
+| MDX registration | **Complete** — registered in `MDXComponents.tsx` |
+| `ModuleMeta` type | **Complete** — has `videoId?` and `videoUrl?` fields |
+| Module _meta.json coverage | **Partial** — 6/10 modules have `videoId` (01–06). Modules 07 (GANs), 08 (NLP), 09 (Time Series), 10 (Production) are missing |
+| Theory MDX usage | Module 01 has `<VideoEmbed>` in theory.mdx with 3Blue1Brown placeholder. Other modules not checked this run |
+| MP4 / self-hosted | No `videoUrl` set anywhere; `/public/videos/` directory not created yet |
+| This was NOT a video focus run | Next focus run: Run 3 |
+
+**Action items for next video focus run (Run 3):** Add placeholder `videoId` for modules 07–10, verify all 10 theory.mdx files include a `<VideoEmbed>` tag, scaffold `/public/videos/` with a README, add "Phase 5b — Video Delivery" to TODO.md.
+
+### Phase rollup
+
+| Phase | Description | Progress | Δ since Apr 10 |
+|-------|-------------|----------|-----------------|
+| 1 | Foundation | ✅ ~95% | — |
+| 2 | Content System | ✅ ~95% | — |
+| 3 | Page Routes | ✅ ~85% | +5% (inferred from git) |
+| 4 | Interactive (quiz, progress) | 🟡 ~70% | +45% (quiz flow verified per git) |
+| 5 | Polish | 🟡 ~40% | +40% (metadataBase, smoke test per git) |
+| 6 | Deployment | 🟡 ~40% | +40% (Dockerfile + localhost config) |
+| 7 | Video Delivery (Point 5) | 🟡 ~35% | new (component + 6/10 videoIds exist) |
+
+**Overall: ~75% (was ~60% on Apr 10).** The task description says ~93% as of Apr 11 from a host-shell execution — the delta may be work not yet reflected in the git log visible from this sandbox.
+
+### Top 3 priorities for next run
+
+1. **Content audit module 02** — check theory depth, quiz count (target ≥8), lab quality, and add stretch goals where missing.
+2. **Locate/recreate TODO.md** — the project needs a living task tracker; without it, phases 6–7 priorities are unclear.
+3. **Video focus prep** — Run 3 will be a video focus run; pre-identify appropriate placeholder YouTube IDs for modules 07–10 (GANs, NLP, Time Series, Production).
+
+### Blockers / input needed from Tiago
+
+1. **TODO.md and IMPLEMENTATION_PLAN.md are at workspace root** (outside `tensorflow-course/`). Found and reviewed — Phase 5b Video Delivery section already present with progress from Apr 11–12.
+2. **Modules 07–10 missing videoId** — Tiago, do you have preferred YouTube lecture references for GANs, NLP/Transformers, Time Series, and Production/Deployment? Otherwise I'll use well-known public lectures (e.g., Lex Fridman, Andrej Karpathy, etc.) as placeholders.
+3. **Lab stretch goals** — should I add "bonus challenge" sections to existing labs, or is that out of scope for now?
+
+---
+
+## April 10, 2026 (late-morning update) | **Automated hourly check-in**
 
 ---
 

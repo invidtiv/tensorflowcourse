@@ -11,6 +11,21 @@ export interface ModuleMeta {
   icon: string;
   color: string;
   labCount: number;
+  /** Optional: YouTube video ID for an intro lecture (used by <VideoEmbed type="youtube" src={...} />). */
+  videoId?: string;
+  /** Optional: self-hosted MP4 path (e.g., "/videos/module-01.mp4") for a localhost lecture. */
+  videoUrl?: string;
+  /** Optional: array of caption/subtitle tracks for the self-hosted MP4.
+   *  Each entry has { src, srclang, label, default?, kind? }.
+   *  Example: [{ src: "/videos/captions/01-intro-en.vtt", srclang: "en", label: "English", default: true }]
+   */
+  videoCaptions?: Array<{
+    src: string;
+    srclang: string;
+    label: string;
+    default?: boolean;
+    kind?: "captions" | "subtitles";
+  }>;
 }
 
 export interface LabMeta {
