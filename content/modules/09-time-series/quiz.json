@@ -131,6 +131,214 @@
         }
       ],
       "explanation": "The window must be long enough to capture relevant temporal dependencies (seasonality, lag structure) without exceeding memory budgets."
+    },
+    {
+      "id": "m9-q6",
+      "type": "multiple-choice",
+      "difficulty": "easy",
+      "topic": "Seasonal Decomposition",
+      "question": "In the additive decomposition model x_t = T_t + S_t + R_t, the STL algorithm uses LOESS smoothing. What is the primary advantage of STL over classical decomposition?",
+      "options": [
+        {
+          "text": "STL is robust to outliers and allows the seasonal component to change over time",
+          "correct": true
+        },
+        {
+          "text": "STL requires no hyperparameters and is fully automatic",
+          "correct": false
+        },
+        {
+          "text": "STL only works with monthly data, which makes it more precise",
+          "correct": false
+        },
+        {
+          "text": "STL eliminates the need for stationarity testing entirely",
+          "correct": false
+        }
+      ],
+      "explanation": "STL (Seasonal and Trend decomposition using LOESS) handles any seasonal period, is robust to outliers via its outer loop weighting, and allows the seasonal component to evolve over time — unlike classical decomposition which assumes a fixed seasonal pattern."
+    },
+    {
+      "id": "m9-q7",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Anomaly Detection",
+      "question": "An LSTM autoencoder for time series anomaly detection flags anomalies based on:",
+      "options": [
+        {
+          "text": "The reconstruction error — if the model cannot reconstruct a subsequence well, it is likely anomalous",
+          "correct": true
+        },
+        {
+          "text": "The latent space dimensionality — higher dimensions indicate anomalies",
+          "correct": false
+        },
+        {
+          "text": "The number of training epochs needed — anomalous data requires more epochs",
+          "correct": false
+        },
+        {
+          "text": "The gradient magnitude during inference — anomalies cause gradient explosions",
+          "correct": false
+        }
+      ],
+      "explanation": "Autoencoders are trained to reconstruct normal patterns. At inference, anomalous subsequences produce high reconstruction error (||x - Decoder(Encoder(x))||^2) because the model has not learned to represent them, making reconstruction error the anomaly score."
+    },
+    {
+      "id": "m9-q8",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "Temporal Convolutional Networks",
+      "question": "A TCN with kernel size K=3 and 4 layers using dilation factors d=1,2,4,8 has a receptive field of 1 + 2(K-1)(2^L - 1). What is the primary reason TCNs use exponentially increasing dilation rather than stacking standard convolutions?",
+      "options": [
+        {
+          "text": "Exponential dilation grows the receptive field exponentially with depth while keeping the parameter count linear, enabling long-range dependencies without deep networks",
+          "correct": true
+        },
+        {
+          "text": "Exponential dilation prevents overfitting by skipping most input positions, acting as implicit regularization",
+          "correct": false
+        },
+        {
+          "text": "Standard convolutions cannot be made causal, so dilation is required for the no-future-leakage property",
+          "correct": false
+        },
+        {
+          "text": "Dilation is only used because it matches the Fourier transform's frequency doubling, making TCNs equivalent to spectral methods",
+          "correct": false
+        }
+      ],
+      "explanation": "With standard convolutions, the receptive field grows linearly with depth (O(K*L)), requiring very deep networks for long sequences. Dilated convolutions with d_i = 2^(i-1) grow the receptive field exponentially (O(2^L)) while each layer still has only K*channels parameters. Distractor C is wrong because standard convolutions can be made causal via left-only padding. Distractor D is a fabrication — dilation has no direct equivalence to spectral methods."
+    },
+    {
+      "id": "m9-q9",
+      "type": "multiple-choice",
+      "difficulty": "easy",
+      "topic": "Data Leakage",
+      "question": "When splitting time series data into train/validation/test sets, why is random shuffling inappropriate?",
+      "options": [
+        {
+          "text": "It preserves class balance but destroys temporal ordering, causing future information to leak into training",
+          "correct": true
+        },
+        {
+          "text": "Shuffling is fine for time series as long as the test set is larger than the training set",
+          "correct": false
+        },
+        {
+          "text": "Random shuffling only fails when the series has more than 1000 data points",
+          "correct": false
+        },
+        {
+          "text": "Shuffling is inappropriate because it changes the distribution of the target variable",
+          "correct": false
+        }
+      ],
+      "explanation": "Time series have temporal dependencies: each observation's context is its past, not a random sample of the dataset. Random shuffling places future observations in the training set, leaking information the model wouldn't have at prediction time. Use temporal (chronological) splits or expanding/sliding-window cross-validation instead."
+    },
+    {
+      "id": "m9-q10",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "Probabilistic Forecasting",
+      "question": "In quantile regression for time series, the pinball (quantile) loss for quantile τ is ρ_τ(e) = max(τe, (τ-1)e). What happens when you train a model with τ=0.1 and τ=0.9 simultaneously?",
+      "options": [
+        {
+          "text": "The model learns to produce a prediction interval: the 10th percentile (lower bound) and 90th percentile (upper bound), capturing 80% of the distribution",
+          "correct": true
+        },
+        {
+          "text": "The two quantile losses cancel each other out, producing a point forecast equivalent to the median",
+          "correct": false
+        },
+        {
+          "text": "Training with multiple quantiles is invalid because quantile regression assumes a single output",
+          "correct": false
+        },
+        {
+          "text": "The model converges to the mean forecast because τ=0.1 and τ=0.9 are symmetric around 0.5",
+          "correct": false
+        }
+      ],
+      "explanation": "Each quantile head has its own asymmetric loss that penalises under- and over-prediction differently. The τ=0.1 head learns the 10th percentile (lower bound) and the τ=0.9 head learns the 90th percentile (upper bound). Together they define an 80% prediction interval. The losses don't cancel — they are computed independently on separate output heads. Distractor D confuses mean with median; symmetry around 0.5 is irrelevant because each head is trained separately."
+    },
+    {
+      "id": "m9-q11",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "N-BEATS Architecture",
+      "question": "N-BEATS (Neural Basis Expansion Analysis) achieves competitive forecasting without using any time-series-specific components (no recurrence, no convolution). What is its core architectural idea?",
+      "options": [
+        {
+          "text": "Stacks of fully connected blocks that learn basis function expansions, with each block producing a partial forecast and a residual (backcast) passed to the next block",
+          "correct": true
+        },
+        {
+          "text": "A Transformer encoder that replaces positional encoding with learned seasonal harmonics",
+          "correct": false
+        },
+        {
+          "text": "An ensemble of ARIMA models whose parameters are predicted by a neural network",
+          "correct": false
+        },
+        {
+          "text": "A variational autoencoder that generates multiple forecast trajectories from a latent distribution",
+          "correct": false
+        }
+      ],
+      "explanation": "N-BEATS uses a deep stack of fully-connected blocks. Each block takes a residual input (backcast from the previous block), passes it through FC layers, then projects onto learned basis functions to produce both a partial forecast and a backcast. The partial forecasts are summed across all blocks. The interpretable variant constrains basis functions to trend polynomials and Fourier harmonics, while the generic variant learns arbitrary bases. No RNNs, CNNs, or attention — just FC layers and basis expansion."
+    },
+    {
+      "id": "m9-q12",
+      "type": "multiple-choice",
+      "difficulty": "easy",
+      "topic": "ACF and PACF Interpretation",
+      "question": "When selecting an ARIMA model, if the ACF cuts off sharply after lag q while the PACF decays gradually, this pattern suggests:",
+      "options": [
+        {
+          "text": "A pure MA(q) process — the moving-average order equals the lag where the ACF cuts off",
+          "correct": true
+        },
+        {
+          "text": "A pure AR(q) process — the autoregressive order equals the ACF cutoff lag",
+          "correct": false
+        },
+        {
+          "text": "A non-stationary process that needs differencing before any model can be identified",
+          "correct": false
+        },
+        {
+          "text": "A seasonal model whose period equals q",
+          "correct": false
+        }
+      ],
+      "explanation": "The ACF/PACF duality is the key to ARIMA order identification: a sharp ACF cutoff after lag q with a gradually decaying PACF indicates an MA(q) process. Conversely, a sharp PACF cutoff after lag p with a decaying ACF indicates an AR(p) process. Distractor B reverses the relationship. Distractor C is wrong because non-stationarity would show a slowly decaying ACF that doesn't cut off. Distractor D confuses autocorrelation cutoff with seasonal period."
+    },
+    {
+      "id": "m9-q13",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "Multivariate Time Series",
+      "question": "In a Vector Autoregression (VAR) model for multivariate time series, each variable is regressed on lagged values of ALL variables in the system. What is the primary risk as the number of variables increases?",
+      "options": [
+        {
+          "text": "The number of parameters grows quadratically with the number of variables (O(K²p) for K variables and p lags), leading to overfitting and unreliable coefficient estimates in small samples",
+          "correct": true
+        },
+        {
+          "text": "The model becomes unstable because VAR requires all variables to be cointegrated, which rarely holds for large systems",
+          "correct": false
+        },
+        {
+          "text": "The computational cost grows exponentially because VAR solves a combinatorial optimization problem",
+          "correct": false
+        },
+        {
+          "text": "Cross-variable dependencies cancel out in large systems due to the law of large numbers, making the model equivalent to univariate AR",
+          "correct": false
+        }
+      ],
+      "explanation": "A VAR(p) model with K variables has K²p + K parameters (K equations, each with Kp lagged regressors plus an intercept). As K grows, the parameter count explodes quadratically, exhausting degrees of freedom in moderate-sized samples. This is the 'curse of dimensionality' for VAR and motivates regularized variants like LASSO-VAR or factor-augmented VAR (FAVAR). Distractor B is wrong: VAR doesn't require cointegration (VECM does). Distractor C is wrong: VAR is solved via OLS per equation, which is polynomial. Distractor D fabricates a cancellation effect that doesn't exist."
     }
   ]
 }

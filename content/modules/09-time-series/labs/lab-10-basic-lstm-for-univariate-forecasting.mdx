@@ -158,6 +158,37 @@ plt.grid(True, alpha=0.3)
 plt.savefig('/mnt/okcomputer/output/lab4_1_lstm_predictions.png', dpi=150)
 plt.show()
 
+# ──────────────────────────────────────────────────────────
+# VALIDATION CHECKPOINT
+# ──────────────────────────────────────────────────────────
+print("\n" + "=" * 60)
+print("VALIDATION CHECKPOINT")
+print("=" * 60)
+
+# 1. Input shape: (samples, window_size, 1)
+assert X_test.shape[1:] == (window_size, 1), \
+    f"Expected input shape (*, {window_size}, 1), got {X_test.shape}"
+
+# 2. Output shape: (samples, 1)
+assert y_pred.shape[1] == 1, \
+    f"Expected output shape (*, 1), got {y_pred.shape}"
+
+# 3. RMSE sanity: should be less than 20% of the price range
+price_range = y_test_inv.max() - y_test_inv.min()
+assert rmse < 0.20 * price_range, \
+    f"RMSE {rmse:.2f} exceeds 20% of price range {price_range:.2f} — model may not have learned"
+
+# 4. Prediction variance: catch collapsed / constant predictions
+pred_std = np.std(y_pred_inv)
+assert pred_std > 0.01, \
+    f"Prediction std {pred_std:.4f} ≈ 0 — model may be outputting constant values"
+
+print("✅ All validation checks passed!")
+print(f"   Input shape:  {X_test.shape}")
+print(f"   Output shape: {y_pred.shape}")
+print(f"   RMSE:         {rmse:.4f} (< 20% of range {price_range:.2f})")
+print(f"   Pred std:     {pred_std:.4f} (> 0.01)")
+
 # Save model
 model_lstm.save('/mnt/okcomputer/output/lab4_1_lstm_model.h5')
 joblib.dump(scaler, '/mnt/okcomputer/output/lab4_1_scaler.pkl')
@@ -166,5 +197,23 @@ print("\n" + "=" * 60)
 print("Lab 4.1 Complete!")
 print("=" * 60)
 ```
+
+<Callout type="pitfall" title="Common Pitfalls">
+
+- **Not scaling the data** — LSTMs are sensitive to input magnitude. Always use `MinMaxScaler` or `StandardScaler` before windowing; fit on training data only and transform val/test to avoid leakage.
+- **Window size too small** — A 5-step window cannot capture weekly or monthly seasonality. Match the window to the dominant period in your data (check ACF for guidance).
+- **Forgetting to reshape for LSTM** — LSTM expects 3D input `(samples, timesteps, features)`. A common error is passing 2D `(samples, timesteps)` and getting a cryptic shape error.
+- **Using `input_shape` with Keras 3** — In TF 2.16+ / Keras 3, `input_shape` in the first layer is deprecated. Use an explicit `keras.Input(shape=(...))` layer instead.
+
+</Callout>
+
+<Callout type="tip" title="Stretch Goals">
+
+- **Multi-step forecasting** — Modify `create_windows` to predict the next 5 steps instead of 1 (change `Dense(1)` to `Dense(5)`). Compare direct vs. recursive multi-step accuracy.
+- **Bidirectional LSTM** — Wrap the first LSTM layer with `layers.Bidirectional(...)`. Does it improve val MAE? Why might bidirectionality help less for forecasting than for classification?
+- **Walk-forward validation** — Replace the single train/val/test split with an expanding-window cross-validation loop. Plot RMSE stability across folds.
+- **Feature engineering** — Add day-of-week and month as extra features to `create_windows` (making it multivariate). Compare the 1-feature vs. 3-feature model.
+
+</Callout>
 
 ---
