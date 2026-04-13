@@ -237,6 +237,32 @@
       "explanation": "Dense CRF uses iterative mean-field inference with bilateral and Gaussian pairwise potentials, which refines boundaries by encouraging nearby pixels with similar color to share the same label. While this can boost mIoU by 2-5%, each iteration involves message passing across all pixel pairs (approximated via high-dimensional filtering), adding 100-500ms per image. For real-time applications targeting 30+ FPS (~33ms per frame), this overhead is prohibitive. Modern alternatives include boundary-aware losses (e.g., boundary Dice) or lightweight learned CRF modules like ConvCRF that trade global pairwise reasoning for speed."
     },
     {
+      "id": "m5-q13",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Decoder Upsampling Design",
+      "question": "Transposed convolution (also called deconvolution) is commonly used in U-Net decoders for learnable upsampling. However, a well-known artifact can degrade output quality. What is it, and what is the recommended alternative?",
+      "options": [
+        {
+          "text": "Transposed convolution produces 'checkerboard artifacts' caused by uneven overlap of the kernel during upsampling; the recommended fix is bilinear upsampling followed by a regular convolution",
+          "correct": true
+        },
+        {
+          "text": "Transposed convolution introduces 'border replication artifacts' at image edges; the fix is to apply zero-padding before each upsampling step",
+          "correct": false
+        },
+        {
+          "text": "Transposed convolution always doubles the channel dimension unintentionally; the fix is to add a 1×1 convolution before each transposed conv to halve the channels first",
+          "correct": false
+        },
+        {
+          "text": "Transposed convolution produces 'aliasing artifacts' identical to those in standard max-pooling; bilinear downsampling avoids the issue upstream",
+          "correct": false
+        }
+      ],
+      "explanation": "Transposed convolution upsamples by inserting zeros between input pixels and convolving with a learned kernel. When the kernel size is not divisible by the stride (e.g., 3×3 kernel with stride 2), different output pixels receive contributions from different numbers of kernel weights — some pixels accumulate more gradient and become brighter, creating a characteristic checkerboard or grid pattern in the output. Odena et al. (2016, 'Deconvolution and Checkerboard Artifacts') showed this is inherent to the operation. The standard practitioner fix is to use bilinear upsampling (nearest-neighbor also works) to resize the feature map, then apply a regular 3×3 or 1×1 convolution to learn spatial transformations — this decouples the upsampling geometry from the learned weights and eliminates uneven overlap. TensorFlow: `tf.keras.layers.UpSampling2D(size=(2,2), interpolation='bilinear')` followed by `Conv2D`."
+    },
+    {
       "id": "m5-q10",
       "type": "multiple-choice",
       "difficulty": "easy",
