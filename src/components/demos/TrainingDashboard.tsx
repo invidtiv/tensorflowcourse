@@ -78,6 +78,7 @@ const PAD = { top: 16, right: 16, bottom: 28, left: 40 };
 
 function toPoints(values: number[], minV: number, maxV: number): string {
   const n = values.length;
+  if (n <= 1) return "";
   return values
     .map((v, i) => {
       const x = PAD.left + (i / (n - 1)) * (W - PAD.left - PAD.right);
@@ -101,13 +102,13 @@ function YAxisLabels({
   const ticks = [max, (max + min) / 2, min];
   return (
     <>
-      {ticks.map((t, i) => {
+      {ticks.map((t) => {
         const y =
           PAD.top +
           (1 - (t - min) / (max - min)) * (H - PAD.top - PAD.bottom);
         return (
           <text
-            key={i}
+            key={t}
             x={PAD.left - 4}
             y={y + 4}
             textAnchor="end"
@@ -257,6 +258,23 @@ export default function TrainingDashboard() {
             strokeWidth={2}
             strokeDasharray="5 3"
           />
+          {/* Legend */}
+          <circle cx={PAD.left + 8} cy={PAD.top + 8} r={4} fill="#22d3ee" />
+          <text x={PAD.left + 16} y={PAD.top + 12} fontSize={9} fill="#22d3ee">
+            train
+          </text>
+          <line
+            x1={PAD.left + 48}
+            y1={PAD.top + 8}
+            x2={PAD.left + 60}
+            y2={PAD.top + 8}
+            stroke="#f97316"
+            strokeWidth={2}
+            strokeDasharray="5 3"
+          />
+          <text x={PAD.left + 64} y={PAD.top + 12} fontSize={9} fill="#f97316">
+            val
+          </text>
         </svg>
       </div>
 
