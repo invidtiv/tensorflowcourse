@@ -180,6 +180,61 @@ print("All validation checks passed ✅")
 
 </Callout>
 
+## Expected Output
+
+The lab compares float32 vs mixed_float16 training on a CNN.
+
+Expected results:
+```
+Policy          Train Acc   Val Acc   Epoch Time   Speedup   Peak Memory
+float32         0.88        0.85      14.2 s       1.0×      1.8 GB
+mixed_float16   0.88        0.85      9.1 s        1.56×     1.2 GB
+```
+
+Signals:
+- **Accuracy** should be nearly identical (< 0.5% difference)
+- **Speedup** of 1.3–1.8× is expected on Volta+ GPUs with Tensor Cores
+- On CPU or pre-Volta, speedup ≈ 1.0× or even slower
+- **Loss scale** should start at 2^15 and stabilize
+- If loss goes to NaN with mixed precision, the dynamic loss scaler is failing — usually means the initial scale is too high or gradients are genuinely huge
+
+A healthy mixed-precision run on a **Volta / Ampere / Hopper** GPU (or a TPU for BF16) produces these canonical signals:
+
+- **Throughput speedup (vs FP32 baseline, same batch size, same model):**
+  - `mixed_float16` on V100 / T4 / RTX 20-series: **1.5×–2.0×** steps/sec
+  - `mixed_float16` on A100 / H100: **2.0×–3.0×** steps/sec
+  - `mixed_bfloat16` on A100 / H100 / TPU v3+: **2.0×–3.0×** steps/sec
+  - **CPU or pre-Volta GPU: ~0.95×–1.05×** (no Tensor Cores → no real speedup; if you see a *slowdown* ≥ 10%, disable MP — the cast overhead is dominating).
+- **Peak GPU memory:** **~40–55% lower** than FP32 for the same batch size, because activations and optimizer momentum are stored in FP16/BF16. Measured via `tf.config.experimental.get_memory_info('GPU:0')['peak']`. Use the freed memory to ~1.5–2× the batch size for additional throughput.
+- **Accuracy delta:** final test accuracy for `mixed_float16` and `mixed_bfloat16` should be **within ±1–2%** of the FP32 baseline on CIFAR-10 / Fashion-MNIST. If you see a >2% drop, the cause is almost always a missing `dtype='float32'` on the output layer or a numerically unstable loss (see Pitfall 1).
+- **Loss scale trajectory (FP16 only):** `LossScaleOptimizer`'s dynamic scale typically settles in the range **`2^14` to `2^16`** within the first 200 steps. If it keeps halving (bouncing off `1.0`) you have chronic overflow — reduce learning rate or check for exploding activations. If it stays pinned at the initial `2^15` without ever adjusting, gradients are too small and silent underflow is likely — log unscaled gradient histograms.
+- **Dtype audit:** after `set_global_policy('mixed_float16')`, intermediate layer compute dtype is `float16` and variable dtype is `float32` (master weights). The **output Dense layer must report `dtype == float32`** or the softmax/cross-entropy path is unsafe.
+- **Wall-clock (CIFAR-10, 3-conv CNN, batch 128, 10 epochs):** FP32 baseline ~**90–120 s** on T4; `mixed_float16` ~**50–70 s** on T4 / ~**30–45 s** on A100; `mixed_bfloat16` ~**30–45 s** on A100.
+
+**Diagnostic tree if speedup is missing:**
+
+1. **No speedup at all (≤ 1.05×):** verify `tf.config.list_physical_devices('GPU')` shows a Volta-or-newer card; check `nvidia-smi` for compute capability ≥ 7.0; confirm the batch size is large enough to saturate Tensor Cores (typically ≥ 64 per GPU).
+2. **Speedup on training but not inference:** inference often runs at batch 1, where cast overhead dominates. Batch ≥ 32 at inference to see MP gains.
+3. **NaN loss after 1–5 steps with `mixed_float16`:** missing `dtype='float32'` on the output layer, or a custom loss that computes in FP16. Wrap loss computation explicitly in `tf.cast(..., tf.float32)`.
+4. **Accuracy drop > 3% vs FP32:** try `mixed_bfloat16` if available (no loss scaling needed); otherwise increase initial loss scale and verify no custom layers use unsafe FP16 ops (e.g. large reductions, log/exp on tiny values).
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| NaN loss within first few steps | Output Dense layer computes softmax in FP16; overflow/underflow corrupts gradients | Add `dtype='float32'` to the final Dense layer so Keras auto-casts before loss computation |
+| No speedup on CPU or pre-Volta GPU | Tensor Cores that accelerate FP16 matrix multiply are only present from NVIDIA Volta (V100) onward | Check `tf.config.list_physical_devices('GPU')` and `nvidia-smi` compute capability; disable MP if < 7.0 |
+| `LossScaleOptimizer` error in Keras 3 | Manual wrapping is no longer required or supported when a `mixed_float16` policy is active | Remove the manual `LossScaleOptimizer` wrap; the policy handles scaling automatically in TF ≥ 2.14 |
+| Loss scale keeps halving to 1.0 | Chronic gradient overflow means the dynamic scaler cannot find a stable scale | Lower the learning rate, add gradient clipping (`clipnorm=1.0`), or switch to `mixed_bfloat16` which needs no scaling |
+| Intermediate variables stored in FP32 unexpectedly | A custom layer explicitly passes `dtype='float32'` to `add_weight`, defeating FP16 activation savings | Omit explicit dtype in `add_weight` for activation tensors; only force FP32 for the final output and running statistics |
+
+## Stretch Goals
+
+1. **BF16 three-way comparison.** Add `'mixed_bfloat16'` as a third mode in `compare_mixed_precision()`. Plot training time, peak memory, and accuracy across all three modes (`float32`, `mixed_float16`, `mixed_bfloat16`). If the hardware does not support BF16, catch the error and print a hardware requirement message.
+2. **Custom training loop with manual loss scaling.** Rewrite the FP16 benchmark using a `tf.GradientTape` loop and implement dynamic loss scaling by hand: double the scale every 2 000 steps without overflow, halve on overflow. Plot the scaling factor trajectory and compare final accuracy against the `LossScaleOptimizer` baseline.
+3. **Gradient histogram analysis in TensorBoard.** During FP16 training, use `tf.summary.histogram` to log both the raw scaled gradients and the unscaled gradients. Verify that scaled values are above the FP16 underflow floor (~6×10⁻⁵) and that unscaled magnitudes match a simultaneous FP32 run within 5%.
+4. **Batch-size scaling experiment.** For the `mixed_float16` policy, sweep batch sizes [32, 64, 128, 256, 512] and record throughput (samples/sec) and peak memory. Identify the knee of the throughput curve and explain why Tensor Core utilisation saturates at a particular size.
+
 <Callout type="warning" title="Common Pitfalls">
 
 **Pitfall 1: Forgetting `dtype='float32'` on the output layer.**

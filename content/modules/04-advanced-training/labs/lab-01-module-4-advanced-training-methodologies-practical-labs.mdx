@@ -17,5 +17,127 @@ source: "lab-01-complete.md"
 
 ---
 
+## Introduction
+
+This module covers the practical techniques that separate production-grade deep learning from toy experiments. Across nineteen labs you will benchmark five optimizers (SGD, Adam, AdamW, RMSProp, Adagrad) on CIFAR-10, implement and tune four learning-rate schedules (cosine annealing, cyclical, one-cycle, and automated LR finder), build high-throughput `tf.data` pipelines with caching and prefetching, apply regularization strategies (dropout, L1/L2 weight decay, early stopping), and compare every major normalization layer — BatchNorm, LayerNorm, GroupNorm, InstanceNorm — including mixed-precision (FP16) training with dynamic loss scaling. By the end you will have a single baseline training script that you iteratively improve with each technique, giving you a reproducible benchmark harness you can apply to any new model or dataset.
+
+```python
+"""
+Lab 4.1 — Module 4 Baseline Training Scaffold
+==============================================
+Run this script BEFORE the individual labs to establish a reproducible
+FP32 baseline on CIFAR-10. Each subsequent lab will import or replicate
+this scaffold and apply exactly one change at a time so that speedups
+and accuracy deltas are cleanly attributable to the technique under study.
+"""
+
+import tensorflow as tf
+import numpy as np
+import time
+
+tf.random.set_seed(42)
+np.random.seed(42)
+
+# ── 1. Dataset ────────────────────────────────────────────────────────────────
+# TODO: Replace with tf.data pipeline (Lab 10) for caching + prefetching gains
+(x_train, y_train), (x_test, y_test) = tf.keras.datasets.cifar10.load_data()
+x_train = x_train.astype("float32") / 255.0
+x_test  = x_test.astype("float32") / 255.0
+y_train = tf.keras.utils.to_categorical(y_train, 10)
+y_test  = tf.keras.utils.to_categorical(y_test, 10)
+
+# ── 2. Model ──────────────────────────────────────────────────────────────────
+def build_baseline_model():
+    """
+    Three-block CNN baseline. Every lab in this module modifies either the
+    optimizer, LR schedule, normalization layers, or precision policy applied
+    to THIS architecture so that comparisons stay apples-to-apples.
+    """
+    inputs = tf.keras.layers.Input(shape=(32, 32, 3))
+    x = tf.keras.layers.Conv2D(32, 3, padding="same", activation="relu")(inputs)
+    # TODO: Replace with BatchNorm / LayerNorm / GroupNorm / InstanceNorm in Labs 17-19
+    x = tf.keras.layers.MaxPooling2D()(x)
+    x = tf.keras.layers.Conv2D(64, 3, padding="same", activation="relu")(x)
+    x = tf.keras.layers.MaxPooling2D()(x)
+    x = tf.keras.layers.Conv2D(128, 3, padding="same", activation="relu")(x)
+    x = tf.keras.layers.MaxPooling2D()(x)
+    x = tf.keras.layers.Flatten()(x)
+    x = tf.keras.layers.Dense(256, activation="relu")(x)
+    # TODO: Add dropout experiments here (Lab 13) — start with rate=0.0 for baseline
+    outputs = tf.keras.layers.Dense(10, activation="softmax")(x)
+    return tf.keras.Model(inputs, outputs)
+
+# ── 3. Optimizer & compile ────────────────────────────────────────────────────
+# TODO: Swap optimizer in Labs 2-5 (SGD, AdamW, RMSProp, Adagrad, custom)
+# TODO: Wrap with LossScaleOptimizer in Lab 16 for mixed-precision training
+optimizer = tf.keras.optimizers.Adam(learning_rate=1e-3)
+
+model = build_baseline_model()
+model.compile(optimizer=optimizer,
+              loss="categorical_crossentropy",
+              metrics=["accuracy"])
+
+# ── 4. Training ───────────────────────────────────────────────────────────────
+# TODO: Add LR callbacks (CosineAnnealing, CyclicalLR, OneCycleLR) in Labs 6-9
+# TODO: Add EarlyStopping + ModelCheckpoint in Lab 15
+EPOCHS     = 20
+BATCH_SIZE = 128
+
+t0      = time.time()
+history = model.fit(x_train, y_train,
+                    batch_size=BATCH_SIZE,
+                    epochs=EPOCHS,
+                    validation_data=(x_test, y_test),
+                    verbose=1)
+elapsed = time.time() - t0
+
+# ── 5. Evaluation ─────────────────────────────────────────────────────────────
+test_loss, test_acc = model.evaluate(x_test, y_test, verbose=0)
+print(f"\nBaseline FP32 | Test accuracy: {test_acc:.4f} | Wall time: {elapsed:.1f}s")
+print("Record these numbers — every lab improvement is measured against this baseline.")
+```
+
+---
+
+## Expected Output
+
+Running the baseline scaffold above for 20 epochs on CIFAR-10 produces:
+
+| Metric | Expected Range | Notes |
+|---|---|---|
+| Final training accuracy | 0.88–0.93 | May overfit without regularization |
+| Final validation accuracy | 0.72–0.78 | Baseline without any regularization or scheduling |
+| Test accuracy | 0.71–0.77 | Close to final val accuracy |
+| Total wall time (CPU) | 400–700 s | GPU reduces this to ~60–120 s |
+| Peak memory (GPU, FP32) | ~1.2–1.8 GB | Will drop ~40% after enabling mixed precision in Lab 16 |
+
+```python
+# Quick sanity assertions to run immediately after the scaffold completes
+assert test_acc > 0.65, \
+    f"Baseline test accuracy {test_acc:.4f} is unexpectedly low — check data normalisation"
+assert elapsed > 0, "Elapsed time should be positive"
+val_accs = history.history["val_accuracy"]
+assert val_accs[-1] > val_accs[0], \
+    "Validation accuracy should improve over training — check optimizer or LR"
+print(f"Baseline recorded: test_acc={test_acc:.4f}, wall_time={elapsed:.1f}s ✓")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Validation accuracy plateaus after epoch 5 with no further improvement | Default Adam LR=1e-3 is too high for fine-grained weight updates late in training | Add a `ReduceLROnPlateau` callback with `patience=3, factor=0.5` as a temporary fix; replace with a proper schedule in Labs 6–9 |
+| Test accuracy much lower than validation accuracy (> 3% gap) | Data leakage: augmentation was applied at eval time, or the val split is not representative | Ensure `training=False` for all augmentation and BatchNorm layers during `model.evaluate`; use a fixed val split from the start |
+| `ResourceExhaustedError` (OOM) during the first epoch | Batch size 128 is too large for the available GPU memory | Reduce `BATCH_SIZE` to 64 or 32; alternatively enable mixed precision (Lab 16) to cut memory ~40% |
+| Model trains to 100% train accuracy but val accuracy stays at ~50% | Severe overfitting on the full 50 000-sample CIFAR-10 training set without any regularization | This is expected at the baseline; Labs 13–15 address this with dropout, weight decay, and early stopping |
+| Changing the random seed between runs produces wildly different results | GPU non-determinism in cuDNN convolution algorithms is not suppressed by default | Add `tf.config.experimental.enable_op_determinism()` (TF ≥ 2.9) before model creation to enforce reproducibility at a ~15% speed cost |
+
+## Stretch Goals
+
+1. **Automated hyperparameter grid scan.** Extend the scaffold to loop over `learning_rate ∈ [1e-4, 3e-4, 1e-3, 3e-3]` and `batch_size ∈ [32, 64, 128]`. Log each combination's final val accuracy to a `pandas.DataFrame` and produce a heatmap with `seaborn`. Identify the Pareto-optimal (accuracy vs training time) configuration.
+2. **Reproducibility audit.** Enable `tf.config.experimental.enable_op_determinism()` and run the baseline ten times with the same seed. Compute the mean and standard deviation of final test accuracy and compare to ten runs without the flag. Report the determinism overhead in wall-clock seconds.
+3. **Profile the bottleneck.** Use `tf.profiler.experimental.start` / `stop` to capture a TensorBoard profile for 100 steps. Identify whether the bottleneck is data loading, forward pass, or gradient computation. Then apply exactly one optimisation (e.g. `tf.data.AUTOTUNE` prefetching) and re-profile to quantify the improvement.
+4. **Transfer learning warm-start.** Replace `build_baseline_model()` with `tf.keras.applications.MobileNetV2(include_top=False)` as the backbone (weights=`'imagenet'`), freeze all layers, add a classification head, and fine-tune only the head for 5 epochs. Compare final test accuracy and training time to the full from-scratch baseline.
+
 <a name="section-1-optimizer-comparison"></a>
 # Section 1: Optimizer Comparison Experiments (5 Labs)

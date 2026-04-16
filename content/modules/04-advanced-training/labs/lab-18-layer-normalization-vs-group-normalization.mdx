@@ -170,3 +170,57 @@ results = compare_normalization_methods()
 ```
 
 ---
+
+## Expected Output
+
+After running `compare_normalization_methods()` for 20 epochs on CIFAR-10, expect results in this range:
+
+| Normalization Method | Final Val Accuracy | Convergence Speed | Notes |
+|---|---|---|---|
+| No Normalization | ~0.72–0.75 | Slow, unstable early | Baseline; high variance between runs |
+| Batch Normalization | ~0.82–0.86 | Fast, stable | Best with batch ≥ 32; degrades at small batch |
+| Layer Normalization | ~0.79–0.83 | Moderate | Batch-size independent; better for NLP / Transformers |
+| Group Norm (G=8) | ~0.81–0.85 | Similar to BN | Good at small batch; G=8 works when channels ≥ 8 |
+| Group Norm (G=32) | ~0.81–0.85 | Similar to BN | Requires channels divisible by 32; fails otherwise |
+
+```python
+# Validation assertions after compare_normalization_methods() completes
+assert results is not None, "compare_normalization_methods() returned None"
+
+# All methods should have trained without error
+trained = [name for name, data in results.items() if data is not None]
+assert len(trained) >= 4, f"Expected at least 4 methods to train, got {len(trained)}: {trained}"
+
+# Batch Norm should beat no-normalization baseline
+if results.get('Batch Norm') and results.get('No Normalization'):
+    bn_acc  = results['Batch Norm']['test_accuracy']
+    no_acc  = results['No Normalization']['test_accuracy']
+    assert bn_acc > no_acc, f"BatchNorm ({bn_acc:.4f}) should exceed no-norm baseline ({no_acc:.4f})"
+    print(f"BatchNorm accuracy {bn_acc:.4f} > no-norm {no_acc:.4f} ✓")
+
+# Layer Norm and Group Norm should be within 5% of Batch Norm
+for method in ['Layer Norm', 'Group Norm (G=8)']:
+    if results.get(method) and results.get('Batch Norm'):
+        diff = abs(results[method]['test_accuracy'] - results['Batch Norm']['test_accuracy'])
+        assert diff < 0.05, f"{method} accuracy is more than 5% below BatchNorm: diff={diff:.4f}"
+        print(f"{method} within 5% of BatchNorm ✓")
+
+print("All validation checks passed ✓")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| `ValueError: Channels must be divisible by groups` | GroupNorm requires `channels % groups == 0`; e.g. 32-channel layer with G=32 is fine but 32-channel with G=64 is not | Choose groups that evenly divide the channel count, or add a `if channels % groups != 0` guard and fall back to a smaller group count |
+| BatchNorm collapses with very small batches (batch=1–2) | Statistics computed over a single or two samples are too noisy for stable normalization | Switch to LayerNorm or GroupNorm when batch size < 8; never use BatchNorm at inference with batch=1 without `training=False` |
+| LayerNorm applied to Conv features normalizes wrong axis | The default `axis=-1` normalises over the channel dimension for 4-D tensors, but the `CustomLayerNorm` above normalises over the last axis only, which is correct for Dense but wrong for spatial Conv outputs | For spatial features (H, W, C), normalize over `axis=[1,2,3]`; for Dense features, `axis=-1` (channels only) is correct |
+| GroupNorm with `groups=1` or `groups=channels` gives unexpected results | G=1 is equivalent to LayerNorm over all spatial+channel dims; G=channels equals InstanceNorm | Use these only intentionally; document the equivalence when choosing G for clarity |
+| No improvement over baseline after switching normalization | The normalization is applied after the activation instead of before (`Conv → ReLU → Norm`) | Apply normalization between the linear transform and the non-linearity: `Conv → Norm → ReLU` for all methods listed here |
+
+## Stretch Goals
+
+1. **Micro-batch regime study.** Retrain all five configurations with batch sizes [2, 4, 8, 16, 32, 64] and plot final validation accuracy vs batch size for each method. Confirm that BatchNorm degrades sharply below batch=8 while GroupNorm and LayerNorm remain stable.
+2. **Transformer encoder comparison.** Build a small Vision Transformer (ViT-Tiny: 4 heads, 4 layers, patch size 4) for CIFAR-10 and compare LayerNorm vs BatchNorm inside each encoder block. Measure training stability (loss variance over the first 5 epochs) and final accuracy.
+3. **Custom GroupNorm with learned group assignment.** Replace the fixed `groups` hyperparameter with a per-layer learnable soft assignment that merges channels into groups via a `tf.Variable` gating matrix. Compare convergence against fixed G=8 and G=32.
+4. **Normalization layer profiling.** Use `tf.profiler` to measure the GPU kernel time for each normalization variant on a 256×256 feature map with 256 channels and batch=32. Report which method has the lowest wall-clock overhead and explain the difference in terms of reduction axes and parallelism.

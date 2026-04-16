@@ -156,6 +156,61 @@ results = compare_norm_for_generation()
 
 ---
 
+## Expected Output
+
+After running `compare_norm_for_generation()` for 10 epochs on CIFAR-10 (MSE reconstruction task), expect:
+
+| Normalization Method | Final Train MSE | Final Val MSE | Training Stability | Notes |
+|---|---|---|---|---|
+| Batch Normalization | ~0.005–0.010 | ~0.007–0.012 | Moderate | Can blur fine textures at small batch |
+| Instance Normalization | ~0.004–0.009 | ~0.006–0.011 | High | Best for per-image feature preservation |
+| Layer Normalization | ~0.006–0.012 | ~0.008–0.014 | High | Batch-independent but less spatial-aware |
+| Group Normalization | ~0.005–0.010 | ~0.007–0.012 | High | Good balance; G=8 well-suited to 64 channels |
+
+```python
+# Validation assertions after compare_norm_for_generation() completes
+assert results is not None, "compare_norm_for_generation() returned None"
+assert len(results) == 4, f"Expected 4 norm methods, got {len(results)}"
+
+for name, data in results.items():
+    assert data is not None, f"{name} produced None result — check for training error"
+    loss_val = data['test_loss']
+    # Accept scalar or list (model.evaluate may return [loss] or loss)
+    if isinstance(loss_val, (list, tuple)):
+        loss_val = loss_val[0]
+    assert loss_val < 0.05, f"{name} MSE {loss_val:.4f} is unexpectedly high — check model or data pipeline"
+    print(f"{name}: test MSE = {loss_val:.4f} ✓")
+
+# Instance Norm should produce at least competitive (within 50%) MSE vs Batch Norm
+if results.get('Instance Norm') and results.get('Batch Norm'):
+    in_loss = results['Instance Norm']['test_loss']
+    bn_loss = results['Batch Norm']['test_loss']
+    if isinstance(in_loss, (list, tuple)): in_loss = in_loss[0]
+    if isinstance(bn_loss, (list, tuple)): bn_loss = bn_loss[0]
+    assert in_loss < bn_loss * 1.5, \
+        f"Instance Norm MSE ({in_loss:.4f}) is more than 1.5× BatchNorm MSE ({bn_loss:.4f})"
+    print(f"Instance Norm MSE competitive with BatchNorm ✓")
+
+print("All validation checks passed ✓")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| InstanceNorm produces NaN at inference with batch=1 in TF eager mode | When a single 1×H×W feature map has zero spatial variance (e.g. all-zero activations after ReLU), dividing by `sqrt(var + epsilon)` with a near-zero numerator still returns NaN for some TF builds | Ensure `epsilon ≥ 1e-5` and add an explicit `tf.debugging.check_numerics` call during training to catch the layer early |
+| Applying InstanceNorm to 1-D (Dense/sequence) features | InstanceNorm reduces over spatial axes `[1, 2]`, which only exist for 4-D tensors; calling it on a 2-D (batch, features) tensor raises a shape error | Use LayerNorm for Dense or sequence layers; reserve InstanceNorm for convolutional (spatial) layers |
+| Style transfer model output looks washed out or grey | The generator output layer uses `sigmoid` but the training images were normalised to `[-1, 1]` (tanh range), causing a systematic bias | Match the activation to the data range: use `tanh` with images in `[-1, 1]` or `sigmoid` with images in `[0, 1]`; do not mix |
+| Gamma and beta weights not learned (frozen at init values) | `trainable=True` was set but the layer was built inside a `tf.function` that was traced before the variables were added | Verify `layer.trainable_weights` is non-empty after the first forward pass; rebuild the model outside the traced function if needed |
+| No style-transfer effect despite InstanceNorm in the network | InstanceNorm alone does not inject style — the style signal must come from adaptive parameters (AdaIN) or a style loss | For real style transfer, replace fixed gamma/beta with style-conditioned values (see Stretch Goal 1) or add a Gram-matrix perceptual loss |
+
+## Stretch Goals
+
+1. **Adaptive Instance Normalization (AdaIN).** Implement an `AdaIN` layer that receives a style encoding vector and computes per-channel `gamma` and `beta` from it via a learned affine projection, replacing the fixed `add_weight` parameters. Train a simple encoder-decoder that transfers color statistics from a style image to a content image and visualise the result.
+2. **Conditional Instance Normalization.** Extend the `InstanceNormalization` class to accept a class index (0–9 for CIFAR-10) and maintain a separate `(gamma, beta)` pair per class stored as a `(num_classes, channels)` `Embedding`. Compare reconstruction MSE per class against the unconditional baseline.
+3. **FiLM (Feature-wise Linear Modulation).** Replace InstanceNorm in the style-transfer generator with a `FiLM` layer: given a conditioning vector `z`, predict `(gamma, beta)` with a two-layer MLP and apply `gamma * x + beta` to the normalised features. Benchmark FiLM vs AdaIN on a 10-style CIFAR-10 reconstruction task.
+4. **Normalization-free baseline with weight standardisation.** Remove all normalization layers and instead apply Weight Standardisation (normalise `Conv2D` kernel weights to zero mean and unit variance before each forward pass). Compare training stability and final MSE against the InstanceNorm model to understand the trade-off between activation-space and weight-space normalisation.
+
 # Summary and Key Takeaways
 
 ## Optimizer Comparison
