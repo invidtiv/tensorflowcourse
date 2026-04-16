@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { modules } from "@/lib/modules";
 import ModuleCard from "@/components/ui/ModuleCard";
 import Breadcrumb from "@/components/layout/Breadcrumb";
+import ProgressDashboard from "@/components/progress/ProgressDashboard";
 
 export default function ModulesPage() {
   const foundation = modules.filter((m) => m.number <= 3);
@@ -32,6 +33,8 @@ export default function ModulesPage() {
           10 progressive modules with 80+ hands-on labs. Follow the recommended path or jump to any module.
         </p>
       </motion.div>
+
+      <ProgressDashboard />
 
       {/* Study schedule */}
       <div className="mb-12 p-6 rounded-xl border border-white/[0.06] bg-surface-1/30">
