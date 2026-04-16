@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { modules } from "@/lib/modules";
 import ModuleCard from "@/components/ui/ModuleCard";
 import Button from "@/components/ui/Button";
+import ContinueLearning from "@/components/progress/ContinueLearning";
 
 const NeuralNetworkHero = dynamic(
   () => import("@/components/animations/NeuralNetworkHero"),
@@ -116,6 +117,8 @@ export default function HomePage() {
         {/* Bottom fade */}
         <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-bg-primary to-transparent pointer-events-none" />
       </section>
+
+      <ContinueLearning />
 
       {/* ===== HOW IT WORKS ===== */}
       <section className="py-24 px-4 sm:px-6">
