@@ -241,3 +241,32 @@ print("\n" + "=" * 60)
 print("LAB 2.2.3 COMPLETED SUCCESSFULLY!")
 print("=" * 60)
 ```
+
+---
+
+## Expected Output
+
+| Check | Expected result |
+|-------|----------------|
+| Sequential model `model.summary()` | All layers listed in order; input shape shown at top as `InputLayer`. |
+| Functional model `model.summary()` | Connected-to column shows the directed graph of tensor flow. Each layer shows its upstream connection. |
+| `model.predict()` equivalence | Given the same random seed for weights initialization, Sequential and Functional models with identical layer configs should produce the same output: `np.allclose(seq_out, func_out, atol=1e-5)`. |
+| Multi-input Functional model | `model.input` returns a list of tensors. `len(model.inputs)` equals the number of input branches. |
+| `tf.keras.utils.plot_model(model, show_shapes=True)` | Generates a PNG showing the computational graph. Functional models show branching; Sequential models show a straight chain. |
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|----------------|-----|
+| **Calling `Sequential.add()` with a Functional sub-model** | Keras allows nesting, but the Sequential `.summary()` collapses the sub-model into one block, hiding its internal shape details. | Use Functional API end-to-end when you need full visibility into a complex sub-graph. |
+| **Forgetting `Model(inputs=..., outputs=...)` in Functional API** | Defining layers and calling them does not create a trainable model — you must call `tf.keras.Model(inputs=x_in, outputs=x_out)`. Forgetting this gives a plain function, not a Keras model. | Always close the Functional definition with `model = tf.keras.Model(inputs=..., outputs=...)`. |
+| **Using the same layer object in two separate branches** | Keras layers are stateful — calling a shared layer on two branches shares its weights. If you intend independent weights (not shared), create two separate layer instances. | For independent branches: `dense_a = Dense(64)`, `dense_b = Dense(64)`. For weight sharing: use the same instance on both branches. |
+| **Dynamic shapes crashing `plot_model`** | `plot_model` requires `pydot` and `graphviz`. On a fresh environment these may not be installed. | Run `pip install pydot graphviz` — or skip plotting and use `model.summary()` for shape inspection. |
+| **Sequential model not accepting `input_shape` in later TF versions** | In TF ≥ 2.13, specifying `input_shape` in the first layer constructor (e.g., `Dense(64, input_shape=(784,))`) is deprecated. | Use an explicit `InputLayer`: `model.add(tf.keras.layers.Input(shape=(784,)))` as the first call. |
+
+## Stretch Goals
+
+1. **Shared encoder**: Build a Functional model where two input branches share the same `Dense(64)` encoder weights (Siamese network pattern). Verify weight sharing by checking `len(model.trainable_weights)` — it should be the same as a single-branch model, not double.
+2. **Multi-output model**: Add a second output head to the Functional model that predicts an auxiliary task (e.g., classification AND regression). Compile with `loss={'main': 'categorical_crossentropy', 'aux': 'mse'}` and `loss_weights={'main': 1.0, 'aux': 0.1}`. Check that both losses appear in the training log.
+3. **Subclassed model equivalent**: Re-implement the same architecture as a `tf.keras.Model` subclass using `__init__` and `call()`. Compare its `model.summary()` output — subclassed models show a less detailed summary because the graph is only traced at call time.
+4. **Intermediate layer outputs**: Using the Functional model, create an "extractor" model: `extractor = tf.keras.Model(inputs=model.input, outputs=model.get_layer('dense_1').output)`. Run a batch through it to get intermediate activations — the backbone of feature visualization and transfer learning.

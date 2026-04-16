@@ -297,3 +297,52 @@ print("5. Custom training loops give full control over the process")
 ```
 
 ---
+
+## Expected Output
+
+For the backpropagation visualization lab (10-layer networks, input_dim=20, batch_size=32):
+
+| Check | Expected result |
+|-------|----------------|
+| Scalar gradient — `dz/dx` at `x=2, y=3` | `dz/dx = y + 2*x = 3 + 4 = 7.0` (exact, no floating-point error). `dz/dy = x = 2.0`. |
+| Sigmoid architecture gradient norms | Mean absolute gradient decreases exponentially toward earlier layers. Layer 1 gradient norm is typically 10²–10⁴× smaller than the output layer — classic vanishing gradient signature. |
+| ReLU architecture gradient norms | Gradient magnitudes are roughly uniform across depth (within 1 order of magnitude). No exponential decay visible on log-scale plot. |
+| ReLU + BatchNorm gradient norms | Flattest gradient curve across layers. BN re-centres activations each step, preventing both vanishing and exploding gradients. |
+| Gradient clipping comparison | `global_norm_before_clipping >> 1.0` (e.g., 50–500) for the model with weights scaled ×10. After `clip_by_global_norm(..., 1.0)`, the resulting norm equals exactly `1.0`. |
+
+**Validation snippet for gradient correctness:**
+```python
+x = tf.Variable(2.0)
+y = tf.Variable(3.0)
+with tf.GradientTape(persistent=True) as tape:
+    z = x * y + x ** 2
+dz_dx = tape.gradient(z, x)
+dz_dy = tape.gradient(z, y)
+assert abs(dz_dx.numpy() - 7.0) < 1e-5, f"Expected dz/dx=7.0, got {dz_dx.numpy()}"
+assert abs(dz_dy.numpy() - 2.0) < 1e-5, f"Expected dz/dy=2.0, got {dz_dy.numpy()}"
+del tape
+
+# Verify gradient clipping produces norm ≤ clip_norm
+clip_norm = 1.0
+grads_clipped, global_norm = tf.clip_by_global_norm(gradients_no_clip, clip_norm)
+clipped_norm = tf.sqrt(sum(tf.reduce_sum(tf.square(g)) for g in grads_clipped if g is not None))
+assert clipped_norm.numpy() <= clip_norm + 1e-5, f"Clipped norm {clipped_norm.numpy():.4f} exceeds clip_norm {clip_norm}"
+print(f"✓ Gradients correct. Clipped norm: {clipped_norm.numpy():.4f}")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|----------------|-----|
+| **`tape.gradient()` returns `None` for a `tf.Tensor` (not `tf.Variable`)** | `GradientTape` only watches `tf.Variable` by default. Plain tensors created with `tf.constant()` or computed outside the tape context are not watched. | Wrap the computation inside the `with tape:` block, or call `tape.watch(tensor)` explicitly before using the tensor inside the tape. |
+| **Sigmoid deep network shows `nan` gradients instead of small values** | When sigmoid outputs saturate near 0 or 1, the local gradient is ≈ 0. Multiplying many near-zero values across 8+ layers underflows IEEE 754 float32 to exactly 0, then weight updates become `nan` when divided by near-zero norms. | Use `float64` for numerical experiments, switch to ReLU/GELU in practice, or add `tf.debugging.check_numerics()` to detect the exact layer where underflow starts. |
+| **`del tape` not called after `persistent=True` tape** | A persistent tape holds references to all intermediate tensors in memory until explicitly deleted. In long training loops this causes an undetected memory leak that only manifests when GPU/CPU RAM is exhausted. | Always `del tape` immediately after the last `tape.gradient()` call when `persistent=True`. |
+| **`analyze_gradient_flow` returns empty list for `model_bn`** | BatchNorm layers do not have a `.kernel` attribute — they have `.gamma` and `.beta`. The `hasattr(layer, 'kernel')` check skips all BN layers, so the gradient list for `model_bn` may have fewer entries than expected. | Check for `layer.trainable_variables` instead: `if layer.trainable_variables: grad = tape.gradient(loss, layer.trainable_variables[0])`. |
+| **`tf.clip_by_global_norm` called with `None` gradients in the list** | If any gradient in the list is `None` (e.g., for a non-differentiable op or frozen layer), `clip_by_global_norm` raises a `TypeError` when computing the global norm. | Filter before clipping: `valid_grads = [(g, v) for g, v in zip(grads, vars) if g is not None]`, then clip only the valid pairs. |
+
+## Stretch Goals
+
+1. **Dead ReLU detection**: After training the ReLU model for a few epochs, compute the fraction of neurons whose activation is exactly 0 across a test batch. Add a callback that logs this "dead neuron ratio" per epoch. If > 30% of neurons in any layer are dead, switch to LeakyReLU (`alpha=0.01`) and compare final loss.
+2. **Gradient norm histogram per layer**: Instead of plotting mean absolute gradient per layer, plot the full distribution using `tf.histogram_fixed_width`. Show the histogram for layer 1 (deepest) vs. the output layer side-by-side. This reveals not just the magnitude but the spread — critical for diagnosing pathological initialisation.
+3. **Second-order gradients (Hessian diagonal)**: Use a nested `GradientTape` (`persistent=True` on the outer tape) to compute `d²loss/dw²` for a single Dense layer weight. Compare the diagonal entries of the Hessian to the first-order gradient magnitudes to understand curvature. This is the foundation of second-order optimisers like K-FAC.
+4. **Learning rate finder via gradient norm tracking**: Implement a learning rate range test: run 100 mini-batches with the learning rate increasing log-linearly from 1e-6 to 1e-1. Log both the loss and the global gradient norm at each step. Plot both curves — the optimal learning rate is just before the gradient norm starts to explode (the "elbow" in the norm curve).

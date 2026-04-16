@@ -457,3 +457,46 @@ print("6. Custom metrics should inherit from tf.keras.metrics.Metric")
 ```
 
 ---
+
+## Expected Output
+
+For a binary classification model trained with Focal Loss (alpha=0.25, gamma=2.0) on synthetic balanced data, 10 epochs:
+
+| Check | Expected result |
+|-------|----------------|
+| Standard MSE vs Custom MSE (with large-error penalty) | `custom_mse > standard_mse` when `abs(y_true - y_pred) > 1`; values diverge on the second sample pair (`[5.0, 6.0]`). |
+| Focal Loss — easy predictions | `focal_loss(easy) << bce_loss(easy)`: focal weight `(1-p_t)^2` approaches 0 for confident predictions, making focal loss significantly smaller (e.g., focal ≈ 0.003 vs BCE ≈ 0.07). |
+| Focal Loss — hard predictions | `focal_loss(hard) ≈ bce_loss(hard)`: when `p_t ≈ 0.5`, the focal weight approaches 1.0, so both losses converge (e.g., both ≈ 0.60–0.70). |
+| R-squared metric | For near-perfect predictions (`[1.1, 1.9, 3.2, 3.8]` vs `[1.0, 2.0, 3.0, 4.0]`), `r_squared` should be > 0.98. |
+| Tversky vs Dice loss | With `alpha=0.3, beta=0.7` (penalises false positives more), Tversky loss > Dice loss when the model produces false positives on the test segmentation mask. |
+
+**Validation snippet for custom metrics:**
+```python
+# Verify R-squared on perfect predictions
+y_perfect_true = tf.constant([[1.0], [2.0], [3.0], [4.0]])
+y_perfect_pred = tf.constant([[1.0], [2.0], [3.0], [4.0]])
+r2_perfect = r_squared(y_perfect_true, y_perfect_pred)
+assert abs(r2_perfect.numpy() - 1.0) < 1e-5, f"R² on perfect predictions should be 1.0, got {r2_perfect.numpy()}"
+
+# Verify Focal loss < BCE for easy predictions
+assert focal_loss(y_true_binary, y_pred_easy).numpy() < bce_loss(y_true_binary, y_pred_easy).numpy(), \
+    "Focal loss should be less than BCE for confident/easy predictions"
+print("✓ Custom loss and metric assertions passed")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|----------------|-----|
+| **`tf.clip_by_value` epsilon applied after `log`** | Computing `log(y_pred)` before clipping allows `log(0) = -inf` to appear in the loss, producing `nan` gradients. | Always clip predictions before taking the log: `y_pred = tf.clip_by_value(y_pred, epsilon, 1 - epsilon)` then `tf.math.log(y_pred)`. |
+| **Class-based loss not calling `super().__init__(name=name)`** | Without calling the parent `__init__`, the loss object does not register its name or serialization metadata, causing issues with `model.save()` and `model.get_config()`. | Always call `super().__init__(name=name)` as the first line in your custom loss `__init__`. |
+| **`reset_state()` not implemented in custom `Metric`** | Keras calls `reset_state()` between epochs. If not overridden, accumulated state from epoch N bleeds into epoch N+1, inflating or deflating the reported metric. | Override `reset_state()` and call `self.var.assign(0.0)` for every weight added with `add_weight()`. |
+| **Passing a loss instance vs. a loss class to `model.compile()`** | `model.compile(loss=FocalLoss)` (class, not instance) uses default `alpha` and `gamma`; `model.compile(loss=FocalLoss(alpha=0.25, gamma=2.0))` uses your custom values. Forgetting parentheses silently trains with default parameters. | Always instantiate the loss: `model.compile(loss=FocalLoss(alpha=0.25, gamma=2.0))`. |
+| **`CompositeLoss` returning a scalar but `model.fit` reporting per-output loss** | When using multiple named outputs, Keras expects a separate loss per output key, not a single combined scalar from a `CompositeLoss`. Passing one `CompositeLoss` instance to a multi-output model raises a shape mismatch. | Use the dict form: `model.compile(loss={'output_a': loss_a, 'output_b': loss_b}, loss_weights={...})` instead of a single composite loss object. |
+
+## Stretch Goals
+
+1. **Hyperparameter sweep on Focal Loss gamma**: Train three identical models with `gamma in [0, 1, 2]` on an imbalanced dataset (90/10 split). Plot precision-recall curves for each gamma. Confirm that higher gamma shifts the curve upward for the minority class.
+2. **Serializable custom loss**: Add `get_config()` to `FocalLoss` and `WeightedMSE` returning a dict of hyperparameters. Save a model using `model.save('model.keras')`, reload it with `tf.keras.models.load_model('model.keras', custom_objects={'FocalLoss': FocalLoss})`, and verify that `loaded_model.loss.alpha == original_model.loss.alpha`.
+3. **Tversky loss in a real segmentation pipeline**: Apply `TverskyLoss(alpha=0.3, beta=0.7)` to a small U-Net trained on binary masks (e.g., Oxford-IIIT Pet dataset). Compare final IoU against a model trained with standard BCE loss to quantify the benefit of asymmetric false-positive/false-negative weighting.
+4. **Online metric tracking with `tf.keras.metrics.Mean`**: Wrap `r_squared` in a `tf.keras.metrics.Mean` object inside a custom training loop. Call `metric.update_state(r_squared(y_batch, pred_batch))` each step and `metric.result()` each epoch. Verify that the epoch-level R² matches a manually computed batch-average R².
