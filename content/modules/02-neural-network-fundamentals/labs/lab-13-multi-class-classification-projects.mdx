@@ -238,3 +238,52 @@ print("3. Confusion matrices help identify problem classes")
 print("4. Class weights can help with imbalanced datasets")
 print("5. Always visualize results for better understanding")
 ```
+
+---
+
+## Expected Output
+
+Multi-class classification on Fashion-MNIST (10-class softmax):
+
+| Metric | Expected Value |
+|--------|---------------|
+| Final test accuracy | ≥ 90% (CNN), ≥ 87% (dense baseline) |
+| Confusion matrix diagonal | Dominant — each class mostly predicts itself |
+| `classification_report` macro F1 | ≥ 0.89 |
+| Softmax output sum per sample | 1.0 (to float32 precision) |
+| Hardest class pair | "Shirt" vs "T-shirt/top" — typically lowest per-class F1 |
+
+**Validation:**
+
+```python
+import numpy as np
+
+# All softmax probabilities must sum to 1
+preds = model.predict(X_test[:100])
+assert np.allclose(preds.sum(axis=1), 1.0, atol=1e-5), "Softmax probs must sum to 1"
+
+# No NaN in predictions
+assert not np.any(np.isnan(preds)), "NaN in predictions — check for vanishing gradients"
+
+# argmax predictions have valid class indices (0–9)
+pred_classes = np.argmax(preds, axis=1)
+assert pred_classes.min() >= 0 and pred_classes.max() <= 9, "Predictions out of valid class range"
+print("✓ Multi-class output validation passed")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|----------------|-----|
+| **Using `binary_crossentropy` for multi-class** | `binary_crossentropy` treats each class independently via sigmoid, breaking the mutual-exclusivity assumption of a 10-class problem. Loss improves but class probabilities don't form a valid distribution. | Switch to `sparse_categorical_crossentropy` (integer labels) or `categorical_crossentropy` (one-hot labels). |
+| **Shape mismatch: `sparse_` vs one-hot labels** | `sparse_categorical_crossentropy` expects integer label shape `[N]`, not `[N, 10]`. Passing one-hot labels raises a shape error during training. | Use `np.argmax(y_train, axis=1)` to convert one-hot to integer before using sparse loss, or keep one-hot and switch to `categorical_crossentropy`. |
+| **Confusion matrix rows vs columns misread** | `sklearn confusion_matrix(y_true, y_pred)` rows = true class, cols = predicted class. Swapping them inverts precision and recall, leading to wrong diagnostic conclusions. | Remember: `cm[i, j]` = count of true-class-i samples predicted as class j. Off-diagonal column entries are false positives for that column's class. |
+| **Reporting only top-1 accuracy on class-imbalanced data** | Accuracy masks poor performance on minority classes. Fashion-MNIST is nearly balanced, but real deployed models often aren't, making accuracy misleading. | Always report per-class F1 via `classification_report(y_true, y_pred)` alongside accuracy. |
+| **Passing probability arrays to `classification_report`** | `classification_report` expects integer class indices, not softmax probability vectors. Passing raw `model.predict()` output produces garbled output. | Convert first: `y_pred_classes = np.argmax(model.predict(X_test), axis=1)`. |
+
+## Stretch Goals
+
+1. **Per-class accuracy vs. training set size**: Subsample the training set to 10%, 25%, 50%, and 100%. Plot per-class F1 at each size. Identify which Fashion-MNIST class (e.g., "Shirt" vs "T-shirt/top") is hardest to distinguish with limited data.
+2. **Misclassification gallery**: Find the 10 most confidently wrong predictions (highest softmax probability assigned to the wrong class). Display them as a 2×5 image grid with true and predicted labels. These "hard negatives" often reveal visually similar class pairs.
+3. **Temperature scaling**: After training, apply temperature scaling `p_calibrated = softmax(logits / T)` and sweep T ∈ [0.5, 2.0] on a held-out validation set. Plot Expected Calibration Error (ECE) vs T to find the best-calibrated T.
+4. **One-vs-rest baseline**: Implement 10 independent binary classifiers (one per class) using logistic regression from scikit-learn. Compare their macro F1 to the CNN — the CNN should win by exploiting shared convolutional features across classes.

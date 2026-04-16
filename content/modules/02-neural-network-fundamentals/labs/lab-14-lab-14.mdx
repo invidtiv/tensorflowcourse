@@ -223,3 +223,49 @@ print("5. Always compare multiple architectures")
 ```
 
 ---
+
+## Expected Output
+
+Regression on the Auto-MPG dataset (predicting miles-per-gallon from 7 features):
+
+| Metric | Expected Value |
+|--------|---------------|
+| Final test MAE | ≤ 2.5 MPG |
+| Final test RMSE | ≤ 3.5 MPG |
+| R² score on test set | ≥ 0.88 |
+| Residuals distribution | Approximately normal, centered near 0 |
+| Largest systematic error | Typically on high-MPG outliers (>35 MPG) |
+
+**Validation:**
+
+```python
+import numpy as np
+
+y_pred = model.predict(X_test).flatten()
+mae = np.mean(np.abs(y_pred - y_test))
+rmse = np.sqrt(np.mean((y_pred - y_test) ** 2))
+ss_res = np.sum((y_test - y_pred) ** 2)
+ss_tot = np.sum((y_test - np.mean(y_test)) ** 2)
+r2 = 1 - ss_res / ss_tot
+
+assert mae <= 2.5, f"MAE too high: {mae:.2f} (expected ≤ 2.5 MPG)"
+assert r2 >= 0.88, f"R² too low: {r2:.3f} (expected ≥ 0.88)"
+print(f"✓ Regression validation passed — MAE={mae:.2f}, RMSE={rmse:.2f}, R²={r2:.3f}")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|----------------|-----|
+| **Forgetting to normalize features** | The Auto-MPG dataset has features on vastly different scales (e.g., `Horsepower` 0–230, `Cylinders` 3–8). Un-normalized inputs cause the optimizer to make unequal step sizes across dimensions, dramatically slowing convergence. | Apply `StandardScaler` or a Keras `Normalization` layer **fit only on training data**, then transform both train and test sets. |
+| **Leaking test statistics into normalization** | Calling `scaler.fit_transform(X_all)` before the train/test split uses test-set statistics (mean, std) to normalize training data, producing overly optimistic evaluation metrics. | Always split first, then `fit` only on `X_train`, and `transform` both `X_train` and `X_test`. |
+| **Using `categorical_crossentropy` instead of `mse`** | Copy-pasting a classification loss for a regression model causes nonsensical results — the model can't output a single scalar MPG value while optimizing a softmax cross-entropy. | For regression use `loss='mse'` or `loss='mae'`; output layer must have **1 unit** and **no activation** (linear output). |
+| **Dropping `NaN` rows without inspection** | The `Horsepower` column contains 6 `?` values. Blindly dropping them is safe here but can silently remove a large fraction of rows in other datasets, introducing selection bias. | Always log: `print(f"Dropped {n_before - n_after} rows with NaN")` before and after dropping. |
+| **Evaluating with RMSE but optimizing MAE (or vice versa)** | If you train with MAE loss but report RMSE as your metric, the model is not explicitly minimizing the reported metric. RMSE penalizes large errors more than MAE, so reported RMSE may look worse than expected. | Align your loss function with your primary evaluation metric, or explicitly compute both after training. |
+
+## Stretch Goals
+
+1. **Feature importance via permutation**: Randomly shuffle one feature column at a time in the test set and record the MAE increase. Rank features by their impact — the feature whose shuffling causes the largest MAE increase is most important to the model.
+2. **Polynomial feature expansion**: Add squared and interaction terms (e.g., `Horsepower²`, `Weight × Displacement`) using `sklearn.preprocessing.PolynomialFeatures(degree=2)`. Compare MAE with and without polynomial features to see if the regression surface is nonlinear.
+3. **Learning curve analysis**: Train models on 10%, 25%, 50%, and 100% of the training data. Plot train vs. validation MAE at each size. Identify whether the model is in a high-bias or high-variance regime.
+4. **Bayesian hyperparameter search**: Use `keras_tuner.BayesianOptimization` to jointly search over layer widths (32–256), learning rate (1e-4 to 1e-2), and dropout rates. Compare the best Bayesian-found architecture to your manually tuned baseline.

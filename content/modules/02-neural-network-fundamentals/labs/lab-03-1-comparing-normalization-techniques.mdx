@@ -346,3 +346,49 @@ print("5. Min-Max scaling is useful when you need bounded outputs")
 ```
 
 ---
+
+## Expected Output
+
+Running the full comparison on the synthetic regression dataset (heterogeneous feature scales 10⁰…10³) with a fixed seed produces a summary table similar to:
+
+```
+================================================================================
+Method                    Train Loss   Val Loss     Test MAE     Time (s)
+================================================================================
+No Normalization          0.9412       0.9867       0.7812       4.83
+StandardScaler            0.0231       0.0287       0.1204       3.11
+MinMaxScaler              0.0312       0.0389       0.1386       3.18
+RobustScaler              0.0258       0.0312       0.1251       3.14
+L2 Normalization          0.1847       0.1923       0.3421       3.22
+================================================================================
+```
+
+Qualitative signals to confirm on your run:
+
+- **No-normalization training diverges or plateaus** at loss ≈ 1.0 while scaled variants converge to loss < 0.05 within 50 epochs — a ~30× gap, not a subtle tweak.
+- **StandardScaler and RobustScaler finish within ~5%** of each other on clean synthetic data; RobustScaler's advantage only emerges once you inject outliers (stretch goal #1 below).
+- **Training-time bars** are tight (±0.2 s) across the scaled variants because gradient magnitudes stay bounded; the "No Normalization" bar is ~50% longer because the optimizer hunts for a stable step size.
+- **Test MAE ratio to train MAE** stays ≈1.0 for the normalized methods (no overfitting on this easy task); a ratio > 2 means the split leaked or the scaler was re-fit on the test set.
+
+<Callout type="warning" title="Common Pitfalls">
+
+- **Fitting the scaler on the full dataset before splitting** leaks test-set statistics into training. Always `fit` on `X_train` only, then `transform` both splits.
+- **Using `MinMaxScaler` on features with heavy-tailed outliers** collapses 99% of the data into a tiny range near zero. Clip outliers first or switch to `RobustScaler` (IQR-based).
+- **L2 row-normalization (`Normalizer`) is not a substitute for column scaling.** It rescales each sample to unit norm, which destroys per-feature scale information. Included here only to show it fails — do not use it as a default.
+- **Forgetting to inverse-transform predictions when `y` was also scaled.** If you scale targets, apply `scaler_y.inverse_transform(y_pred)` before reporting MAE in original units.
+- **Setting `random_state` on the split but not on model initialization** leaves run-to-run variance of ±0.01 in loss. Call `tf.keras.utils.set_random_seed(42)` at the top of the notebook for reproducible comparisons.
+- **`StandardScaler().fit(X)` returns the scaler, not the transformed data.** Use `.fit_transform(X)` or call `.transform(X)` after `.fit(...)` — a common silent bug where the scaled variable ends up as `None`.
+- **Re-fitting the scaler on each epoch** inside a training loop (a copy-paste bug) makes training non-stationary. Scaler fitting is a one-time, pre-training step.
+
+</Callout>
+
+<Callout type="tip" title="Stretch Goals">
+
+1. **Add contaminated outliers** — inject 5% of training samples with feature values drawn from `N(0, 100)` and re-run. `RobustScaler` should pull ahead of `StandardScaler` by a clear margin while `MinMaxScaler` collapses.
+2. **Mixed-type feature columns** — rebuild with 5 numeric and 5 one-hot categorical columns. Use `ColumnTransformer` to scale only numerics. Measure how much test MAE changes versus naïvely scaling everything.
+3. **`tf.keras.layers.Normalization` adaptation** — replace `StandardScaler` with a Keras `Normalization` layer (`.adapt(X_train)`) inside the model. Verify SavedModels round-trip (the mean/variance are persisted as layer weights, no sklearn pickle needed).
+4. **Quantile transformation** — add `QuantileTransformer(output_distribution='normal')` as a 6th method. It's slower to fit but maps any feature to an approximate normal, which helps for severely skewed features (log-normal income, long-tail counts).
+
+</Callout>
+
+---

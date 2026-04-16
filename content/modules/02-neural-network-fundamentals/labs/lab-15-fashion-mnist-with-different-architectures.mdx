@@ -251,4 +251,87 @@ print("4. Learning rate scheduling helps convergence")
 print("5. Data augmentation increases effective dataset size")
 ```
 
+<Callout type="note" title="Expected Output">
+Fashion-MNIST has 10 classes, 28×28 grayscale, 60k train / 10k test. A no-preprocessing MLP baseline sits around **~0.88 test accuracy**; a well-tuned CNN reliably clears **~0.92**, and with BN + dropout + augmentation you should see **0.93–0.94** by epoch ~20.
+
+Typical per-architecture test-accuracy bands (seed-dependent, ±0.005):
+
+- **Simple MLP (Flatten → 128 → 10):** 0.86–0.89. Overfits by epoch ~10 without dropout.
+- **Small CNN (2× Conv32/64 → Dense128):** 0.90–0.92. ~200k params, <2 min/epoch on CPU, <10 s on a T4.
+- **Deep CNN + BN + Dropout:** 0.92–0.94. Training/test gap should stay under ~4pp; larger gaps mean augmentation is under-applied.
+- **LR-scheduled run (ReduceLROnPlateau, factor=0.5, patience=2):** val-loss "knee" appears around epoch 8–12 with a second smaller drop after the first LR cut.
+
+The final bar chart (`architecture_comparison.png`) should show monotonic improvement MLP → CNN → CNN+BN. If the deep CNN is **worse** than the small CNN, that's almost always a learning-rate or init issue, not architectural.
+
+**Diagnostic checks at the end of the run:**
+
+1. `history.history['val_accuracy'][-5:]` within ±0.005 of each other (stable plateau).
+2. `model.count_params()` matches printed "Total params" in `summary()`.
+3. The saved `.keras` reloads and matches test accuracy within ±0.005.
+</Callout>
+
+<Callout type="warning" title="Common Pitfalls">
+- **Forgetting to scale pixels to `[0, 1]`:** Fashion-MNIST `x_train` is `uint8` in `[0, 255]`. Divide by `255.0` (as float32) before training — skipping this makes loss explode or stall at chance.
+- **Channel dimension missing:** Conv2D expects `(H, W, C)`. Reshape grayscale to `(28, 28, 1)` via `x_train[..., None]`. Otherwise `ValueError: Input 0 of layer conv2d is incompatible`.
+- **Integer vs one-hot labels:** `sparse_categorical_crossentropy` wants integer class indices. `categorical_crossentropy` needs `tf.keras.utils.to_categorical(y, 10)`. Mixing them silently gives ~0.1 accuracy.
+- **Over-aggressive augmentation:** `RandomFlip('horizontal')` is fine for most classes, but watch Sandal/Ankle-boot for a 1–2pp accuracy dip — inspect the per-class confusion matrix.
+- **BN + small batch size:** BatchNormalization needs batch ≥ 32 for stable running statistics. At batch 8–16, prefer GroupNormalization or LayerNormalization.
+- **Saving to `/mnt/okcomputer/output/`:** lab-runner mount path. Locally, replace with `./output/` and `os.makedirs("output", exist_ok=True)` first.
+</Callout>
+
+<Callout type="tip" title="Stretch Goals">
+1. **Class-weighted training** — Downsample class 6 ("Shirt") to 10% and train with `class_weight={i: w_i}`. Compare per-class F1 before/after; does weighting recover the Shirt/T-shirt confusion?
+2. **Mixup / CutMix** — Implement Mixup (`λ·x_a + (1-λ)·x_b`, `λ ~ Beta(0.2, 0.2)`) as a `tf.data` map fn. Expect +0.3 to +0.8pp test accuracy, largest on Shirt.
+3. **Architecture ablation heatmap** — Sweep `{width: [32, 64, 128]} × {depth: [2, 3, 4] conv blocks}`; plot test accuracy vs parameter count and locate the Pareto frontier.
+4. **Calibration drill-down** — `tf.math.confusion_matrix` + `seaborn.heatmap` to confirm the Shirt/T-shirt/Coat/Pullover cluster. Apply temperature scaling (`logits / T`, `T≈1.5`) and recompute ECE.
+5. **Knowledge distillation** — Use the best CNN as teacher, distill into the simple MLP (`loss = α·CE + (1-α)·KL(student || teacher/T)`, `T=4`, `α=0.1`). Does the student close half the gap?
+</Callout>
+
 ---
+
+## Expected Output
+
+Comparing MLP, small CNN, and deep CNN + BN + Dropout on Fashion-MNIST (28×28 grayscale, 10 classes):
+
+| Architecture | Test Accuracy | Approx. Params | Training Time (CPU) |
+|-------------|--------------|----------------|---------------------|
+| Simple MLP (Flatten → 128 → 10) | 0.86–0.89 | ~101k | ~2 min / 10 epochs |
+| Small CNN (Conv32 → Conv64 → Dense128) | 0.90–0.92 | ~200k | ~5 min / 15 epochs |
+| Deep CNN + BN + Dropout + Augmentation | 0.92–0.94 | ~500k | ~15 min / 20 epochs |
+| LR-scheduled run (ReduceLROnPlateau) | val-loss knee at epoch 8–12 | same as above | same as above |
+| Train/test accuracy gap | Should remain < 4 pp for well-regularized CNN | — | — |
+
+**Validation:**
+
+```python
+import numpy as np
+
+# Verify pixel normalization was applied
+assert X_test.max() <= 1.0, "Test data not normalized — divide by 255.0 before evaluation"
+
+# Channel dimension present for CNN
+assert X_test.ndim == 4 and X_test.shape[-1] == 1, "Expected shape (N, 28, 28, 1) for CNN input"
+
+# Model count_params matches summary
+print(f"Model parameters: {model.count_params():,}")
+test_loss, test_acc = model.evaluate(X_test, y_test, verbose=0)
+assert test_acc >= 0.88, f"Test accuracy too low: {test_acc:.3f}"
+print(f"✓ Architecture validation passed — test accuracy: {test_acc:.3f}")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|----------------|-----|
+| **Forgetting pixel normalization** | Fashion-MNIST `x_train` is `uint8` in [0, 255]. Un-normalized inputs cause loss to explode or stall at chance-level accuracy (~10%). | Divide by `255.0` (cast to float32): `X_train = X_train.astype('float32') / 255.0`. |
+| **Missing channel dimension for Conv2D** | Conv2D expects input shape `(H, W, C)`. Grayscale images have shape `(28, 28)` after `load_data()`. Passing them without reshaping raises `ValueError: Input 0 of layer conv2d is incompatible`. | Reshape: `X_train = X_train[..., np.newaxis]` or `X_train = X_train.reshape(-1, 28, 28, 1)`. |
+| **BatchNormalization with tiny batch size** | BN accumulates running mean/variance estimates from the current batch. With batch_size < 16 these estimates are noisy, causing unstable training and poor test-time performance. | Keep batch_size ≥ 32 when using BN. For smaller batches, consider `LayerNormalization` instead. |
+| **Over-aggressive horizontal flip augmentation** | `RandomFlip('horizontal')` flips "7" (Sneaker) to look like "0" (T-shirt) for asymmetric items. Sandals and ankle boots can lose ~1–2pp accuracy. | Inspect per-class confusion matrices before and after augmentation. Restrict augmentation to rotation/zoom for footwear classes if needed. |
+| **Learning rate not reduced early enough** | A fixed learning rate of 1e-3 tends to plateau after 5–8 epochs on Fashion-MNIST. Without `ReduceLROnPlateau` or a schedule, the model never escapes the flat region of the loss landscape. | Add `callbacks=[tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=2)]`. |
+
+## Stretch Goals
+
+1. **Architecture sweep heatmap**: Train a grid of `{depth: [2, 3, 4] conv blocks} × {width: [32, 64, 128] filters}`. Plot test accuracy vs. parameter count as a scatter plot — identify the Pareto-efficient architectures that maximize accuracy per parameter.
+2. **Mixup data augmentation**: Implement Mixup as a `tf.data.Dataset.map()` function: `x_mix = λ·x_a + (1−λ)·x_b` with `λ ~ Beta(0.2, 0.2)`. Expect +0.3–0.8 pp test accuracy improvement, especially on the Shirt class.
+3. **Class-weighted training for imbalance simulation**: Artificially reduce class 6 ("Shirt") training samples to 10% of the original. Re-train with `class_weight={i: w_i}` where weights are inversely proportional to class frequency. Compare per-class F1 vs. the unweighted baseline.
+4. **Knowledge distillation**: Use your best CNN as a teacher model. Train a smaller MLP student using `loss = α·CE(student, y_true) + (1−α)·KL(student_soft || teacher_soft / T)` with `T=4, α=0.1`. Measure how much of the CNN's accuracy advantage the student recovers.

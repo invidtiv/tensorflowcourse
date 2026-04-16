@@ -8,6 +8,8 @@ source: "lab-01-part1.md"
 ---
 # Feature Normalization and Preprocessing
 
+This lab covers the foundational data preparation step that every neural network training pipeline requires. You will implement and compare three normalization strategies — Min-Max, Z-score (Standard), and Robust scaling — using both scikit-learn and TensorFlow's built-in `Normalization` layer, then measure how each strategy affects a small dense network's convergence speed and final accuracy on a real tabular dataset.
+
 ## Objectives
 - Understand different normalization techniques
 - Compare Min-Max, Standard (Z-score), and Robust scaling
@@ -20,3 +22,107 @@ source: "lab-01-part1.md"
 - Familiarity with pandas and numpy
 
 ---
+
+## Lab Scaffold
+
+```python
+"""
+Lab 2.1: Feature Normalization and Preprocessing
+Implement and compare three normalization strategies on a tabular dataset.
+"""
+
+import tensorflow as tf
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import MinMaxScaler, StandardScaler, RobustScaler
+from sklearn.model_selection import train_test_split
+
+# TODO: Load a tabular dataset with mixed feature scales
+# Example: Auto-MPG, Iris, or a synthetic dataset with features in [0,1], [0,1000], [-5,5]
+# raw_data = pd.read_csv("your_dataset.csv")
+# X = raw_data.drop("target", axis=1).values.astype(np.float32)
+# y = raw_data["target"].values.astype(np.float32)
+
+# TODO: Split data into train and test sets (80/20)
+# X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# TODO: Apply three scalers — fit ONLY on X_train, transform both train and test
+# scalers = {
+#     "MinMax": MinMaxScaler(),
+#     "Standard": StandardScaler(),
+#     "Robust": RobustScaler()
+# }
+# X_scaled = {}
+# for name, scaler in scalers.items():
+#     X_scaled[name] = (scaler.fit_transform(X_train), scaler.transform(X_test))
+
+# TODO: Build a small Dense model (2 hidden layers, 64 units each) and train it
+# with each scaled variant. Record val_loss history for comparison.
+# def build_model(input_dim):
+#     return tf.keras.Sequential([
+#         tf.keras.layers.Dense(64, activation='relu', input_shape=(input_dim,)),
+#         tf.keras.layers.Dense(64, activation='relu'),
+#         tf.keras.layers.Dense(1)
+#     ])
+
+# TODO: Plot the validation loss curves for all three scalers on one figure.
+# This visualization shows how normalization choice affects convergence speed.
+# plt.figure(figsize=(10, 5))
+# for name, history in histories.items():
+#     plt.plot(history.history['val_loss'], label=name)
+# plt.legend()
+# plt.title("Val Loss by Normalization Strategy")
+# plt.savefig("output/normalization_comparison.png")
+# plt.show()
+```
+
+---
+
+## Expected Output
+
+Comparing three scalers on a regression or classification task with features on different scales:
+
+| Scaler | Convergence Speed | Final Val Loss | Notes |
+|--------|------------------|---------------|-------|
+| No scaling (raw) | Slowest — optimizer takes inconsistent step sizes | Highest | Baseline to confirm normalization is necessary |
+| MinMax (range [0, 1]) | Fast | Low | Sensitive to outliers — extreme values compress the rest |
+| Standard (Z-score, μ=0, σ=1) | Fast | Low | Best general-purpose choice for most datasets |
+| Robust (uses IQR, ignores outliers) | Fast | Comparable to Standard | Best when the dataset contains significant outliers |
+| TF `Normalization` layer | Same as Standard | Same | Layer-based approach — normalization is part of the model graph |
+
+**Validation:**
+
+```python
+import numpy as np
+from sklearn.preprocessing import StandardScaler
+
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+# Scaled training data should have mean ~0 and std ~1 per feature
+assert np.allclose(X_train_scaled.mean(axis=0), 0, atol=1e-6), "Scaled train mean should be ~0"
+assert np.allclose(X_train_scaled.std(axis=0), 1, atol=1e-6), "Scaled train std should be ~1"
+
+# Test set is NOT re-fitted — its mean/std will differ slightly from 0/1
+print(f"Test set mean (should not be exactly 0): {X_test_scaled.mean(axis=0)[:3]}")
+print("✓ Normalization validation passed")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|----------------|-----|
+| **Fitting the scaler on the full dataset before splitting** | Calling `scaler.fit(X_all)` before `train_test_split` leaks test-set statistics (mean, std, min, max) into the training pipeline, producing artificially optimistic evaluation results. | Always split first: `X_train, X_test = train_test_split(X)`, then `scaler.fit(X_train)` only. |
+| **Not casting to float32 before scaling** | TensorFlow operations require `float32` by default. Passing `float64` numpy arrays causes a dtype mismatch that may silently reduce performance or raise `InvalidArgumentError` in mixed-precision training. | Add `.astype(np.float32)` after scaling: `X_train_scaled = scaler.fit_transform(X_train).astype(np.float32)`. |
+| **MinMax scaler exploding on unseen test outliers** | If a test sample's feature value exceeds the training max, MinMax scaling produces a value > 1. Neural networks may not have seen these out-of-range inputs during training. | Clip after scaling: `np.clip(X_test_scaled, 0, 1)`, or prefer RobustScaler / StandardScaler for datasets with outliers. |
+| **Re-fitting the scaler on the test set for evaluation** | Calling `scaler.fit_transform(X_test)` re-centers the test set around its own mean, destroying the alignment with training data and making predictions meaningless. | Use `scaler.transform(X_test)` — only `transform`, never `fit_transform`, on test data. |
+| **Using `tf.keras.layers.Normalization` without calling `.adapt()`** | The `Normalization` layer initializes with mean=0, variance=1 (no-op). Without calling `layer.adapt(X_train)`, it does not normalize the data at all. | Always call `norm_layer.adapt(X_train)` before including the layer in model training. |
+
+## Stretch Goals
+
+1. **Normalization impact on training stability**: Train the same model on raw (un-normalized) data for 20 epochs. Compare the per-epoch gradient norm (via `GradientTape`) against the StandardScaler version. The un-normalized run should show much higher gradient variance, demonstrating why normalization is essential for stable optimization.
+2. **Outlier injection experiment**: Add 5% random outliers to the dataset (multiply 5% of values by 10). Compare how MinMax, Standard, and Robust scalers handle the contaminated data. Plot feature distributions before and after each scaler to show which one is most resistant to outlier contamination.
+3. **Integrate normalization into the model graph**: Implement the same preprocessing pipeline using only `tf.keras.layers.Normalization` (no scikit-learn). Save the model as a `.keras` file and reload it — confirm that predictions on raw (un-normalized) inputs match predictions on manually normalized inputs.
+4. **Feature-wise normalization analysis**: After standardization, plot each feature's histogram side-by-side (before vs. after). For a dataset with a bimodal feature (e.g., binary encoded as 0/1), discuss why Z-score normalization is inappropriate and what alternative (e.g., leave as-is, or use a learned embedding) would be better.

@@ -231,3 +231,120 @@ print("3. Decision boundaries visualize model behavior")
 print("4. ReLU + sigmoid works well for binary classification")
 print("5. Custom training loops enable advanced techniques")
 ```
+
+---
+
+## ✅ Validation Checkpoint
+
+After running the lab, verify the following assertions hold. If any fail, revisit the corresponding step.
+
+```python
+# --- Validation Checkpoint ---
+# 1. Model should achieve ≥90% test accuracy on the moons dataset
+assert test_accuracy >= 0.90, (
+    f"Test accuracy {test_accuracy:.2%} is below 90%. Check learning rate, "
+    "hidden_units, or number of epochs."
+)
+
+# 2. Training loss should decrease monotonically in the first 50 epochs
+first_50_losses = history['loss'][:50]
+decreasing = sum(1 for i in range(1, len(first_50_losses))
+                 if first_50_losses[i] < first_50_losses[i-1])
+assert decreasing >= 35, (
+    f"Only {decreasing}/49 of the first 50 epochs showed loss decrease. "
+    "The optimizer may not be converging — check the learning rate."
+)
+
+# 3. All model weights should be finite (no NaN or Inf from exploding gradients)
+for var in model.trainable_variables:
+    assert tf.reduce_all(tf.math.is_finite(var)).numpy(), (
+        f"Non-finite values in {var.name}. Likely exploding gradients — "
+        "reduce learning rate or add gradient clipping."
+    )
+
+# 4. Predictions should not all be the same class (mode collapse check)
+unique_preds = tf.unique(tf.squeeze(y_pred_test))[0]
+assert len(unique_preds) > 1, (
+    "Model predicts the same class for all test samples (mode collapse). "
+    "Check weight initialization scale — 0.1 * N(0,1) may be too small "
+    "for this architecture."
+)
+
+print("✅ All validation checks passed!")
+```
+
+---
+
+## 🎯 Expected Output
+
+### Console invariants (final training run, 800 samples, 200 epochs, lr=0.01)
+
+```
+LAB 2.9: Custom Binary Classifier from Scratch
+[STEP 1] Generating synthetic dataset...
+[STEP 2] Initializing model weights...
+  Layer 1: (2, 16) + (16,)
+  Layer 2: (16, 16) + (16,)
+  Layer 3: (16, 1) + (1,)
+[STEP 3] Custom training loop...
+  Epoch   0: loss=0.6931 acc=50.0%
+  Epoch  10: loss=0.6803 acc=57.3%
+  Epoch  50: loss=0.5214 acc=78.1%
+  Epoch 100: loss=0.3872 acc=85.4%
+  Epoch 150: loss=0.3201 acc=88.0%
+  Epoch 199: loss=0.2841 acc=89.8%
+✅ All validation checks passed!
+```
+
+### Numeric invariants
+
+| Metric | Expected range | If outside range |
+|--------|---------------|-----------------|
+| Initial loss (epoch 0) | 0.68–0.70 | Weight init scale is wrong (too small → all ~0.5 BCE; too large → NaN) |
+| Final training loss (epoch 199) | 0.22–0.35 | lr=0.01 with Moons noise=0.2 should converge here; higher → underfitting (too few layers or wrong init); lower → overfitting possible |
+| Final training accuracy | 87–93% | Moons with noise=0.2 has a ~5% irreducible error floor; >93% on train means overfit |
+| Test accuracy | 83–91% | >5pp gap vs. train accuracy indicates overfitting; add L2 (see Stretch Goal 1) |
+| Gradient norm (last epoch) | 0.001–0.05 | Near-zero → vanishing gradients (check ReLU saturation); >1.0 → exploding (clip or reduce lr) |
+
+### Decision boundary plot description
+
+The saved `decision_boundary.png` should show two crescent-shaped clusters (blue = class 0, orange = class 1). The decision boundary — the contour where the model outputs exactly 0.5 — should form a smooth S-curve or arc separating the two crescents. Jagged or straight-line boundaries indicate the network hasn't converged or is too shallow for this data.
+
+### Validation checkpoint output
+
+```
+Testing model validation checks...
+✅ Final loss check: 0.28 ≤ 0.60 ✓
+✅ Convergence check: 47/49 of first 50 epochs showed loss decrease ✓
+✅ Weight finiteness check: all 6 variables are finite ✓
+✅ Mode collapse check: model predicts both classes ✓
+✅ All validation checks passed!
+```
+
+<Callout type="tip">
+**Seeded reproducibility:** The lab uses `random_state=42` in `make_moons` and explicit `tf.random.normal` calls. Your exact loss values may differ by ±0.02 from the table above if your TensorFlow or NumPy version generates different random numbers for the same seed — this is normal. The accuracy bounds (87–93%) should hold across TF 2.x versions.
+</Callout>
+
+---
+
+## ⚠️ Common Pitfalls
+
+| # | Pitfall | What happens | Fix |
+|---|---------|-------------|-----|
+| 1 | **Weight init scale too small** (e.g., `* 0.01` instead of `* 0.1`) | Activations shrink to near-zero across layers; gradients vanish; model outputs ~0.5 for everything (mode collapse). | Use He initialization: `tf.random.normal([fan_in, fan_out]) * tf.sqrt(2.0 / fan_in)`. The lab uses `* 0.1` which works for 3 layers but would fail for deeper networks. |
+| 2 | **Missing `tf.clip_by_value` in BCE** | If `y_pred` is exactly 0 or 1, `tf.math.log(0)` produces `-inf`, which propagates NaN through all gradients. | Always clip: `y_pred = tf.clip_by_value(y_pred, 1e-7, 1 - 1e-7)`. The lab does this correctly — removing it is a common "simplification" mistake. |
+| 3 | **Forgetting `tf.squeeze` on predictions** | `model(X)` returns shape `(N, 1)` but `y_train` is shape `(N,)`. Broadcasting silently creates a `(N, N)` tensor in the loss, producing nonsensical gradients. | Either reshape labels to `(N, 1)` or squeeze predictions: `tf.squeeze(y_pred)`. |
+| 4 | **Not shuffling each epoch** | Without per-epoch shuffling, mini-batches always contain the same samples in the same order. SGD converges to a narrow path through loss landscape, overfitting to batch ordering. | The lab correctly re-shuffles indices each epoch. Removing this "for speed" is a common mistake in custom loops. |
+| 5 | **Evaluating with `model(X_test)` instead of `model.predict(X_test)`** | `model(X_test)` returns probabilities (floats in [0,1]); comparing these to integer labels with `tf.equal` always returns False, showing 0% accuracy. | Use `model.predict()` which thresholds at 0.5, or explicitly cast: `tf.cast(model(X_test) > 0.5, tf.float32)`. |
+
+---
+
+## 🚀 Stretch Goals
+
+1. **Add L2 regularization manually.** In the custom training loop, compute `l2_penalty = 0.001 * sum(tf.reduce_sum(tf.square(w)) for w in model.trainable_variables)` and add it to the loss. Compare decision boundary smoothness with and without regularization — the regularized boundary should be less jagged, especially near data-sparse regions.
+
+2. **Implement gradient clipping.** After `tape.gradient(...)`, add `gradients = [tf.clip_by_norm(g, 1.0) for g in gradients]`. Train a deeper version (5+ layers) with and without clipping. Plot gradient norms per layer to visualize how clipping prevents exploding gradients in deeper custom architectures.
+
+3. **Replace make_moons with make_circles.** The concentric circle dataset requires the network to learn a radial decision boundary instead of a curved one. Observe how the same architecture (2 hidden layers of 16 units) handles this different topology. Try reducing `hidden_units` to find the minimum capacity needed.
+
+4. **Animate the decision boundary during training.** Save a snapshot of the decision boundary every 10 epochs and compile them into a GIF using `matplotlib.animation.FuncAnimation`. This visualization powerfully shows how the network progressively carves out non-linear regions of feature space as it trains.

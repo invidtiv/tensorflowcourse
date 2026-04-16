@@ -325,3 +325,55 @@ print("5. Can be converted to Model subclassing for reusability")
 ```
 
 ---
+
+## Expected Output
+
+A successful run prints a sequence of `model.summary()` blocks. The key structural checkpoints to verify:
+
+```
+Model: "multi_input_classifier"
+__________________________________________________________________________________________________
+ Layer (type)                    Output Shape         Param #     Connected to
+==================================================================================================
+ image_input (InputLayer)        [(None, 784)]        0           []
+ meta_input (InputLayer)         [(None, 10)]         0           []
+ dense_img_1 (Dense)             (None, 128)          100480      ['image_input[0][0]']
+ dense_meta_1 (Dense)            (None, 32)           352         ['meta_input[0][0]']
+ concatenate (Concatenate)       (None, 160)          0           ['dense_img_1[0][0]',
+                                                                   'dense_meta_1[0][0]']
+ dense_combined_1 (Dense)        (None, 64)           10304       ['concatenate[0][0]']
+ output (Dense)                  (None, 10)           650         ['dense_combined_1[0][0]']
+==================================================================================================
+Total params: 111,786
+```
+
+Signals to confirm:
+
+- **"Connected to" column is populated** for every non-Input layer. If it is empty you accidentally built a Sequential model.
+- **Parameter count is deterministic** from shapes: a Dense(128) on a 784-vector input produces 784·128 + 128 = 100,480 params. Mismatches here almost always mean a wrong `Input(shape=...)`.
+- **`plot_model(model, show_shapes=True)`** renders a proper DAG with the two `InputLayer` nodes on top merging at the `Concatenate` node. If you see a linear chain, the second input is not wired in.
+- **Shared-layer example** (if included) shows the same Dense layer's `Param #` counted **once** in the total, while `.output` is reachable from two different call sites — the Functional API's canonical weight-sharing proof.
+- **Subclassed vs Functional equivalence check**: `subclassed_model.count_params() == functional_model.count_params()` should be exactly equal when both are built with the same shapes and no bias tricks.
+
+<Callout type="warning" title="Common Pitfalls">
+
+- **Passing a `KerasTensor` through a Python operation that isn't a layer** (`x + 1`, `x * mask`) is allowed in Keras 3 but silently fails in older TF 2.x: wrap arithmetic in `tf.keras.layers.Lambda` or use `layers.Add()` / `layers.Multiply()` for portable code.
+- **Reusing the *same instance* of an Input layer across two models** ties both models' graphs together and causes `ValueError: Graph disconnected` on save. Create a fresh `Input(...)` per model.
+- **Calling `Model(inputs, outputs)` with a *list of outputs* that share a loss** — Keras expects a matching list of loss functions (or a dict keyed by output name). Passing a single string loss is interpreted as "apply to output 0 only" and silently ignores the other heads.
+- **Forgetting that shared layers share weights *including the bias*.** If you want shared weights but independent biases, build the weight-sharing manually via `layers.Dense(..., use_bias=False)` + a separate bias-only layer per branch.
+- **Naming collisions** — two layers with `name='dense_1'` in the same model raise a confusing error about the functional graph. Always name layers explicitly in non-trivial Functional models so errors point to the right place.
+- **Calling `.predict()` on a multi-input model with a single NumPy array** silently broadcasts it across inputs, producing garbage. Pass a list `[X_image, X_meta]` or a dict `{'image_input': ..., 'meta_input': ...}`.
+- **Mixing `tf.keras` and standalone `keras` 3.x imports** produces two incompatible layer classes with the same name; stick to one import style per project (the course standardizes on `from tensorflow import keras`).
+
+</Callout>
+
+<Callout type="tip" title="Stretch Goals">
+
+1. **Rebuild a tiny ResNet-8 block** using the Functional API — one residual connection per block, `Conv2D → BN → ReLU → Conv2D → BN → Add → ReLU`. Train on CIFAR-10 and compare against a Sequential baseline of equal parameter count; the residual version should train faster and reach higher accuracy.
+2. **Two-tower retrieval model** — build query and document towers that share an embedding layer, then compute cosine similarity at the top. This is the standard pattern for recommender systems and dual-encoder search; verify the shared embedding's weight count appears once in `model.summary()`.
+3. **Multi-head output with per-head loss weights** — return three outputs (classification logits, regression value, auxiliary logits) and pass `loss_weights={'cls': 1.0, 'reg': 0.5, 'aux': 0.1}` to `compile()`. Confirm in the training logs that the reported `total_loss` matches the weighted sum.
+4. **Convert Functional → Subclassed → back to Functional.** Use `keras.Model.from_config(func_model.get_config())` to prove Functional models round-trip as JSON, while subclassed models do not (`get_config` raises `NotImplementedError` unless you override it). This is the deciding factor when choosing between the two APIs for production.
+
+</Callout>
+
+---

@@ -238,3 +238,49 @@ print("5. Layer-wise analysis enables targeted improvements")
 ```
 
 ---
+
+## Expected Output
+
+Gradient visualization for a 4-layer dense network on synthetic regression data (20 input features, 1 output):
+
+| Metric | Expected Value |
+|--------|---------------|
+| Layer 1 gradient norm (epoch 1) | Typically 10–100× smaller than layer 4 — visible signal of vanishing gradients in deep networks without BN |
+| Layer 4 (output) gradient norm | Largest gradient norm across all layers |
+| Gradient norm trend across epochs | Decreases overall as the model converges; spikes indicate learning rate too high |
+| Weight distribution shift (first vs last epoch) | Histograms broaden and shift from near-zero initialization to a wider, non-zero distribution |
+| Final training loss | ≤ 0.05 MSE on the synthetic dataset after 50 epochs |
+
+**Validation:**
+
+```python
+import numpy as np
+
+# Confirm gradient norms were captured for all layers
+assert len(gradient_norms_history) > 0, "No gradient history recorded — ensure GradientTape is active"
+assert len(gradient_norms_history[0]) == len(model.trainable_variables), \
+    "Gradient norm count doesn't match number of trainable variable tensors"
+
+# Verify the vanishing gradient pattern: early layers should have smaller norms
+first_epoch_norms = gradient_norms_history[0]
+assert first_epoch_norms[0] < first_epoch_norms[-2], \
+    "Expected layer 1 gradient norm < output layer norm (vanishing gradient pattern)"
+print("✓ Gradient visualization validation passed")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|----------------|-----|
+| **`GradientTape` not watching trainable variables** | By default, `GradientTape` only watches `tf.Variable` objects created inside the tape's scope. If the model was compiled before the tape, variables may not be tracked automatically. | Use `tape.watch(model.trainable_variables)` explicitly, or ensure the `model.call()` is inside the `with tf.GradientTape() as tape:` block. |
+| **Gradient is `None` for a layer** | If a layer has no path to the loss (e.g., a frozen layer or a disconnected subgraph), `tape.gradient()` returns `None` for that layer's variables. Calling `.numpy()` on `None` raises `AttributeError`. | Guard with: `norm = tf.norm(g).numpy() if g is not None else 0.0`. |
+| **Gradient norms dominated by bias terms** | Bias gradients are often much larger than kernel gradients because they have fewer parameters averaging the loss. Plotting raw gradient norms conflates the two. | Separate kernel and bias variables: `[(v.name, tape.gradient(loss, v)) for v in model.trainable_variables if 'kernel' in v.name]`. |
+| **Plotting epoch-0 gradients as "stable"** | Gradient norms at epoch 0 reflect the random initialization and are not representative of training dynamics. Showing them without context makes vanishing gradients appear worse than they are. | Always start gradient visualization from epoch 1 and include a legend that clearly marks initialization-epoch data points. |
+| **Confusing gradient norm with gradient magnitude** | `tf.norm(gradient)` computes the L2 norm across all elements of the gradient tensor, which grows with tensor size. A layer with 65k parameters will have a much larger norm than a 32-parameter layer even if per-element gradients are equal. | Normalize by number of elements: `norm_per_element = tf.norm(g) / tf.cast(tf.size(g), tf.float32)`. |
+
+## Stretch Goals
+
+1. **Gradient flow animation**: Record gradient norms every epoch and create an animated bar chart (using `matplotlib.animation.FuncAnimation`) showing how each layer's gradient norm evolves over 50 epochs. Observe how adding BatchNormalization changes the animation significantly.
+2. **Vanishing vs. exploding gradient demo**: Train the same 6-layer network with `tanh` activations (prone to vanishing) vs. `relu` vs. `elu`. Plot the per-layer gradient norm heatmap (layers × epochs) as a 2D color map. The `tanh` version should show a clear color gradient from output → input.
+3. **Gradient checkpointing profiling**: Use `tf.recompute_grad` to checkpoint activations and compare peak GPU memory usage vs. standard backprop on a 20-layer network. Measure the trade-off between compute time and memory consumption.
+4. **Gradient-weighted class activation maps (Grad-CAM)**: Adapt the gradient tracking logic to implement Grad-CAM on a CNN trained on Fashion-MNIST. Visualize which spatial regions drive the classification decision for each class — early conv layers should respond to textures, later layers to shapes.

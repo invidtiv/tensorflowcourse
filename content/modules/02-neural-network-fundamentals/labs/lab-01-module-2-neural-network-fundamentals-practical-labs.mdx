@@ -8,6 +8,8 @@ source: "lab-01-part1.md"
 ---
 # Module 2: Neural Network Fundamentals - Practical Labs
 
+This overview lab introduces the complete set of hands-on exercises for Module 2. Each lab builds on the previous one, taking you from raw data preprocessing through full custom training loops and advanced Functional API architectures. By the end of this module you will have implemented and compared 11 progressively more complex neural network designs entirely in TensorFlow/Keras.
+
 ## Table of Contents
 1. [Lab 2.1: Feature Normalization and Preprocessing](#lab-21-feature-normalization-and-preprocessing)
 2. [Lab 2.2: Keras Model Building - Sequential vs Functional API](#lab-22-keras-model-building)
@@ -22,3 +24,89 @@ source: "lab-01-part1.md"
 11. [Lab 2.11: Building with Functional API](#lab-211-functional-api)
 
 ---
+
+## Quick-Start Scaffold
+
+Run this cell first in every lab to confirm your environment is ready:
+
+```python
+"""
+Module 2: Neural Network Fundamentals — Environment Check
+Run this before starting any lab to verify all dependencies are installed.
+"""
+
+import sys
+
+# TODO: Import tensorflow and print the version
+# import tensorflow as tf
+# print(f"TensorFlow version: {tf.__version__}")
+
+# TODO: Import numpy, pandas, matplotlib, sklearn and confirm they load
+# import numpy as np
+# import pandas as pd
+# import matplotlib.pyplot as plt
+# from sklearn.model_selection import train_test_split
+
+# TODO: Verify GPU/CPU availability
+# gpus = tf.config.list_physical_devices('GPU')
+# device = "GPU" if gpus else "CPU"
+# print(f"Running on: {device}")
+
+# TODO: Set a global random seed for reproducibility across all labs
+# tf.random.set_seed(42)
+# np.random.seed(42)
+
+# TODO: Create an output directory for saving plots and model checkpoints
+# import os
+# os.makedirs("output", exist_ok=True)
+# print("✓ Environment check complete — output/ directory ready")
+
+print("Replace the TODO comments above with the actual imports to begin.")
+```
+
+---
+
+## Expected Output
+
+Environment verification for the Module 2 lab scaffold:
+
+| Check | Expected Result |
+|-------|----------------|
+| TensorFlow version | `2.x` (2.12 or later recommended) |
+| GPU detection | "Running on: GPU" if CUDA available, "CPU" otherwise — both work for all labs |
+| Random seed set | No error — seeds set successfully for both `tf.random` and `numpy` |
+| `output/` directory created | No `FileExistsError` — `exist_ok=True` is idempotent |
+| All imports succeed | No `ModuleNotFoundError` — install missing packages with `pip install tensorflow numpy pandas matplotlib scikit-learn seaborn` |
+
+**Validation:**
+
+```python
+import tensorflow as tf
+import numpy as np
+
+# Confirm TF version is 2.x
+major = int(tf.__version__.split('.')[0])
+assert major >= 2, f"TensorFlow 2.x required, found {tf.__version__}"
+
+# Confirm random seed is settable without error
+tf.random.set_seed(42)
+np.random.seed(42)
+print(f"✓ Environment validated — TF {tf.__version__}, device: {'GPU' if tf.config.list_physical_devices('GPU') else 'CPU'}")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|----------------|-----|
+| **`ModuleNotFoundError: No module named 'tensorflow'`** | TensorFlow not installed in the active Python environment or virtual environment. | Run `pip install tensorflow` in the same environment where you launch the notebook. Check with `which python` / `where python`. |
+| **TF 1.x behavior** | Some systems have TF 1.x installed alongside TF 2.x, or an older system package takes precedence. | Verify with `python -c "import tensorflow as tf; print(tf.__version__)"`. If 1.x, upgrade: `pip install --upgrade tensorflow`. |
+| **Non-reproducible results across runs despite setting seeds** | `tf.random.set_seed(42)` sets the global TF seed, but GPU operations can still be non-deterministic. Some GPU kernels use atomic operations that have race conditions. | Add `tf.config.experimental.enable_op_determinism()` (TF 2.9+) for fully reproducible GPU runs. Note: this may reduce performance. |
+| **`output/` directory permission error** | On some shared lab systems, the working directory is read-only. `os.makedirs()` raises `PermissionError`. | Use `os.makedirs("/tmp/tf_lab_output", exist_ok=True)` as a fallback and update all `plt.savefig()` calls to use the new path. |
+| **Import order issues between numpy and TensorFlow** | Importing `numpy` after `tensorflow` in some versions can cause namespace conflicts or degraded performance due to TF's internal numpy replacement. | Always import `tensorflow` first, then `numpy`, then all other libraries. |
+
+## Stretch Goals
+
+1. **Environment benchmark**: After the setup cell, run `tf.test.Benchmark()` or a simple matrix multiply benchmark (`tf.matmul(tf.random.normal([1000, 1000]), tf.random.normal([1000, 1000]))`) timed with `%timeit`. Compare CPU vs GPU throughput and record the result — you'll see this number meaningfully improve as model complexity grows through the labs.
+2. **Version compatibility matrix**: Create a markdown table documenting which TensorFlow version introduced each API used in this module (e.g., `tf.keras.layers.Normalization` in 2.6, `tf.keras.utils.plot_model` in 2.0). This builds awareness of API stability across versions.
+3. **Lab dependency graph**: Draw a directed acyclic graph showing which labs build on each other's concepts (e.g., Lab 2.1 preprocessing → Lab 2.7 Auto-MPG; Lab 2.2 Functional API → Lab 2.11). Identify the critical path — which sequence of labs must be completed in order?
+4. **Automated environment report**: Write a script that checks all required package versions, prints a structured report (package name, installed version, minimum required version, status ✓/✗), and exits with a non-zero code if any requirement is unmet. This is the kind of preflight check used in production ML pipelines.

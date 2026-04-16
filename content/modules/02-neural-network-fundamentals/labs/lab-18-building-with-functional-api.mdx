@@ -351,3 +351,51 @@ KEY TAKEAWAYS:
 - Working with real datasets (Auto-MPG, Fashion-MNIST)
 - Implementing custom training loops
 - Advanced architectures (ResNet, Siamese, Multi-modal)
+
+---
+
+## Expected Output
+
+Building complex architectures with the Keras Functional API (skip connections, multi-input, Siamese networks):
+
+| Architecture | Key Output |
+|-------------|-----------|
+| Basic Functional model (784 → 256 → 128 → 10) | Same accuracy as Sequential equivalent (≥ 0.97 on MNIST) — verifies API parity |
+| Skip connection model (ResNet-style) | Gradient norms at input layers should be noticeably larger than equivalent model without skip, confirming shortcut path |
+| Multi-input model | Both branch outputs must merge correctly — `model.output.shape == (None, num_classes)` |
+| Siamese network | Euclidean distance between same-class pair embeddings < distance between different-class pairs |
+| `model.summary()` | Shows shared layer reuse (same layer name appearing in multiple positions) — unique to Functional API |
+
+**Validation:**
+
+```python
+import numpy as np
+
+# Verify Functional model produces same output shape as Sequential
+func_output = functional_model.predict(X_test[:10])
+assert func_output.shape == (10, 10), f"Expected (10, 10), got {func_output.shape}"
+
+# Verify skip connection model has more than one input path
+layer_names = [l.name for l in skip_model.layers]
+assert any('add' in name or 'concatenate' in name for name in layer_names), \
+    "No merge layer found — skip connection may not be wired correctly"
+
+print("✓ Functional API architecture validation passed")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|----------------|-----|
+| **Mismatched tensor shapes at merge layers** | `Add()` and `Concatenate()` require identical shapes (for Add) or matching all dims except the merge axis (for Concat). A skip connection from a 784-unit Dense to a 64-unit Dense cannot be added directly. | Insert a `Dense(64)` projection layer on the skip path before the `Add()` to match the shape of the main path. |
+| **Calling `tf.keras.Input()` inside a model** | `tf.keras.Input()` creates a symbolic tensor for the Functional API. Calling it inside a `model.call()` or a custom `Layer.call()` instead of at graph-build time raises `ValueError: A KerasTensor cannot be used as input`. | Define all `Input()` tensors at the top level before chaining layers. Never use `Input()` inside a layer's `call()` method. |
+| **Shared layer weights not actually shared** | Instantiating two `Dense(64)` layers with the same config but different Python objects gives them separate weights — they are not shared. True weight sharing requires calling the **same layer object** on multiple inputs. | `shared_layer = Dense(64); out_a = shared_layer(input_a); out_b = shared_layer(input_b)` — one object, two call sites. |
+| **Multi-output model loss not weighted** | When a model has multiple outputs (e.g., classification head + regression head), passing a single loss function applies it equally to all outputs. This rarely matches your actual training objective. | Pass a dictionary of losses: `model.compile(loss={'class_head': 'sparse_categorical_crossentropy', 'reg_head': 'mse'}, loss_weights={'class_head': 1.0, 'reg_head': 0.1})`. |
+| **Graph disconnected error when slicing layers** | Attempting to take intermediate layer outputs (`model.layers[3].output`) from a compiled `tf.keras.Model` that was built via subclassing (not Functional API) raises `AttributeError: Layer has no inbound nodes`. | The `.output` shortcut only works in Functional API models. For subclassed models, use a separate `tf.keras.Model(inputs=..., outputs=intermediate_layer.output)` built from the Functional graph. |
+
+## Stretch Goals
+
+1. **ResNet block benchmark**: Implement a 5-block ResNet with identity skip connections on CIFAR-10. Compare test accuracy and gradient norms (per layer) against an equivalent plain network with no skip connections. The ResNet should show more uniform gradient norms across depths.
+2. **Siamese network for signature verification**: Use the Siamese architecture with contrastive loss (`L = (1−y)·d² + y·max(0, margin−d)²`) on the MNIST dataset, treating pairs of same-digit images as positive and different-digit pairs as negative. Visualize the 2D embedding space with t-SNE.
+3. **Multi-modal fusion model**: Build a model with two branches — one processing tabular features (Dense layers) and one processing image features (Conv layers). Concatenate their embeddings and classify. Test on a synthetic dataset where neither modality alone achieves full accuracy.
+4. **Dynamic architecture with layer DAG visualization**: After building a Functional model, use `tf.keras.utils.plot_model(model, show_shapes=True, expand_nested=True)` to generate the computation graph. Annotate each node with its output tensor shape and parameter count — this is a powerful debugging tool for complex architectures.

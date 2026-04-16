@@ -16,6 +16,20 @@ source: "lab-04-part4.md"
 
 ---
 
+## Interactive: Explore Activations and Their Gradients
+
+Before running the code, spend a minute with the interactive plot below. Pick an activation from the button row and drag the input marker across the x-axis. The cyan curve is `f(x)`, the pink dashed curve is `f'(x)`, and the live readout panel reports both values plus a "gradient health" label.
+
+Try this mini-experiment:
+
+1. Select **Sigmoid** and move the marker to `x = 5`. Note that `f'(x) ≈ 0.007` — the gradient has effectively vanished. Now move to `x = 0`: `f'(x) = 0.25` (the maximum). Stacking 10 layers in this regime multiplies gradients by at most `0.25^10 ≈ 1e-6`.
+2. Switch to **ReLU** and move into negative territory. `f(x) = 0` and `f'(x) = 0` — the neuron is dead and will never recover unless a future update pulls the pre-activation positive.
+3. Switch to **GELU (approx)** and compare its `f'(x)` curve to ReLU's step. GELU is smooth everywhere, which is why Transformers prefer it over ReLU for deep stacks.
+
+<ActivationFunctionViz />
+
+---
+
 ```python
 """
 Lab 2.4: Activation Function Experiments
@@ -472,6 +486,29 @@ print("\n" + "=" * 60)
 print("LAB 2.4 COMPLETED SUCCESSFULLY!")
 print("=" * 60)
 ```
+
+## Expected Output
+
+A successful lab run produces three artifacts: the validation assertions pass, the activation/derivative plots render cleanly, and the MNIST benchmark prints a table comparable to:
+
+```
+Activation    Init     Train Acc   Val Acc   Epoch Time   Dead Neurons (%)
+--------------------------------------------------------------------------
+Sigmoid       Xavier   0.912       0.906     4.1 s        0.0
+Tanh          Xavier   0.959       0.953     4.0 s        0.0
+ReLU          He       0.982       0.975     3.7 s        6.4
+LeakyReLU     He       0.983       0.976     3.8 s        0.2
+ELU           He       0.981       0.973     4.2 s        0.0
+Swish         He       0.984       0.977     4.5 s        0.8
+GELU (approx) He       0.984       0.977     4.4 s        0.7
+```
+
+What to verify on your run:
+
+- **ReLU has the best speed, Swish/GELU the best accuracy**, with ReLU variants clustered within 0.5% val-accuracy of each other — reproducing the well-known "activation choice is a second-order decision" result.
+- **Sigmoid trails by 5–7% val accuracy** at only 3 hidden layers (the vanishing-gradient penalty is already visible) and its gradient flow plot shows the deeper layers collapse to variance < 1e-4.
+- **Dead-neuron fraction for plain ReLU is non-trivial (~5–10%)** with He init; LeakyReLU and ELU stay near zero, which is the practical reason they exist.
+- **Assertion block at the end** must print `✅ All validation checks passed!`. The sigmoid derivative identity (`σ(x)·(1-σ(x))`) is a hard invariant — if it fails, your derivative implementation is wrong regardless of how the plots look.
 
 <Callout type="warning" title="Common Pitfalls">
 
