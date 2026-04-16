@@ -386,3 +386,45 @@ print("3. Too many features can lead to overfitting - use feature selection")
 print("4. Autoencoders can compress features while preserving information")
 print("5. TensorFlow layers enable feature engineering in the model graph")
 ```
+
+---
+
+## Expected Output
+
+| Transformation | Expected output shape / value |
+|----------------|-------------------------------|
+| Polynomial features (degree=2, 3 original features) | Output has `3 + 3 + 3 = 9` columns (originals + squares + cross-terms). `PolynomialFeatures(degree=2, include_bias=False).fit_transform(X).shape[1]` = 9. |
+| Log transform `log1p` | All values ≥ 0 (safe for zero inputs). Skewness of transformed column should be closer to 0 than original. Verify: `scipy.stats.skew(np.log1p(x)) < scipy.stats.skew(x)`. |
+| Binning with `pd.cut` (5 bins) | `df['bin'].value_counts()` shows 5 unique categories. No `NaN` bins if all values fall within the specified range. |
+| Interaction term `x1 * x2` | Pearson correlation of interaction term with target should exceed both individual `corr(x1, target)` and `corr(x2, target)` if the true relationship involves an interaction. |
+| TF `tf.feature_column` embedding | Output shape: `[batch_size, embedding_dim]`. All embedding weights initialized near 0 before training. |
+
+**Validation checkpoint:**
+
+```python
+from sklearn.preprocessing import PolynomialFeatures
+import numpy as np
+
+X = np.random.rand(100, 3)
+poly = PolynomialFeatures(degree=2, include_bias=False)
+X_poly = poly.fit_transform(X)
+assert X_poly.shape[1] == 9, f"Expected 9 features, got {X_poly.shape[1]}"
+print("✓ Polynomial feature count correct")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|----------------|-----|
+| **Applying log transform to features with zeros** | `np.log(0)` = `-inf`. Many real-world count features have zeros. | Use `np.log1p(x)` (log(1+x)) which is safe at zero and produces `0`. |
+| **Polynomial explosion at high degree** | `PolynomialFeatures(degree=5)` on 10 features produces 3,003 columns — exponential growth. Training time and memory blow up. | Keep degree ≤ 3 unless feature count is small (≤ 5). Use `interaction_only=True` to skip squared terms. |
+| **Target leakage in feature engineering** | Computing features like "mean target value per category" on the full dataset leaks the test labels into training. This is a major source of inflated CV scores. | Use `sklearn.model_selection.cross_val_predict` or a proper `Pipeline` with `TargetEncoder` that folds target encoding inside CV. |
+| **Encoding category order in ordinal features** | Using `LabelEncoder` on ordinal categories imposes an arbitrary integer order. If categories are "low/medium/high", LabelEncoder may assign [1, 0, 2] — wrong ordinal relationship. | Use `OrdinalEncoder` with `categories=[['low', 'medium', 'high']]` to enforce the correct ordering. |
+| **`tf.feature_column` vs Keras preprocessing layers** | `tf.feature_column` is the legacy API. New code should use `tf.keras.layers.CategoryEncoding`, `IntegerLookup`, and `Embedding`. Mixing both in one model can cause graph-mode compatibility issues. | Migrate to Keras preprocessing layers for new projects. |
+
+## Stretch Goals
+
+1. **Feature importance with permutation**: After training a model, use `sklearn.inspection.permutation_importance` to rank your engineered features. Do the polynomial or interaction features rank higher than the originals? Which features can be dropped?
+2. **Automated feature generation with Featuretools**: Install `featuretools` and run `ft.dfs()` on a toy relational dataset (customers + transactions). Compare the auto-generated features to your manual ones — which DFS primitives produce the most predictive features?
+3. **TF embedding for high-cardinality categoricals**: Build a Keras model with an `Embedding` layer for a categorical feature with 1,000 categories. Visualize the learned embeddings in 2D using t-SNE after training — do semantically similar categories cluster together?
+4. **Cyclical encoding for time features**: Encode `hour_of_day` (0–23) using `sin(2π·h/24)` and `cos(2π·h/24)`. Train two linear models — one using raw hour integers, one using cyclical encoding — and compare MAE on a toy time-series regression. Cyclical encoding should outperform or match at lower model complexity.

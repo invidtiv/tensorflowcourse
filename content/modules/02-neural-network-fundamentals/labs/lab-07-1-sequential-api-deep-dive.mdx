@@ -279,6 +279,24 @@ assert _out.shape[-1] == y_test_cat.shape[-1], (
 print("✅ All validation checks passed!")
 ```
 
+<Callout type="note" title="Expected Output">
+After ~20 epochs on the synthetic binary/multi-class classification task (default architecture: `[64, 32]` hidden units, He init, Adam @ 1e-3):
+
+- **Training accuracy:** climbs to **~0.95–0.99** by epoch 20; plateau usually by epoch 12–15.
+- **Validation accuracy:** **~0.85–0.92** (gap of 5–10pp to training is normal without regularization).
+- **Test accuracy:** ≥ **0.80** (validation-checkpoint assert). Typical range 0.83–0.90.
+- **Loss curves:** training loss strictly decreasing; validation loss bottoms around epoch 10–15 then drifts up slightly (mild overfit without Dropout/L2).
+- **`model.summary()`:** shows three Dense layers + computed parameter counts (no `None` in output shapes because input_shape is declared on the first layer). Total params for a `[input=20, 64, 32, n_classes]` stack: ~3,500–4,000.
+- **Save/load:** `loaded_acc` is within ±0.01 of `test_acc`; file `sequential_model.keras` on disk is 20–60 KB.
+
+**Diagnostic tree if something looks off:**
+
+1. **Test accuracy stuck at chance (~0.5 binary, ~1/n for n classes):** check that labels are one-hot when using `categorical_crossentropy` (use `sparse_categorical_crossentropy` for integer labels). Also verify `activation='softmax'` on the final Dense (or `sigmoid` + 1 unit for binary).
+2. **Train accuracy ~1.0 but val/test drops to ~0.5:** severe overfit — dataset too small or no regularization. Add `Dropout(0.2–0.5)` between Dense layers or increase training data.
+3. **Loss = NaN after a few epochs:** learning rate too high (try `1e-4`), or un-normalized inputs. Confirm inputs are standardized (mean≈0, std≈1) before fit.
+4. **`loaded_acc` differs from `test_acc` by > 1%:** save/load broken — confirm the `.keras` extension (not legacy `.h5`), and that custom objects/layers are registered if used.
+</Callout>
+
 <Callout type="warning" title="Common Pitfalls">
 - **Wrong input_shape:** In Keras 3, pass `input_shape` to the **first layer**, not to `model.add(tf.keras.layers.InputLayer(...))`. The old `input_dim` shorthand still works for 1D inputs only.
 - **Saving to a bad path:** `/mnt/okcomputer/output/` is a lab-runner mount point. If running locally, substitute a real path (e.g. `./output/sequential_model.keras`). Create the directory first with `os.makedirs("output", exist_ok=True)`.
@@ -294,3 +312,39 @@ print("✅ All validation checks passed!")
 </Callout>
 
 ---
+
+## Expected Output
+
+Building the default Sequential model in this lab (3-layer MLP, MNIST):
+
+| Check | Expected value |
+|-------|---------------|
+| `model.summary()` — total params | ~101,770 for a 784→128→64→10 network (Dense layers only, no biases counted separately). Check: `(784×128 + 128) + (128×64 + 64) + (64×10 + 10)` = 101,770. |
+| Training accuracy (10 epochs) | ≥ 98% on training set. If `< 95%`, check that the input is flattened (shape `(784,)` not `(28, 28)`). |
+| Validation accuracy (10 epochs) | ≥ 97.5% on MNIST validation split. |
+| `model.get_config()` | Returns a dict with `'layers'` key listing all layer configs. Serializable with `json.dumps()`. |
+| After `model.save('model.keras')` + reload | Reloaded model produces identical predictions: `np.allclose(model.predict(X_test[:10]), reloaded.predict(X_test[:10]))` → `True`. |
+
+**Console progress (epoch 10/10):**
+```
+Epoch 10/10
+1500/1500 ━━━━━━━━━━━━━━━━━━━━ 3s 2ms/step - accuracy: 0.9850 - loss: 0.0510
+- val_accuracy: 0.9773 - val_loss: 0.0813
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|----------------|-----|
+| **Adding layers after `model.compile()`** | Keras allows it, but the optimizer state and gradient graph are not rebuilt. The new layer trains without its gradients being tracked. | Always finalize the layer stack before calling `model.compile()`. |
+| **Wrong `input_shape` argument** | Passing `input_shape=(784,)` is correct for a flat vector. Passing `input_shape=(28, 28)` (without Flatten) feeds a 2D tensor to a Dense layer and raises a shape error at training time. | Add `tf.keras.layers.Flatten()` as the first layer, or explicitly reshape inputs. |
+| **`model.add()` after calling `model.build()`** | Building freezes the layer stack for graph compilation. Adding after build is unsupported and may silently not add the layer in some TF versions. | Construct all layers before the first call or `model.compile()`. |
+| **Not compiling before `model.fit()`** | Forgetting `model.compile()` raises `RuntimeError: You must compile your model before training`. Loss and optimizer are mandatory. | Always call `model.compile(optimizer=..., loss=..., metrics=[...])` before `model.fit()`. |
+| **Using `model.weights` to check trainability** | `len(model.weights)` counts all weight tensors including biases. `len(model.trainable_weights)` tells you what actually updates during training — more useful for debugging frozen layers. | Use `model.trainable_weights` and `model.non_trainable_weights` for diagnostic checks. |
+
+## Stretch Goals
+
+1. **Layer surgery**: Access individual layers via `model.layers[i]`. Freeze the first Dense layer with `model.layers[1].trainable = False`, recompile, and compare final accuracy vs. the unfrozen baseline. This is the core pattern for transfer learning.
+2. **Custom activation function**: Register a custom activation `selu_variant = lambda x: tf.nn.selu(x) * 1.1` and use it in a Sequential model with `Dense(64, activation=selu_variant)`. Compare convergence to standard `relu` and `selu` on MNIST.
+3. **Weight initialization comparison**: Train identical architectures initialized with `glorot_uniform` (default), `he_normal`, and `lecun_normal`. Plot training loss curves for the first 5 epochs — `he_normal` should converge fastest with ReLU activations.
+4. **Model cloning for ensemble**: Use `tf.keras.models.clone_model(model)` to create 5 identical models, train each on a different random 80% subset of the training data, and average their predictions. Compare ensemble accuracy vs. single model — should be ~0.3–0.5 pp higher.

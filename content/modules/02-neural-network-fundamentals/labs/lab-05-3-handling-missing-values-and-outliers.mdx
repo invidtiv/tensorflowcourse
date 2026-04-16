@@ -335,3 +335,46 @@ print("=" * 60)
 ```
 
 ---
+
+## Expected Output
+
+Using the synthetic dataset generated in the lab (500 samples, 5 features, 10% missingness):
+
+| Check | Expected result |
+|-------|----------------|
+| `df.isnull().sum()` before imputation | Each column shows ~50 missing values (10% of 500). |
+| Mean imputation | `df_imputed.isnull().sum()` → all zeros. Column means unchanged vs. original non-missing values. |
+| Median imputation on skewed feature | Imputed median closer to lower cluster than mean imputation. Verify with `df['feature'].describe()` — 50th percentile should match imputed value. |
+| IQR outlier detection | Flagged samples fall outside `[Q1 - 1.5×IQR, Q3 + 1.5×IQR]`. Typical flag rate: 5–8% on normally-distributed data. |
+| Z-score outlier detection | `|z| > 3` flags ~0.27% of truly normal data — if your synthetic dataset shows >3%, check for heavy tails in generation. |
+| After `StandardScaler` | `df_scaled.mean()` ≈ 0 (within 1e-10) and `df_scaled.std()` ≈ 1 for every feature. |
+
+**Validation:**
+
+```python
+from sklearn.preprocessing import StandardScaler
+import numpy as np
+
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X_imputed)
+assert np.allclose(X_scaled.mean(axis=0), 0, atol=1e-10), "Means should be 0"
+assert np.allclose(X_scaled.std(axis=0), 1, atol=1e-6), "Stds should be 1"
+print("✓ Scaling validation passed")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|----------------|-----|
+| **Fitting imputer on full dataset** | `SimpleImputer.fit(df_full)` leaks test-set statistics into imputation. In evaluation, the model has seen the test distribution. | Fit on train split only: `imputer.fit(X_train)`, then `imputer.transform(X_test)`. |
+| **Mean imputation on skewed features** | Mean imputation distorts multimodal or heavily skewed distributions. The imputed mean may fall in a low-density region. | Use median for skewed features, mode for bimodal distributions, or model-based imputation (KNN/MICE) for correlated features. |
+| **Removing outliers from test set** | Outlier removal is a form of data-dependent filtering. Removing them from the test set hides how the model behaves on real outlier inputs. | Only remove or cap outliers in the training set. Leave the test set untouched. |
+| **Z-score outlier detection on non-normal data** | Z-score assumes normality. On heavy-tailed distributions, many legitimate values get flagged as outliers. | Use IQR-based detection or Isolation Forest for non-normal data. |
+| **In-place modification of the original DataFrame** | Using `df.fillna(value, inplace=True)` after assigning `df = original_df.copy()` modifies the copy, but some pipelines pass the same DataFrame reference. | Always use `df_clean = df.copy()` before any in-place transformation, or use the non-inplace form `df_clean = df.fillna(value)`. |
+
+## Stretch Goals
+
+1. **KNN imputation comparison**: Replace `SimpleImputer(strategy='mean')` with `sklearn.impute.KNNImputer(n_neighbors=5)`. Compare RMSE (reconstruction error on held-out non-missing values that you artificially masked) between mean, median, and KNN strategies.
+2. **MICE (iterative imputation)**: Use `sklearn.impute.IterativeImputer` with a `BayesianRidge` estimator. Measure how imputation quality (RMSE) scales with `max_iter` from 1 to 20 — plot the convergence curve.
+3. **Outlier-robust pipeline with `RobustScaler`**: Replace `StandardScaler` with `sklearn.preprocessing.RobustScaler` (uses median and IQR). Test: manually inject 5% extreme outliers into one feature and compare the distortion in the scaled distribution between the two scalers.
+4. **Missing value pattern analysis**: Use `missingno.matrix(df)` (pip install missingno) to visualize missingness patterns. Check whether missingness is MCAR (missing completely at random), MAR (missing at random), or MNAR (not at random) by correlating the missingness indicator with other features.

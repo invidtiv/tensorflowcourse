@@ -293,3 +293,47 @@ print("3. Preprocessing is saved with the model for consistent inference")
 print("4. Different features can have different preprocessing strategies")
 print("5. StringLookup handles categorical encoding seamlessly")
 ```
+
+---
+
+## Expected Output
+
+Run the preprocessing pipeline as written. With default TF random seeds:
+
+| Step | Expected console output |
+|------|------------------------|
+| `Normalization` layer adapt | Prints mean/variance stats per feature. Mean values should be near 0 after adaptation on a zero-centered dataset. |
+| `StringLookup` layer | Maps vocabulary tokens to integer indices; OOV token maps to index `0` by default. |
+| `CategoryEncoding` | Produces one-hot vectors of length equal to `vocabulary_size`; each row sums to `1.0`. |
+| `Rescaling(1./255)` | Pixel values shift from `[0, 255]` → `[0.0, 1.0]`. Running `tf.reduce_max(rescaled)` should return `≤ 1.0`. |
+| `RandomFlip` augmentation | Output shape identical to input shape. Flipping is stochastic — running the same input twice should give different results with high probability. |
+
+**Pipeline integration check:**
+
+```python
+import tensorflow as tf
+
+# After calling model.predict() on raw (unnormalized) inputs through
+# a model that includes Normalization as its first layer, confirm:
+assert output.shape == expected_output_shape
+print("✓ Preprocessing pipeline output shape correct")
+```
+
+If `Normalization` prints `WARNING: Your input ran on an uninitialized Normalization layer`, you have not called `.adapt()` before building the pipeline.
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|----------------|-----|
+| **Calling `.adapt()` on the wrong data split** | `Normalization.adapt(test_data)` contaminates your test set statistics into the model — a form of data leakage. | Always call `.adapt(train_data)` only. |
+| **Forgetting `.adapt()` entirely** | The `Normalization` layer initializes mean=0, variance=1 if never adapted. The model trains but ignores the actual feature distributions. | Check `layer.mean` and `layer.variance` are non-default after `.adapt()`. |
+| **Using Keras preprocessing inside `tf.data` pipeline vs. inside the model** | Putting augmentation layers inside `tf.data.Dataset.map` runs them on CPU and includes augmented images in the cache if `.cache()` is called before `.map()`. | Put augmentation layers inside the model for GPU execution, or ensure `.map(augment)` comes after `.cache()`. |
+| **`StringLookup` with `output_mode="one_hot"` on integer inputs** | Passing integer category codes to `StringLookup` raises a dtype mismatch. `StringLookup` expects string inputs. Use `IntegerLookup` for integer categorical features. | Use `tf.keras.layers.IntegerLookup` for integer categoricals. |
+| **`RandomFlip` applied to non-image data** | `RandomFlip` interprets 2D tensors as image height/width. Applying it to tabular features produces meaningless results. | Use image augmentation layers only inside image preprocessing pipelines. |
+
+## Stretch Goals
+
+1. **Full preprocessing model**: Wrap all preprocessing steps in a `tf.keras.Model` and call `model.save()`. Reload it with `tf.keras.models.load_model()` and confirm preprocessing is serialized — the adapted statistics should survive the round-trip.
+2. **Custom preprocessing layer**: Implement a `LogTransform` layer as a `tf.keras.layers.Layer` subclass that applies `tf.math.log1p` element-wise. Verify it handles zero and negative values gracefully with `tf.clip_by_value`.
+3. **Benchmark CPU vs GPU preprocessing**: Use `tf.test.Benchmark` or Python `time.time()` to compare the throughput (samples/second) of a preprocessing pipeline run inside `tf.data` vs. inside the model. At what batch size does GPU execution become faster?
+4. **`TextVectorization` pipeline**: Build a full text preprocessing pipeline using `TextVectorization` (tokenization + vocabulary building + padding) on a toy sentence dataset. Confirm the vocabulary is stable across runs with a fixed `max_tokens` setting.
