@@ -130,4 +130,41 @@ results = experiment_dropout_rates()
 visualize_dropout_results(results)
 ```
 
+## Expected Output
+
+| Dropout Rate (conv / fc) | Train Accuracy | Val Accuracy | Train–Val Gap | Epochs to Best Val |
+|---|---|---|---|---|
+| 0.0 / 0.0 (no dropout) | ~95–97 % | ~72–74 % | ~22 pp | ~15 |
+| 0.1 / 0.2 | ~92–94 % | ~76–78 % | ~16 pp | ~18 |
+| 0.25 / 0.5 (standard) | ~88–91 % | ~79–82 % | ~10 pp | ~22 |
+| 0.4 / 0.7 | ~82–86 % | ~77–79 % | ~6 pp | ~25 |
+| 0.5 / 0.8 (high dropout) | ~72–78 % | ~72–75 % | ~2 pp | ~30+ |
+
+```python
+# Validation: standard dropout should outperform both extremes
+assert results[0.25]['val_accuracy'] > results[0.0]['val_accuracy'], \
+    "Standard dropout (0.25/0.5) should improve val accuracy over no-dropout baseline."
+assert results[0.25]['val_accuracy'] >= results[0.5]['val_accuracy'], \
+    "Standard dropout should outperform high-dropout (0.5/0.8) on CIFAR-10."
+assert results[0.0]['train_val_gap'] > results[0.25]['train_val_gap'], \
+    "No-dropout model should have a larger train–val gap (more overfit) than standard dropout."
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Not setting `training=True` during the sweep evaluation | Keras evaluates with `training=False` by default, so dropout is inactive and all models appear equally strong | Call `model(x_val, training=True)` explicitly when measuring train-mode accuracy, and `training=False` for validation |
+| Using the same random seed for all dropout configurations | Identical random masks make models numerically correlated; differences between rates reflect seed effects, not regularisation strength | Set a different `tf.random.set_seed` per run, or average results over 3 seeds |
+| Applying dropout before BatchNormalization | Dropout injects multiplicative noise that changes the batch statistics seen by BN, causing train/inference discrepancy | Place Dropout **after** BatchNormalization + Activation in every block |
+| Using too-high a dropout rate on convolutional layers | Spatial dropout on small feature maps (e.g., 4×4) effectively drops entire spatial regions, causing gradient starvation | Cap conv dropout at 0.3; use `SpatialDropout2D` instead of `Dropout` for feature-map-level regularisation |
+| Comparing raw train accuracy instead of smoothed loss | Train accuracy with high dropout has high variance per batch; raw numbers mislead the sweep analysis | Use epoch-averaged training loss (or EMA-smoothed) rather than per-step accuracy when comparing configurations |
+
+## Stretch Goals
+
+1. Replace standard `Dropout` with **`SpatialDropout2D`** on all convolutional blocks: it drops entire feature maps rather than individual activations, and is theoretically better suited for spatially correlated inputs; sweep rates {0.1, 0.2, 0.3} and compare to the standard-Dropout sweep on CIFAR-10.
+2. Implement **Monte Carlo Dropout** (Gal & Ghahramani, 2016): run 50 stochastic forward passes at inference time (`training=True`) and report predictive uncertainty (std of softmax probabilities) alongside accuracy; identify the 5 % of test images with the highest uncertainty.
+3. Combine dropout with **label smoothing** (`tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.1)`) and measure whether the two regularisers are complementary or redundant on CIFAR-10 using a 3×3 grid search (dropout rate × smoothing coefficient).
+4. Implement **ShakeDrop** (Yamada et al., 2019) as a forward-pass regulariser: randomly scale each residual branch by a random variable `α ~ Uniform(−1, 1)` during training and `E[α]` during inference; compare its generalisation against standard dropout at equivalent regularisation strength.
+
 ---

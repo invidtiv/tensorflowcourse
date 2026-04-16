@@ -111,4 +111,45 @@ es_results = compare_early_stopping_strategies()
 visualize_early_stopping_results(es_results)
 ```
 
+## Expected Output
+
+| Strategy | Stopped at Epoch | Best Val Accuracy | Final Model Size | Checkpoint Saved |
+|---|---|---|---|---|
+| No early stopping (100 epochs) | 100 | ~79–81 % | ~2.1 MB | every epoch |
+| EarlyStopping patience=5 | ~25–40 | ~78–80 % | ~2.1 MB | best only |
+| EarlyStopping patience=10 | ~35–55 | ~79–82 % | ~2.1 MB | best only |
+| EarlyStopping patience=5 + restore_best_weights | ~25–40 | ~79–81 % | ~2.1 MB | best + restored |
+| EarlyStopping patience=10 + ReduceLROnPlateau | ~40–60 | ~80–83 % | ~2.1 MB | best + reduced LR |
+
+```python
+# Validation: early stopping with restore_best_weights should match or beat no early stopping
+assert es_results['patience_10_restore']['val_accuracy'] >= \
+       es_results['no_early_stopping']['val_accuracy'] * 0.98, \
+    "EarlyStopping+restore_best_weights should reach ≥98% of the no-stop baseline accuracy."
+# Patience-5 should stop sooner than patience-10
+assert es_results['patience_5']['stopped_epoch'] <= es_results['patience_10']['stopped_epoch'], \
+    "patience=5 must stop no later than patience=10."
+# Checkpoint file must exist after training
+import os
+assert os.path.exists('best_model.keras') or os.path.exists('best_model'), \
+    "ModelCheckpoint must save a file named 'best_model.keras'."
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Not setting `restore_best_weights=True` | EarlyStopping stops training but leaves model weights at the last (not best) epoch; the final model is degraded | Always pass `restore_best_weights=True` unless you explicitly want the last-epoch weights |
+| Using `monitor='val_loss'` without a validation split | If no validation data is provided, `val_loss` is never computed and EarlyStopping raises a `ValueError` | Pass `validation_split=0.1` or `validation_data=(x_val, y_val)` to `model.fit()` |
+| Setting `patience` too small (1–2 epochs) | Normal loss fluctuations trigger premature stopping before the model has converged | Use `patience ≥ 5` for small datasets; `patience ≥ 10` for larger ones; add `min_delta=1e-4` to ignore noise |
+| `ModelCheckpoint` saving every epoch to a fixed filename | Each epoch overwrites the previous checkpoint; if training crashes mid-epoch the only checkpoint is corrupt | Use `save_best_only=True` and include `{epoch:02d}-{val_accuracy:.4f}` in the filepath to keep versioned checkpoints |
+| Monitoring training accuracy instead of validation accuracy | `monitor='accuracy'` tracks train set performance; the checkpoint saves the most overfit model, not the most general | Always set `monitor='val_accuracy'` or `monitor='val_loss'` for both `EarlyStopping` and `ModelCheckpoint` |
+
+## Stretch Goals
+
+1. Implement **cyclical early stopping**: instead of a fixed patience, resume training after stopping if a fresh LR schedule (e.g., cosine restart) produces a new val-loss minimum within 5 epochs; compare total wall-clock time and final accuracy against standard patience-10 stopping.
+2. Add a **custom `Callback`** that saves a full training snapshot (weights + optimizer state + epoch number) using `model.save()` every time validation loss improves by more than 0.5 %; implement a resume-from-checkpoint function and verify that resumed training matches a full run to within 0.2 pp accuracy.
+3. Replace `ModelCheckpoint` with **Stochastic Weight Averaging (SWA)** checkpointing: collect model weights every 2 epochs in the last 20 epochs of training, average them with `tf.experimental.numpy.mean`, and compare the SWA model accuracy against the single best checkpoint.
+4. Implement **population-based early stopping**: train 4 models in parallel with different random seeds; at epochs {10, 20, 30}, prune the bottom-50 % by val accuracy and replace them with perturbed copies of the top-50 %, reporting whether this outperforms the best single-run EarlyStopping baseline.
+
 ---

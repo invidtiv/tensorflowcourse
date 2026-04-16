@@ -179,4 +179,42 @@ def benchmark_augmentation_pipelines():
 results = benchmark_augmentation_pipelines()
 ```
 
+## Expected Output
+
+| Augmentation Strategy | Val Accuracy (20 epochs) | Train–Val Gap | Throughput (batches/s) |
+|---|---|---|---|
+| No augmentation (baseline) | ~72–74 % | ~15–20 pp | ~180 |
+| RandomFlip + RandomRotation only | ~75–77 % | ~10–14 pp | ~155 |
+| RandomFlip + RandomRotation + RandomCrop | ~77–79 % | ~8–12 pp | ~140 |
+| MixUp (α=0.4) | ~78–80 % | ~6–10 pp | ~130 |
+| CutMix (α=1.0) | ~79–81 % | ~5–9 pp | ~125 |
+| Full stack (RandomCrop + Flip + MixUp + CutMix) | ~80–83 % | ~4–8 pp | ~110 |
+
+```python
+# Validation: augmentation should reduce train-val gap vs. no augmentation
+assert results['MixUp']['val_accuracy'] >= results['No augmentation']['val_accuracy'] * 0.99, \
+    "MixUp val accuracy unexpectedly lower than baseline — check alpha or label mixing logic."
+assert results['MixUp']['train_val_gap'] < results['No augmentation']['train_val_gap'], \
+    "MixUp should reduce the train–val accuracy gap compared to no augmentation."
+assert results['CutMix']['val_accuracy'] >= results['RandomFlip']['val_accuracy'], \
+    "CutMix should outperform simple flip-only augmentation on CIFAR-10."
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Applying augmentation layers during inference | `RandomFlip` / `RandomRotation` are stateless and run even in predict mode unless wrapped correctly | Wrap augmentation in a `tf.keras.Sequential` model that is **only** called during `model.fit`; alternatively use `training=True` flag inside `call()` |
+| MixUp lambda sampled per-batch instead of per-sample | Per-batch mixing uses the same interpolation weight for all images, reducing diversity | Sample `lam = np.random.beta(alpha, alpha)` **per sample** inside the mixing function |
+| CutMix bounding box not clipped to image boundaries | Random box coordinates can exceed `[0, H] × [0, W]`, causing index-out-of-range errors in `tf.image.crop_to_bounding_box` | Clip `y1`, `x1`, `y2`, `x2` with `tf.clip_by_value` before masking |
+| Augmentation applied to one-hot labels in the wrong order | MixUp/CutMix require labels to be mixed proportionally to the pixel ratio; mixing before one-hot encoding silently corrupts labels | Convert integer labels to one-hot **before** entering the MixUp/CutMix function so label blending is `lam * y_a + (1 - lam) * y_b` |
+| Benchmarking throughput with augmentation inside `fit()` | Keras calls augmentation layers on CPU in the main thread, masking GPU idle time in naive benchmarks | Move augmentation into the `tf.data` map function with `num_parallel_calls=AUTOTUNE` and benchmark with `tf.data.experimental.AUTOTUNE` profiler |
+
+## Stretch Goals
+
+1. Implement **AugMix** (Hendrycks et al., 2019): apply three randomly sampled augmentation chains at different severities, mix them with Dirichlet-sampled weights, and blend with the original image using a Beta-sampled coefficient; compare test accuracy and calibration error (ECE) against CutMix on CIFAR-10-C.
+2. Add **RandAugment** (Cubuk et al., 2020) with search space `{ShearX, ShearY, TranslateX, TranslateY, Rotate, AutoContrast, Invert, Equalize, Solarize, Posterize, Contrast, Color, Brightness, Sharpness}` and tune the magnitude parameter `M ∈ {5, 10, 15, 20}` via a 5-epoch proxy task.
+3. Measure **augmentation invariance** by computing cosine similarity between embeddings of the same image under different augmentation seeds; a well-regularised model should have cosine similarity ≥ 0.7 between augmented views at epoch 20.
+4. Explore **Stochastic Depth** (Huang et al., 2016) as a structural augmentation: randomly drop entire residual blocks with survival probability `p_L = 1 - l/L * (1 - p_L_final)` and compare its regularisation effect to Dropout on the same CIFAR-10 architecture.
+
 ---

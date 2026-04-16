@@ -131,4 +131,44 @@ results = compare_regularization()
 visualize_regularization_results(results)
 ```
 
+## Expected Output
+
+| Regulariser | λ | Val Accuracy | Weight Sparsity (% zeros) | Reg Loss Contribution |
+|---|---|---|---|---|
+| None (baseline) | — | ~72–74 % | ~0 % | 0.0 |
+| L2 | 1e-4 | ~77–79 % | ~0 % | ~0.02–0.05 |
+| L2 | 1e-3 | ~75–77 % | ~0 % | ~0.10–0.25 |
+| L1 | 1e-4 | ~75–77 % | ~15–25 % | ~0.03–0.08 |
+| Elastic Net (L1=1e-4, L2=1e-4) | mixed | ~77–80 % | ~10–18 % | ~0.04–0.12 |
+
+```python
+# Validation: L2 should improve val accuracy over baseline
+assert results['l2_1e-4']['val_accuracy'] > results['none']['val_accuracy'], \
+    "L2 (λ=1e-4) should outperform no-regularisation baseline."
+# L1 should produce sparse weights
+l1_weights = [w.numpy().flatten() for w in l1_model.trainable_variables if len(w.shape) > 1]
+sparsity = np.mean([np.mean(np.abs(w) < 1e-5) for w in l1_weights])
+assert sparsity > 0.05, f"L1 regularisation should yield >5% near-zero weights; got {sparsity:.1%}."
+# Over-regularisation should hurt accuracy
+assert results['l2_1e-3']['val_accuracy'] < results['l2_1e-4']['val_accuracy'], \
+    "λ=1e-3 over-regularises; val accuracy should be lower than λ=1e-4."
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Applying the same `kernel_regularizer` instance to all layers | TensorFlow shares the regulariser object; some versions accumulate penalty counts unexpectedly | Instantiate a fresh `tf.keras.regularizers.L2(l2=1e-4)` per layer, or pass the regulariser factory `lambda: L2(1e-4)` |
+| Forgetting to include regularisation loss in the total loss when using a custom training loop | `model.losses` is not automatically added outside `model.fit`; the penalty is silently ignored | Add `sum(model.losses)` to the task loss inside the `GradientTape` block: `total_loss = task_loss + sum(model.losses)` |
+| Setting λ too high (e.g., 0.1) which collapses weights to near-zero | Strong L2 forces weights toward zero faster than gradients can push them away, causing the model to under-fit from epoch 1 | Start with λ ∈ {1e-5, 1e-4, 1e-3} and check that regularisation loss is < 20 % of task loss |
+| Comparing L1 sparsity on normalised vs. unnormalised weights | Sparsity (count of near-zero weights) is scale-dependent; large-magnitude features will never be zeroed | Measure sparsity as `mean(|w| < ε)` with `ε = 1e-5` on weights that have been trained, not on initial values |
+| Not separating kernel from bias regularisation | Regularising biases adds penalty without meaningful structural sparsity and can destabilise training | Pass `kernel_regularizer` only; leave `bias_regularizer=None` unless there is a specific reason to penalise biases |
+
+## Stretch Goals
+
+1. Implement **Group Lasso** regularisation: penalise the L2 norm of each filter (grouped across channels) with an L1 penalty on the group norms, then measure the fraction of entire filters that become near-zero — this enables structured pruning at inference time.
+2. Add **weight visualisation**: after training, plot sorted absolute-weight histograms for L1, L2, and Elastic Net on a log scale; annotate the sparsity percentage and compare the tail behaviour (L1 should have a heavier near-zero spike).
+3. Combine L2 regularisation with **Mixup** data augmentation and **label smoothing** (ε=0.1); run a 3-way ablation (regularisation only / augmentation only / combined) to determine whether weight penalty and data augmentation provide additive or diminishing-returns regularisation.
+4. Explore **Spectral Normalization** (Miyato et al., 2018) as an alternative to L2: normalise each weight matrix by its largest singular value to bound the Lipschitz constant of each layer; compare its effect on train/val gap and gradient norms versus L2 with equivalent regularisation strength.
+
 ---

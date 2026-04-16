@@ -86,6 +86,44 @@ else:
     print("No GPUs available for distributed training demo")
 ```
 
+## Expected Output
+
+| Strategy | Replicas | Global Batch | Per-Replica Batch | Steps/Epoch | Throughput (img/s) |
+|---|---|---|---|---|---|
+| `MirroredStrategy` (1 GPU) | 1 | 64 | 64 | ~781 | ~1 800 |
+| `MirroredStrategy` (2 GPUs) | 2 | 128 | 64 | ~391 | ~3 200 |
+| `MirroredStrategy` (4 GPUs) | 4 | 256 | 64 | ~196 | ~5 800 |
+| `MultiWorkerMirroredStrategy` (2 workers, 1 GPU each) | 2 | 128 | 64 | ~391 | ~2 900 |
+
+```python
+# Validation: per-replica batch size must equal global_batch_size / num_replicas
+strategy = tf.distribute.MirroredStrategy()
+global_batch_size = 64
+per_replica = global_batch_size // strategy.num_replicas_in_sync
+assert per_replica == global_batch_size // strategy.num_replicas_in_sync, \
+    "Per-replica batch size mismatch; check get_per_replica_batch_size() call."
+# Shard count must equal number of input pipelines
+assert 'shard' in str(dataset_fn.__code__.co_names), \
+    "dataset_fn must call .shard() for correct per-worker data partitioning."
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Forgetting to scale the learning rate with `num_replicas` | Global effective batch size increases proportionally to replica count; the same LR produces smaller gradient updates per step | Multiply the base LR by `strategy.num_replicas_in_sync` after wrapping the optimizer inside the strategy scope |
+| Using `from_tensor_slices` without `.shard()` in `dataset_fn` | All replicas see the same data partition, causing duplicate samples and inflated throughput numbers | Inside `dataset_fn`, call `.shard(input_context.num_input_pipelines, input_context.input_pipeline_id)` before shuffle |
+| Creating the dataset outside the strategy scope | Tensors created outside `strategy.scope()` are not distributed; ops run on the default device only | Use `strategy.distribute_datasets_from_function(dataset_fn)` or `strategy.experimental_distribute_dataset()` |
+| Reporting per-replica loss instead of mean reduced loss | `strategy.run()` returns a `PerReplica` object; printing it shows only replica 0 value | Reduce with `strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_loss, axis=None)` before logging |
+| Using `.repeat()` without specifying `steps_per_epoch` | An infinitely repeated dataset with no step limit causes `model.fit` to run forever | Either set `steps_per_epoch = dataset_size // global_batch_size` or avoid `.repeat()` and let `fit` compute steps automatically |
+
+## Stretch Goals
+
+1. Implement `tf.data.experimental.service` with a dispatcher and two worker processes: move preprocessing (random crop + flip) to the service workers and measure the reduction in host-CPU utilisation during a 4-GPU `MirroredStrategy` training run.
+2. Add `tf.distribute.experimental.ParameterServerStrategy` with two parameter servers and two workers, compare its throughput and convergence curve against `MirroredStrategy` on a 3-layer CNN trained on CIFAR-10 for 10 epochs.
+3. Profile the distributed pipeline with `tf.profiler.experimental.start()` and identify the top-3 communication bottlenecks (e.g., `AllReduce` latency, dataset prefetch gap); implement targeted fixes and report the step-time improvement.
+4. Implement gradient compression using `tf.distribute.experimental.CommunicationOptions(implementation=tf.distribute.experimental.CommunicationImplementation.NCCL)` with `fp16` all-reduce, and compare training wall-clock time and final accuracy versus the default `RING` all-reduce on a 2-GPU setup.
+
 ---
 
 <a name="section-4-regularization-techniques"></a>

@@ -124,7 +124,110 @@ def demo_lr_finder():
 suggested_lr = demo_lr_finder()
 ```
 
+### Validation Checkpoint
+
+Before moving on, confirm your LR-range-test output is sane — the method silently produces
+garbage if any of these invariants break:
+
+```python
+assert len(lr_finder.lrs) == len(lr_finder.losses), \
+    "Mismatched lr/loss history — a batch step raised and was swallowed."
+assert lr_finder.lrs[0] < lr_finder.lrs[-1] and lr_finder.lrs[-1] / lr_finder.lrs[0] > 1e3, \
+    "Sweep range too narrow — start_lr should be ~1e-6 and end_lr ~1."
+min_loss = min(lr_finder.losses)
+assert min_loss < lr_finder.losses[0], \
+    "Loss never decreased — model may already be diverging at start_lr, or batch size too small."
+assert any(l > 4 * min_loss for l in lr_finder.losses[-10:]), \
+    "Loss never exploded at the high end — end_lr too low; widen the sweep."
+assert 1e-5 < suggested_lr < 1e-1, \
+    f"Suggested LR {suggested_lr:.2e} outside plausible range; check loss-smoothing window."
+```
+
+## Expected Output
+
+The lab implements Smith's LR range test: exponential LR sweep from 1e-7 to 10 over one epoch, recording loss at each step.
+
+Expected signals:
+- **LR-vs-loss plot** shows a characteristic V-shape on log scale: flat at very low LR → steep descent → minimum → steep rise (divergence).
+- **Suggested LR** ≈ 1e-3 to 3e-3 for Adam on CIFAR-10 (one order below the divergence knee).
+- For SGD, suggested LR is typically 5-10× higher (~0.01–0.03).
+- If the loss curve is monotonically increasing from the start: model weights were not freshly initialized, or the LR range starts too high.
+- If the curve is flat everywhere: LR range ends too low (max_lr < 1e-4), or the model has no trainable parameters (frozen backbone).
+
+A healthy LR-finder sweep on a small conv/MLP baseline (e.g. Fashion-MNIST, ~30k steps per sweep batch) produces these characteristic signals:
+
+- **Loss curve shape:** flat-or-slightly-decreasing in the warmup band (`1e-7 → 1e-5`), a clear **downward slope** through the "usable" band (typically `1e-4 → 1e-2`), and a sharp upward divergence after ~`1e-1`. Plotting `loss` vs `log10(lr)` should look like a shallow bathtub with the right wall going vertical.
+- **Suggested LR:** `suggested_lr` usually lands in the range **`3e-4` to `3e-3`** for Adam/AdamW on small vision tasks, and **`1e-2` to `1e-1`** for SGD+momentum. If your suggestion falls outside these bands, smooth the loss harder (larger EMA window) or widen the sweep range — don't just trust the raw argmin-of-gradient.
+- **Steepest-descent point:** the LR corresponding to the steepest negative gradient of the smoothed loss is typically **5–10× smaller** than the LR where loss first explodes. The One-Cycle max_lr should equal the explosion point; the "safe" constant LR should equal the steepest-descent point.
+- **Downstream validation:** training at `suggested_lr` for ~5 epochs should reach **≥70% of the final accuracy you'd get at that LR trained to convergence**. If it stalls at chance, the sweep converged on a spurious local minimum — rerun with a different seed or a shorter smoothing window.
+- **Wall-clock:** one full sweep (100 steps, batch 128, small model) runs in **~15–45 s on Colab T4** and **~2–5 min on CPU**. If your sweep takes >10× that, your batch size or model is too large for the probe — use a subset.
+
+**Diagnostic tree if the curve looks wrong:**
+
+1. **No down-slope anywhere (loss flat across all LRs):** batch size too small, smoothing window too wide, or the model has no trainable parameters in the layers you expect — verify `len(model.trainable_variables) > 0` before the sweep.
+2. **Loss explodes at the *start* of the sweep:** `start_lr` is already past the stable region — drop it to `1e-8` or check that weights were reset after a previous run.
+3. **Loss never explodes even at `end_lr`:** `end_lr` is too low (widen to `10`) *or* loss smoothing is masking divergence — reduce the EMA beta from 0.98 to ~0.90.
+4. **Suggested LR differs by >10× between runs:** probe is too noisy — increase the batch size for the sweep, or average `suggested_lr` across 3 seeds.
+
+
+
+<Callout type="pitfall" title="Common Pitfalls">
+
+1. **Not resetting model weights between the sweep and the real training run.** The LR
+   finder mutates `model.weights` during its probe. Either clone the model before the
+   sweep (`tf.keras.models.clone_model`) or checkpoint weights with `model.get_weights()`
+   and restore them after, or your "final" training starts from a half-converged state.
+2. **Using `optimizer='sgd'` on a problem that actually needs Adam.** LR-finder results
+   are optimizer-specific — the ideal LR for SGD is typically 10–100× larger than for
+   Adam on the same model. Run the sweep with the optimizer you intend to train with.
+3. **Picking the LR at the *minimum* loss instead of an order of magnitude below it.**
+   The minimum is the *edge* of divergence. Smith's rule is `lr = min_loss_lr / 10`, or
+   equivalently "the steepest descent point on the log-LR vs loss curve."
+4. **Too few iterations (< 50) on a realistic model.** Batch-to-batch noise dominates
+   the loss curve and the suggested LR becomes unstable. Use ≥ 100 iterations and
+   smooth with an EMA (`beta ≈ 0.98`) before differentiating.
+5. **Running the sweep on a single large batch or a non-shuffled subset.** The LR
+   finder assumes each step sees a fresh mini-batch drawn from the full distribution;
+   repeating the same batch collapses the implicit noise and the curve flattens.
+
+</Callout>
+
+<Callout type="tip" title="Stretch Goals">
+
+1. **EMA-smoothed derivative suggestion.** Replace the "lowest-loss / 10" heuristic
+   with the steepest-negative-slope point on an EMA-smoothed loss curve
+   (`β ≈ 0.98`, derivative via `np.diff`). Compare to Smith's heuristic on
+   MNIST + CIFAR-10 and report which picks a more stable LR.
+2. **Gradient-norm tracking.** In addition to loss, log `global_norm(gradients)` per
+   step. Plot gradient norm vs. LR on the same log axis — the "explosion knee" is
+   often sharper than the loss knee and is less sensitive to batch noise.
+3. **LR-range vs. effective batch size.** Run the finder at batch sizes
+   {32, 128, 512} and verify the linear-scaling rule: the suggested LR should scale
+   roughly linearly with batch size until the scaling breaks (typically around
+   batch 1024 for CIFAR-10).
+4. **Auto-wiring into OneCycle.** Chain this finder into Lab 08's OneCycle schedule
+   so `max_lr` is picked automatically: `max_lr = lr_finder.suggest() * 10`.
+
+</Callout>
+
 ---
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Model weights not reset before real training | `LearningRateFinder.find()` mutates model weights during the probe sweep | Call `model.set_weights(original_weights)` after the sweep, or pass a cloned model via `tf.keras.models.clone_model(model)` |
+| Picking the LR at the loss minimum | The minimum is the divergence edge, not the stable operating point | Use `suggested_lr = lr_at_min_loss / 10` or identify the steepest-negative-slope point on the smoothed curve |
+| Running the sweep with the wrong optimizer | Optimal LR is optimizer-specific; SGD needs 10–100× higher LR than Adam | Always run `LearningRateFinder` with the same optimizer you will use for full training |
+| Too few sweep iterations (< 50) | Batch noise dominates; curve appears jagged and argmin is unstable | Use `num_iter >= 100` with EMA smoothing (`beta=0.98`) before computing the derivative |
+| Non-shuffled or repeated mini-batches in the sweep | Repeating the same batch collapses noise and flattens the loss curve artificially | Ensure the dataset is shuffled and `repeat()`-ed before feeding the finder loop |
+
+## Stretch Goals
+
+1. Replace the "lowest-loss / 10" heuristic with the steepest-negative-slope method: apply EMA smoothing (`beta=0.98`) to the loss array, compute `np.diff`, and take the argmin. Compare stability across 5 random seeds on CIFAR-10 versus Smith's original rule.
+2. Log `tf.linalg.global_norm(tape.gradient(loss, model.trainable_variables))` at each sweep step and overlay gradient-norm vs. log-LR on the same plot — the gradient explosion knee is often sharper and less sensitive to batch noise than the loss knee.
+3. Run the finder at batch sizes {32, 128, 512} and verify the linear scaling rule: `suggested_lr` should scale roughly linearly with batch size up to ~1 024 on CIFAR-10; plot the relationship and annotate the point where linearity breaks.
+4. Implement Stochastic Weight Averaging (SWA) warm-start: use the finder to set `max_lr`, run one OneCycle warm-up, then switch to SWA with a cyclic schedule where `swa_lr = suggested_lr / 5`, comparing final test accuracy with and without SWA.
 
 <a name="section-3-data-pipeline-optimization"></a>
 # Section 3: Data Pipeline Optimization (3 Labs)
