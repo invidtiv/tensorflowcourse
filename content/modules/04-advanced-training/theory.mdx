@@ -363,6 +363,12 @@ $$\eta^* \approx \arg\max_\eta \left(-\frac{dL}{d\eta}\right)$$
 
 ---
 
+Use the sliders to explore how learning rate and batch size affect convergence
+speed and overfitting. Watch the **overfit gap** indicator — this is the same
+signal your `val_loss` curve gives you in a real Keras training run.
+
+<TrainingDashboard />
+
 ## 5. Second-Order Optimization Methods
 
 ### 5.1 Newton's Method
@@ -748,6 +754,12 @@ $$L_{aug} = \mathbb{E}_{T, (x,y) \sim D}[\ell(f(T(x); \theta), y)]$$
 Augmentation encodes prior knowledge that predictions should be invariant to certain transformations.
 
 ---
+
+Start with both sliders at zero to see the train/val gap in its raw form,
+then gradually increase L2 weight decay and dropout to observe how each
+regularizer closes it — and at what cost to training loss.
+
+<OverfittingDemo />
 
 ## 8. Dropout as Approximate Model Averaging
 
