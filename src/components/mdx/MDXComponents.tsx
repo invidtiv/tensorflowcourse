@@ -5,6 +5,13 @@ import ColabButton from "@/components/content/ColabButton";
 import MathBlock from "@/components/content/MathBlock";
 import ImageZoom from "@/components/content/ImageZoom";
 import VideoEmbed from "@/components/content/VideoEmbed";
+import VideoTranscript from "@/components/content/VideoTranscript";
+import GradientDescentViz from "@/components/demos/GradientDescentViz";
+import ActivationFunctionViz from "@/components/demos/ActivationFunctionViz";
+import BackpropVisualizer from "@/components/demos/BackpropVisualizer";
+import ConvolutionViz from "@/components/demos/ConvolutionViz";
+import TrainingDashboard from "@/components/demos/TrainingDashboard";
+import OverfittingDemo from "@/components/demos/OverfittingDemo";
 
 /**
  * Custom MDX component mapping.
@@ -135,7 +142,14 @@ export const mdxComponents: MDXComponentsType = {
   MathBlock,
   ImageZoom,
   VideoEmbed,
+  VideoTranscript,
   CodeBlock,
+  GradientDescentViz,
+  ActivationFunctionViz,
+  BackpropVisualizer,
+  ConvolutionViz,
+  TrainingDashboard,
+  OverfittingDemo,
 };
 
 export default mdxComponents;
