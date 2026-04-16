@@ -20,6 +20,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { useProgressStore } from "@/stores/progressStore";
 import { modules } from "@/lib/modules";
+import type { ModuleProgress } from "@/types/progress";
 
 interface NextAction {
   label: string;
@@ -30,13 +31,7 @@ interface NextAction {
 function getNextAction(
   moduleId: string,
   modLabCount: number,
-  mp: {
-    videoWatchedPercent: number;
-    videoFinishedAt: string;
-    theoryRead: boolean;
-    labsCompleted: string[];
-    quizPassed: boolean;
-  },
+  mp: ModuleProgress,
 ): NextAction {
   const videoOk =
     mp.videoWatchedPercent >= 90 || !!mp.videoFinishedAt;
@@ -68,6 +63,7 @@ function getNextAction(
 export default function ContinueLearning() {
   const progressModules = useProgressStore((s) => s.modules);
   const isModuleComplete = useProgressStore((s) => s.isModuleComplete);
+  const getModuleCompletionPercent = useProgressStore((s) => s.getModuleCompletionPercent);
 
   // No progress at all → render nothing
   if (Object.keys(progressModules).length === 0) return null;
@@ -93,6 +89,7 @@ export default function ContinueLearning() {
       // All 10 modules complete
       return (
         <motion.div
+          key="all-done"
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           className="max-w-xl mx-auto mb-8 rounded-xl border border-emerald-500/30 bg-emerald-500/5 px-5 py-4 text-center"
@@ -105,6 +102,7 @@ export default function ContinueLearning() {
     }
     return (
       <motion.div
+        key="next-up"
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         className="max-w-xl mx-auto mb-8"
@@ -142,18 +140,13 @@ export default function ContinueLearning() {
 
   const mod = candidates[0];
   const mp = progressModules[mod.id];
-  const pct = Math.round(
-    ((mp.videoWatchedPercent >= 90 || !!mp.videoFinishedAt ? 1 : 0) +
-      (mp.theoryRead ? 1 : 0) +
-      (mp.labsCompleted.length >= mod.labCount ? 1 : 0) +
-      (mp.quizPassed ? 1 : 0)) /
-      4 *
-      100,
-  );
+  if (!mp) return null;
+  const pct = getModuleCompletionPercent(mod.id, mod.labCount);
   const action = getNextAction(mod.id, mod.labCount, mp);
 
   return (
     <motion.div
+      key="resume"
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       className="max-w-xl mx-auto mb-8"
