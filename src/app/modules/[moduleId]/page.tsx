@@ -8,6 +8,7 @@ import Breadcrumb from "@/components/layout/Breadcrumb";
 import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 import { useProgressStore } from "@/stores/progressStore";
+import CompletionBadge from "@/components/progress/CompletionBadge";
 
 export default function ModuleOverviewPage() {
   const params = useParams();
@@ -63,6 +64,7 @@ export default function ModuleOverviewPage() {
           <h1 className="text-3xl sm:text-4xl font-heading font-bold text-text-primary mb-3">
             {mod.title}
           </h1>
+          <CompletionBadge moduleId={moduleId} totalLabs={mod.labCount} />
           <p className="text-text-secondary text-lg leading-relaxed">
             {mod.description}
           </p>
