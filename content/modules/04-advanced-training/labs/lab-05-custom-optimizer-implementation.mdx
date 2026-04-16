@@ -107,4 +107,49 @@ test_custom_optimizer()
 ---
 
 <a name="section-2-learning-rate-scheduling"></a>
+
+## Expected Output
+
+Testing `CustomSGDWithMomentum` (lr=0.01, momentum=0.9, accumulation_steps=4) on MNIST first 1,000 samples, Dense 784→128→10, 10 epochs, batch_size=32.
+
+| Epoch | Loss (approx) | Accuracy (approx) | Effective Batch Size | Notes |
+|---|---|---|---|---|
+| 1 | 1.8–2.2 | 0.30–0.45 | 128 (4×32) | First effective update after 4 mini-batches |
+| 3 | 0.9–1.3 | 0.60–0.72 | 128 | Momentum velocity accumulating |
+| 5 | 0.5–0.8 | 0.75–0.85 | 128 | Gradient averaging stabilising |
+| 8 | 0.25–0.45 | 0.87–0.93 | 128 | Near-convergence on 1k subset |
+| 10 | 0.15–0.35 | 0.90–0.96 | 128 | Final loss should be decreasing |
+
+With only 1,000 training samples the model can overfit, so training accuracy above 0.90 by epoch 10 is expected.
+
+```python
+# Validation assertions
+assert history.history['loss'][-1] < history.history['loss'][0], \
+    "Loss should decrease over 10 epochs"
+assert history.history['accuracy'][-1] > 0.80, \
+    f"Final accuracy {history.history['accuracy'][-1]:.4f} below expected 0.80 floor"
+# Verify gradient accumulation actually defers updates
+# (step counter resets every accumulation_steps=4 mini-batches)
+print(f"Final Loss:     {history.history['loss'][-1]:.4f}")
+print(f"Final Accuracy: {history.history['accuracy'][-1]:.4f}")
+print("Custom optimizer validation passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| `_resource_apply_dense` never triggers the update branch | `self._accum_step_counter` is a scalar `tf.Variable` but the `tf.cond` predicate may be evaluated in graph mode before the variable is incremented in eager mode | Move gradient accumulation logic inside `update_step` (TF 2.x API) or verify the counter with `tf.print(self._accum_step_counter)` inside `apply_update()` |
+| `build()` called multiple times, creating duplicate slot variables | `hasattr(self, '_built')` check may fail if the optimizer is serialized and restored, re-entering `build()` | Replace the guard with `if self._built: return` using the parent class `_built` flag, which is reliably set by `super().build(var_list)` |
+| Gradient accumulator retains stale values across epochs | `grad_accum` is reset to zero only inside `apply_update()`; if total steps is not divisible by `accumulation_steps`, the last partial batch's gradients bleed into the next epoch | Add an `on_epoch_end` callback that manually zeros all `_grad_accumulators` and resets `_accum_step_counter` |
+| `accumulation_steps=4` effectively multiplies the learning rate | Averaging 4 gradients before applying the momentum step changes the effective scale of updates compared to step-by-step SGD | Divide the learning rate by `accumulation_steps` when comparing against standard SGD, or document the effective LR = `lr × accumulation_steps` |
+| `get_config` missing `accumulation_steps` causes load failure | Model checkpointing calls `optimizer.get_config()` to reconstruct the optimizer; if a hyperparameter is absent, `from_config` raises `TypeError` | Verify the saved config contains all three keys: `learning_rate`, `momentum`, `accumulation_steps`, then call `CustomSGDWithMomentum.from_config(optimizer.get_config())` in a round-trip test |
+
+## Stretch Goals
+
+1. **Extend to AdaGrad accumulation**: Modify `CustomSGDWithMomentum` to accumulate squared gradients in a second slot variable and divide the momentum update by `sqrt(accumulated_sq_grad + epsilon)`, effectively implementing a custom AdaGrad with gradient accumulation.
+2. **Comparative experiment vs standard SGD with large batch**: Run `CustomSGDWithMomentum(accumulation_steps=4)` on CIFAR-10 with batch_size=32 and compare it against standard `SGD` with batch_size=128 (same effective batch size); verify that gradient accumulation produces nearly identical weight updates.
+3. **Wrap with LookAhead**: Apply a LookAhead outer loop (`k=5` steps, `alpha=0.5`) around `CustomSGDWithMomentum` by overriding `apply_gradients`; measure whether slow-weight interpolation reduces oscillation in the loss curve on MNIST.
+4. **Implement Sharpness-Aware Minimization (SAM) step**: Override `apply_gradients` to perform a two-step update — first perturb weights along the gradient direction to find the adversarial perturbation, then compute gradients at the perturbed point, and apply the momentum update with those gradients to seek flatter minima.
+
 # Section 2: Learning Rate Scheduling (4 Labs)

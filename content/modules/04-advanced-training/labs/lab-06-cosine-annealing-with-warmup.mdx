@@ -155,4 +155,47 @@ visualize_lr_schedules()
 results = compare_lr_schedules_training()
 ```
 
+## Expected Output
+
+Comparing Cosine+Warmup vs ExponentialDecay vs Constant LR (all with SGD momentum=0.9) on CIFAR-10, 2-conv CNN, 50 epochs, batch_size=128. max_lr=0.01, warmup=5 epochs.
+
+| Schedule | Val Accuracy (ep 10) | Val Accuracy (ep 30) | Val Accuracy (ep 50) | Notes |
+|---|---|---|---|---|
+| Constant LR=0.01 | 0.62–0.68 | 0.68–0.73 | 0.69–0.74 | Plateaus after ep 30 |
+| Exponential Decay | 0.61–0.67 | 0.68–0.73 | 0.71–0.76 | Improves steadily |
+| Cosine+Warmup | 0.57–0.63 | 0.70–0.75 | 0.74–0.79 | Slower start, best finish |
+
+The warmup phase (0.0001→0.01 over 5 epochs / ~1953 steps) should be visible in the LR curve before cosine descent begins. Final accuracies should satisfy: Cosine+Warmup ≥ Exponential > Constant.
+
+```python
+# Validation assertions
+cos_acc = results['Cosine + Warmup']['test_accuracy']
+exp_acc = results['Exponential Decay']['test_accuracy']
+const_acc = results['Constant LR']['test_accuracy']
+assert cos_acc > const_acc - 0.01, \
+    f"Cosine+Warmup ({cos_acc:.4f}) should match or beat Constant LR ({const_acc:.4f})"
+# Verify the schedule produces correct warmup LR at step 0
+schedule = CosineAnnealingWithWarmup(max_lr=0.1, min_lr=0.0, warmup_steps=100, total_steps=1000)
+assert float(schedule(0)) < 0.01, "Step 0 LR should be near initial_lr (warmup phase)"
+assert abs(float(schedule(100)) - 0.1) < 1e-4, "Step 100 LR should equal max_lr"
+print("Cosine annealing with warmup checks passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| LR schedule receives epoch integers instead of step integers | Passing the `LearningRateSchedule` to `optimizer=SGD(lr=schedule)` means Keras calls `schedule(step)` where step is the global optimizer step, but manual use of `schedule(epoch)` inside a callback passes epoch number (0–49) instead of steps (0–9765) | Always use the schedule as `SGD(learning_rate=schedule)` and let Keras manage the step counter; never pass epoch index to `schedule.__call__` directly |
+| Warmup phase too short — loss spikes at epoch 6 | `warmup_steps=steps_per_epoch*5` gives only ~1953 steps; if the initial LR jumps from 0 to 0.01 too abruptly relative to the gradient scale, the model diverges | Extend warmup to 10 epochs or use `initial_lr=max_lr/100` rather than 0.0 to avoid zero-LR initialisation |
+| `get_config` missing `initial_lr` breaks checkpoint restore | `CosineAnnealingWithWarmup.get_config()` returns a dict; if `initial_lr` is omitted, `from_config` silently uses default=0.0, producing different behavior | Add `assert 'initial_lr' in schedule.get_config()` in a round-trip serialization test after training |
+| Cosine + Warmup underperforms Constant LR at epoch 30 | The long warmup forces a low LR for the first 10% of training; this is a net loss in a 50-epoch run where the model can't compensate — cosine annealing's benefit shows up after ep 40 | Reduce warmup to 3 epochs or compare at 100 epochs to see the long-horizon advantage; alternatively pair with a larger initial LR (0.03) |
+| Schedule curves overlap in log-scale plot | All three schedules start at the same value (0.01) and only diverge after step 1000; the log y-axis compresses small differences | Switch to linear y-axis for steps 0–2000 and log y-axis for steps 2000–10000, or plot derivative of LR (dLR/dstep) to highlight transition points |
+
+## Stretch Goals
+
+1. **Comparative restart experiment with SGDR**: Implement `tf.keras.optimizers.schedules.CosineDecayRestarts` (T_0=10 epochs, T_mul=2) and compare against `CosineAnnealingWithWarmup` over 100 epochs; plot val-accuracy at each restart boundary to quantify the escape-from-local-minima effect.
+2. **Warmup duration sensitivity sweep**: Train with warmup ∈ {0, 2, 5, 10, 20} epochs (fixed total=50 epochs) and plot final val-accuracy vs warmup fraction; determine the optimal warmup-to-total ratio for this architecture.
+3. **Combine cosine annealing with LookAhead optimizer**: Wrap `SGD(learning_rate=CosineAnnealingWithWarmup(...))` inside `tfa.optimizers.Lookahead(sync_period=5)` and measure whether slow-weight averaging improves the flatness of the final converged solution.
+4. **Implement multi-cycle cosine annealing (SGDR)**: Extend `CosineAnnealingWithWarmup` to reset back to `max_lr` after each cosine cycle (with a configurable `cycle_length` and `cycle_mult` parameter), then compare the test accuracy distribution across 5 random seeds against the single-cycle baseline.
+
 ---

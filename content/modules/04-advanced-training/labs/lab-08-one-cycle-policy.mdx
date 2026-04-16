@@ -103,4 +103,57 @@ def visualize_one_cycle():
 visualize_one_cycle()
 ```
 
+## Expected Output
+
+Visualising `OneCyclePolicy` with max_lr=0.1, total_steps=10,000, pct_start=0.3, cosine annealing, momentum ∈ [0.85, 0.95].
+
+| Step | LR (approx) | Momentum (approx) | Phase |
+|---|---|---|---|
+| 0 | ~0.0 | 0.95 | Warmup start (LR rises, momentum falls) |
+| 1500 | ~0.05 | 0.90 | Mid-warmup |
+| 3000 | 0.10 | 0.85 | Peak LR (pct_start=0.3 × 10000) |
+| 5000 | ~0.075 | 0.87 | Cosine descent, momentum rising |
+| 8000 | ~0.025 | 0.92 | Lower LR, higher momentum |
+| 10000 | ~0.0 | 0.95 | Final annihilation phase |
+
+LR and momentum curves should be anti-correlated throughout. The `get_config` round-trip must preserve all 6 hyperparameters.
+
+```python
+# Validation assertions
+policy = OneCyclePolicy(max_lr=0.1, total_steps=10000, pct_start=0.3,
+                        anneal_strategy='cos', base_momentum=0.85, max_momentum=0.95)
+# Peak LR at pct_start boundary
+assert abs(float(policy(3000)) - 0.1) < 1e-3, \
+    f"LR at step 3000 should be ~max_lr (0.1), got {float(policy(3000)):.4f}"
+# LR at end should be near zero
+assert float(policy(9999)) < 0.01, \
+    f"LR at final step should be near 0, got {float(policy(9999)):.4f}"
+# Momentum should be inverse of LR shape
+mom_start = float(policy.get_momentum(0))
+mom_peak_lr = float(policy.get_momentum(3000))
+assert mom_start > mom_peak_lr, "Momentum should be lower at peak LR than at step 0"
+# Config round-trip
+cfg = policy.get_config()
+assert set(cfg.keys()) >= {'max_lr', 'total_steps', 'pct_start', 'anneal_strategy',
+                            'base_momentum', 'max_momentum'}
+print("One-Cycle Policy validation checks passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Momentum cycling has no effect when using Adam | `OneCyclePolicy.get_momentum` is a standalone method; Keras optimizers do not auto-call it — momentum is only cycled if you update `optimizer.momentum` manually inside a `LambdaCallback` | Pair the policy exclusively with `SGD(momentum=...)` and update momentum at each step via `on_train_batch_begin`: `optimizer.momentum = policy.get_momentum(optimizer.iterations)` |
+| LR at step 0 is exactly 0, causing NaN loss on the first batch | `pct_start=0.3` with cosine warmup computes `max_lr * (1 + cos(π×(1-0)))/2 = max_lr * 0` at step 0 | Set a floor by returning `max(lr, min_lr)` where `min_lr = max_lr / 1000`; alternatively use `anneal_strategy='linear'` which produces a small but non-zero starting LR |
+| `pct_start` expressed as percentage instead of fraction | Passing `pct_start=30` instead of `pct_start=0.3` causes the warmup phase to consume 100% of training steps (30 × total_steps), making the entire schedule a warmup | Add a guard `assert 0 < pct_start < 1` in `__init__` and document the expected range (0.1–0.4 per Smith 2018) |
+| Super-convergence not observed in short runs | The one-cycle policy achieves super-convergence over a single large-batch cycle; it requires training for fewer total steps than standard schedules — if total_steps is too large, the high-LR phase overshoots | Use total_steps = steps_per_epoch × num_epochs and verify that the entire dataset is seen exactly once during the cycle; do not pad total_steps |
+| LR and momentum curves are identical in shape (not anti-correlated) | A bug in `get_momentum` copies the LR formula instead of inverting it; both warmup and anneal branches increase when they should mirror each other | Compare `policy(step)` and `policy.get_momentum(step)` at steps 0, pct_start×total, total; verify that when LR is at its maximum, momentum is at `base_momentum` (0.85) |
+
+## Stretch Goals
+
+1. **Comparative super-convergence experiment**: Train a ResNet-style CNN on CIFAR-10 with OneCyclePolicy vs CosineAnnealing+Warmup for 30 epochs at the same max_lr; measure whether one-cycle's combined LR+momentum cycling achieves higher final accuracy in fewer epochs, replicating Smith's 2018 result.
+2. **Linear anneal strategy comparison**: Re-run the visualisation with `anneal_strategy='linear'` and compare the resulting LR curve shape and final training accuracy against `anneal_strategy='cos'`; quantify the smoothness difference and discuss which one generalises better.
+3. **Wrap with SAM (Sharpness-Aware Minimization)**: Override `apply_gradients` to first perturb model weights along the gradient direction (SAM's ascent step), then run the OneCyclePolicy descent step with the perturbed gradients; compare final test accuracy and loss sharpness against the standard one-cycle baseline.
+4. **Extend to momentum warmdown phase**: Modify `OneCyclePolicy` to add a third phase (annihilation) where LR drops to `max_lr/1e4` over the final 10% of steps while momentum returns to `max_momentum`; compare the extended three-phase schedule against the original two-phase policy on a 50-epoch CIFAR-10 run.
+
 ---

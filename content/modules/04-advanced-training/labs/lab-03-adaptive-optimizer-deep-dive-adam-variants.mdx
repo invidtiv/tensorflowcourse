@@ -107,3 +107,47 @@ visualize_adam_comparison(results)
 ```
 
 ---
+
+## Expected Output
+
+Training 5 Adam variants (Adam, AdamW, Adamax, Nadam, AMSGrad) on CIFAR-10 with a simple CNN for 20 epochs.
+
+| Variant | Val Accuracy (ep 10) | Val Accuracy (ep 20) | Val Loss (ep 20) | Approx Epoch Time |
+|---|---|---|---|---|
+| Adam | 0.66–0.70 | 0.72–0.76 | 0.72–0.80 | ~25 s |
+| AdamW (wd=0.004) | 0.67–0.71 | 0.73–0.77 | 0.70–0.78 | ~25 s |
+| Adamax | 0.64–0.69 | 0.70–0.75 | 0.75–0.83 | ~25 s |
+| Nadam | 0.67–0.71 | 0.73–0.77 | 0.71–0.79 | ~25 s |
+| AMSGrad | 0.65–0.70 | 0.71–0.75 | 0.73–0.81 | ~25 s |
+
+All variants should finish 20 epochs in under 10 minutes total. Nadam and AdamW typically edge out plain Adam by 0.5–1.5 pp on val accuracy at epoch 20.
+
+```python
+# Validation assertions
+assert len(results) == 5, f"Expected 5 variants, got {len(results)}"
+for name, data in results.items():
+    assert data['test_accuracy'] > 0.60, \
+        f"{name} test accuracy {data['test_accuracy']:.4f} is below expected floor (0.60)"
+    val_acc = data['history']['val_accuracy']
+    assert val_acc[-1] > val_acc[0], \
+        f"{name} val accuracy did not improve from epoch 1 ({val_acc[0]:.4f}) to epoch 20 ({val_acc[-1]:.4f})"
+print("All Adam variant checks passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| AMSGrad converges slower than Adam on this task | AMSGrad's monotonically non-decreasing second moment bound is conservative; it undershoots the effective LR that Adam uses | Increase AMSGrad's LR to 0.003 and compare; AMSGrad's advantage appears in non-convex settings with noisy gradients, not short CIFAR-10 runs |
+| AdamW weight decay hurts accuracy when set too high | `weight_decay=0.004` applies L2 penalty to all parameters including bias and BN gamma/beta, over-regularising the small model | Exclude BN and bias from weight decay by passing `exclude_from_weight_decay=['bias', 'gamma', 'beta']`, or sweep wd ∈ {0.0001, 0.001, 0.01} |
+| Nadam and Adam produce identical curves | Both use the same β₁/β₂ defaults; the Nesterov look-ahead in Nadam only differs in the gradient used for the first moment update | Inspect per-step loss curves (not epoch averages); Nadam's advantage is most visible at high LR (try lr=0.003) |
+| All variants plateau at ~75% after epoch 15 | The simple 3-conv architecture is the bottleneck, not the optimizer | Add BatchNormalization after each Conv2D layer and re-run; the ceiling rises to ~80%, and optimizer differences become clearer |
+| β₁/β₂ hyperparameters ignored in comparison | Using every optimizer's default β₁=0.9, β₂=0.999 makes the comparison partially unfair; Adamax benefits from lower β₂ | Run a secondary sweep with β₂ ∈ {0.99, 0.999} to isolate the impact of the second-moment decay rate from the variant design |
+
+## Stretch Goals
+
+1. **Comparative epsilon sensitivity experiment**: For Adam and Nadam, train with epsilon ∈ {1e-8, 1e-7, 1e-6, 1e-5} and plot final val-accuracy vs epsilon on a log scale to quantify the numeric stability trade-off for each variant.
+2. **Wrap Adam with LookAhead**: Apply `tfa.optimizers.Lookahead(tf.keras.optimizers.Adam(0.001), sync_period=5, slow_step_size=0.5)` and compare the training curve smoothness and final accuracy against vanilla Adam over 50 epochs.
+3. **Gradient centralization on AdamW**: Implement a `GradientCentralization` wrapper that subtracts the mean of each gradient tensor before the AdamW update step; measure whether it reduces loss variance and improves top-1 accuracy.
+4. **Replace fixed β₁ with scheduled momentum decay**: Implement a custom callback that linearly decays β₁ from 0.9 to 0.5 over training for Adam, mimicking the SGDR warm restart momentum schedule; compare final accuracy and convergence speed against static β₁=0.9.
+

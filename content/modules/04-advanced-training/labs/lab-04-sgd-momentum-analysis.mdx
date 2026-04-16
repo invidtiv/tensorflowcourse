@@ -87,4 +87,48 @@ results = compare_momentum_values()
 visualize_momentum_effects(results)
 ```
 
+## Expected Output
+
+Training 5 SGD configurations (no momentum, momentum 0.5/0.9/0.99, Nesterov 0.9) on CIFAR-10 with a 2-conv CNN for 25 epochs at lr=0.01.
+
+| Configuration | Val Accuracy (ep 10) | Val Accuracy (ep 25) | Convergence Speed | Stability |
+|---|---|---|---|---|
+| SGD (no momentum) | 0.50–0.56 | 0.60–0.65 | Slow | Smooth |
+| SGD momentum=0.5 | 0.56–0.62 | 0.65–0.70 | Moderate | Smooth |
+| SGD momentum=0.9 | 0.62–0.68 | 0.70–0.75 | Fast | Slight oscillation |
+| SGD momentum=0.99 | 0.55–0.62 | 0.66–0.72 | Fast initially, then noisy | Noisy |
+| Nesterov momentum=0.9 | 0.63–0.69 | 0.71–0.76 | Fastest | Slightly smoother than 0.9 |
+
+Nesterov with momentum=0.9 should achieve the highest val accuracy. momentum=0.99 will show visible oscillations in the loss curve.
+
+```python
+# Validation assertions
+assert len(results) == 5, f"Expected 5 SGD configs, got {len(results)}"
+no_momentum_acc = results['SGD (no momentum)']['test_accuracy']
+momentum_09_acc = results['SGD momentum=0.9']['test_accuracy']
+nesterov_acc = results['Nesterov momentum=0.9']['test_accuracy']
+assert momentum_09_acc > no_momentum_acc, \
+    f"momentum=0.9 ({momentum_09_acc:.4f}) should beat no-momentum ({no_momentum_acc:.4f})"
+assert nesterov_acc >= momentum_09_acc - 0.02, \
+    f"Nesterov ({nesterov_acc:.4f}) should be close to or better than momentum=0.9 ({momentum_09_acc:.4f})"
+print("SGD momentum analysis checks passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| momentum=0.99 accuracy is worse than momentum=0.9 at epoch 25 | High momentum accumulates a very large velocity vector; with lr=0.01 the effective step size overshoots minima causing persistent oscillation | Reduce lr to 0.001 when using momentum≥0.95, or add gradient clipping (`clipnorm=0.5`) to cap the velocity norm |
+| No visible difference between momentum=0.9 and Nesterov=0.9 on training curves | 25 epochs with batch size 128 gives only ~9,765 steps; Nesterov's look-ahead advantage is most pronounced during rapid loss descent in early training | Plot per-step loss (not per-epoch) for the first 500 steps; Nesterov typically shows faster initial descent that blurs when averaged over an epoch |
+| SGD (no momentum) loss curve is jagged despite low LR | Without momentum, each mini-batch gradient update is independent; noisy label imbalance in CIFAR-10 batches causes high variance | Increase batch size to 256 or apply gradient averaging over 2 mini-batches to smooth the no-momentum baseline |
+| Momentum hyperparameter interaction with BatchNormalization statistics | BN running mean/variance are updated every step; high momentum SGD interacts with BN's `momentum` parameter (default 0.99), causing conflicting update rates | Explicitly set `tf.keras.layers.BatchNormalization(momentum=0.9)` to align BN decay with optimizer momentum, or remove BN to isolate the effect |
+| Comparing momentum values without tuning LR per configuration | lr=0.01 is near-optimal for momentum=0.9 but suboptimal for momentum=0.5 and too large for momentum=0.99 | Run a grid search over (momentum, lr) pairs using `{0.5: 0.05, 0.9: 0.01, 0.99: 0.001}` to ensure a fair comparison |
+
+## Stretch Goals
+
+1. **Phase-space trajectory plot**: Record the norm of the weight delta per step for each momentum value and plot it over training steps; observe how high-momentum configurations show larger initial swings followed by tighter convergence compared to low-momentum configs.
+2. **Comparative experiment with SGD vs Adam at equal wall-time**: Run momentum=0.9 SGD and Adam for the same wall-clock time (not epoch count); determine at which step SGD crosses Adam's accuracy and whether SGD eventually exceeds it given sufficient compute.
+3. **Implement Polyak averaging on the momentum=0.9 baseline**: After training, create an exponential moving average of the weights (`ema_weights = 0.999 * ema_weights + 0.001 * model.weights`) and evaluate the EMA model; measure the accuracy gain from weight averaging.
+4. **Apply gradient centralization to SGD**: Before each SGD+momentum update, subtract the mean of each gradient tensor; compare training curves and final accuracy to standard momentum=0.9 to validate whether gradient centralization acts as an implicit normalizer.
+
 ---

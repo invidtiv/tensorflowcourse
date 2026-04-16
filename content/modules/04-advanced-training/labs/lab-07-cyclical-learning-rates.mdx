@@ -82,4 +82,50 @@ def visualize_cyclical_lr():
 visualize_cyclical_lr()
 ```
 
+## Expected Output
+
+Visualising 3 CLR schedules (triangular, triangular2, exp_range γ=0.99994) with base_lr=0.001, max_lr=0.01, step_size=1000, for 10,000 steps.
+
+| Mode | LR at Step 0 | LR at Step 1000 | LR at Step 2000 | LR at Step 5000 | Envelope trend |
+|---|---|---|---|---|---|
+| triangular | 0.001 | 0.010 | 0.001 | 0.010 | Constant amplitude forever |
+| triangular2 | 0.001 | 0.010 | 0.001 | ~0.0055 | Amplitude halves each full cycle |
+| exp_range | 0.001 | 0.010 | ~0.0009 | ~0.0002 | Amplitude decays exponentially |
+
+At step 0 all modes share base_lr=0.001; at the cycle peak (step 1000) all reach max_lr=0.01. After step 5000 triangular2 and exp_range should be visually distinct from triangular.
+
+```python
+# Validation assertions
+schedule_t = CyclicalLearningRate(base_lr=0.001, max_lr=0.01, step_size=1000, mode='triangular')
+schedule_t2 = CyclicalLearningRate(base_lr=0.001, max_lr=0.01, step_size=1000, mode='triangular2')
+schedule_er = CyclicalLearningRate(base_lr=0.001, max_lr=0.01, step_size=1000, mode='exp_range', gamma=0.99994)
+# Peak LR of triangular at step 1000
+assert abs(float(schedule_t(1000)) - 0.01) < 1e-4, "Triangular peak should equal max_lr"
+# triangular2 amplitude halves after first cycle
+peak_cycle1 = float(schedule_t2(1000))   # ~0.01
+peak_cycle2 = float(schedule_t2(3000))   # ~0.005
+assert peak_cycle2 < peak_cycle1 * 0.6, "triangular2 peak should shrink between cycles"
+# exp_range LR at step 5000 should be below triangular
+assert float(schedule_er(5000)) < float(schedule_t(5000)), \
+    "exp_range LR at step 5000 should be below triangular (exponential decay)"
+print("Cyclical LR validation checks passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| `mode='exp_range'` LR reaches near-zero before training ends | γ=0.99994 raised to step 10000 ≈ 0.55, but choosing γ=0.9999 at step 10000 gives ≈ 0.37, and γ=0.999 collapses to ~0.00005 | Compute expected final amplitude with `gamma ** total_steps` before training; target a floor of at least `base_lr/3` by solving `gamma = (base_lr/3 / max_lr) ** (1/total_steps)` |
+| CLR schedule output is in graph mode and `.numpy()` fails | `__call__` uses `tf.floor`, `tf.abs`, `tf.cast` which return EagerTensors normally but symbolic Tensors inside `model.compile` | Ensure TF is in eager mode (`tf.config.run_functions_eagerly(True)`) during schedule visualisation; inside `model.fit`, Keras handles the tensor transparently |
+| triangular2 cycle peak is wrong for odd cycle indices | The divisor `2 ** (cycle - 1)` where `cycle = tf.floor(...)` is a float tensor; integer power of a float tensor can accumulate floating-point error | Cast `cycle - 1` to `tf.int32` before computing `2 ** (cycle - 1)`, or use `tf.pow(2.0, cycle - 1)` and verify peak values explicitly for cycles 1–5 |
+| step_size tuned for steps but model uses epoch-based training | Passing the schedule to `SGD(learning_rate=clr_schedule)` uses optimizer global steps, but if `steps_per_epoch` is not factored in, one "cycle" may span many epochs or sub-epoch | Set `step_size = steps_per_epoch * 2` (Smith's rule: 2–8 epochs per half-cycle); verify by printing `clr_schedule(steps_per_epoch * 2)` and confirming it equals `max_lr` |
+| triangular and triangular2 produce same first-cycle curve | By design they are identical for cycle 1; students mistake this for a bug | Visualise at least 4 full cycles (20,000 steps with step_size=2500) to see triangular2's amplitude decay and confirm `peak_cycle2 ≈ peak_cycle1 / 2` |
+
+## Stretch Goals
+
+1. **Comparative training experiment — all 3 modes on CIFAR-10**: Train identical CNNs with each CLR mode for 50 epochs (step_size=2×steps_per_epoch) and plot val-accuracy per epoch alongside the LR curve on a dual y-axis; identify which mode achieves the best final accuracy and whether the loss shows "restarts" coinciding with cycle peaks.
+2. **LR range test (Leslie Smith's method)**: Implement a learning-rate range test that linearly increases LR from 1e-5 to 1.0 over 100 steps, recording loss at each step; plot loss vs LR and identify the base_lr (steepest descent) and max_lr (loss begins to diverge) to set CLR bounds data-driven.
+3. **Triangular2 with LookAhead outer loop**: Combine triangular2 as the inner schedule with a LookAhead wrapper (`sync_period = step_size`, `slow_step_size=0.5`) so that the slow weights are synchronized at each cycle reset; compare against plain triangular2 to test whether slow-weight averaging smooths the cycle boundaries.
+4. **Extend to exp_range with gradient centralization**: Implement an optimizer subclass that applies gradient centralization (subtracting the per-tensor gradient mean) before feeding gradients into the exp_range CLR schedule; measure whether centralization stabilises training when the LR is near max_lr.
+
 ---

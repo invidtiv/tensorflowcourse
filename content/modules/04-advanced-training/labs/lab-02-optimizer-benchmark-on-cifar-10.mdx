@@ -287,7 +287,28 @@ if __name__ == "__main__":
     plot_optimizer_comparison(results)
 ```
 
-### Expected Output
+## Expected Output
+
+The lab benchmarks SGD, SGD+Momentum, Adam, AdamW, RMSprop on CIFAR-10 (small CNN).
+
+Expected results:
+```
+Optimizer        LR       Val Acc (30 ep)  Val Acc (100 ep)  Epoch Time
+SGD              0.01     0.62–0.68        0.72–0.78         ~8 s
+SGD + Momentum   0.01     0.72–0.76        0.82–0.86         ~8 s
+RMSprop          0.001    0.74–0.78        0.82–0.85         ~9 s
+Adam             0.001    0.76–0.80        0.83–0.87         ~9 s
+AdamW            0.001    0.77–0.81        0.84–0.88         ~9 s
+```
+
+Signals:
+- **Adam/AdamW** converge fastest in early epochs
+- **SGD without momentum** is clearly worst
+- At 100 epochs the gap narrows
+- All runs should complete in **< 30 min total**
+- If any optimizer shows **NaN loss**, LR is too high for that optimizer
+
+Example output:
 ```
 Loading CIFAR-10 dataset...
 Training data shape: (50000, 32, 32, 3)
@@ -362,5 +383,22 @@ print("\n✨ All validation checks passed!")
 2. **Implement a learning rate sweep** — for each optimizer, train with LR ∈ {1e-4, 3e-4, 1e-3, 3e-3, 1e-2} and plot accuracy vs LR as a heatmap to find each optimizer's sweet spot.
 3. **Profile GPU memory usage** — use `tf.config.experimental.get_memory_info('GPU:0')` to track peak memory per optimizer. Adaptive methods store extra state (momentum, variance) — quantify the overhead.
 4. **Extend to 200 epochs with cosine annealing** — re-run the benchmark with cosine LR decay and compare whether SGD catches up to or surpasses Adam/AdamW at longer horizons (testing the Wilson et al. 2017 finding).
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| NaN loss for one optimizer mid-run | Default LR (e.g., SGD at 0.01) may be too large for this architecture without warmup, causing gradient explosion | Clip gradients via `clipnorm=1.0` on the optimizer, or reduce the LR; verify with `assert not np.isnan(history.history['loss'][-1])` |
+| Adam converges faster but SGD scores higher at epoch 30 | 30 epochs is too short for SGD; adaptive methods reach their plateau quickly while SGD is still descending | Run at minimum 100 epochs before drawing accuracy conclusions, or plot loss curves—not just final test accuracy |
+| Identical final accuracies for all adaptive optimizers | Hyperparameter defaults (lr=0.001) happen to produce similar optima on this small CNN; differences emerge at scale | Vary `weight_decay` for AdamW (try 0.0, 0.001, 0.01) and `epsilon` for RMSprop to expose sensitivity |
+| Training time varies wildly between optimizer runs | GPU caching and TF graph retracing on the first optimizer call inflate its wall time | Discard the first run's timing and use `time.perf_counter()` around `model.fit` after a warm-up forward pass |
+| Benchmark is not reproducible across machines | `tf.random.set_seed(42)` alone is insufficient when GPU non-determinism is enabled | Add `tf.config.experimental.enable_op_determinism()` and set `PYTHONHASHSEED=0` before the benchmark loop |
+
+## Stretch Goals
+
+1. **Comparative LR-sensitivity sweep**: For each optimizer train with LR ∈ {1e-4, 3e-4, 1e-3, 3e-3, 1e-2} and plot a 5×5 heatmap of final val-accuracy to identify each optimizer's optimal LR region and sensitivity plateau.
+2. **Wrap the best optimizer with LookAhead**: Apply `tfa.optimizers.Lookahead(inner_optimizer, sync_period=6, slow_step_size=0.5)` around the top-performing optimizer and measure whether slow-weight averaging improves final accuracy or reduces variance across runs.
+3. **Profile optimizer memory overhead**: Use `tf.config.experimental.get_memory_info('GPU:0')['peak']` after each optimizer's first epoch to quantify the extra VRAM consumed by adaptive moment buffers (Adam/AdamW) versus SGD.
+4. **Apply SAM (Sharpness-Aware Minimization) to the best baseline**: Wrap the top optimizer with a SAM step and compare final test accuracy and loss landscape sharpness (via Hessian trace approximation) to validate the flat-minima hypothesis.
 
 ---
