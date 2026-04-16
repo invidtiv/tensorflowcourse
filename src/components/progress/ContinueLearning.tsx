@@ -16,8 +16,9 @@
  *   6. If no progress at all, render nothing.
  */
 
+import type React from "react";
 import Link from "next/link";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { useProgressStore } from "@/stores/progressStore";
 import { modules } from "@/lib/modules";
 import type { ModuleProgress } from "@/types/progress";
@@ -80,18 +81,21 @@ export default function ContinueLearning() {
       return tb.localeCompare(ta); // descending
     });
 
-  // All started modules are complete — point to next unstarted module
+  let content: React.ReactNode = null;
+
   if (candidates.length === 0) {
     const nextUnstarted = modules.find(
       (m) => !progressModules[m.id]?.lastAccessed,
     );
+
     if (!nextUnstarted) {
-      // All 10 modules complete
-      return (
+      // All modules complete
+      content = (
         <motion.div
           key="all-done"
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -10 }}
           className="max-w-xl mx-auto mb-8 rounded-xl border border-emerald-500/30 bg-emerald-500/5 px-5 py-4 text-center"
         >
           <p className="text-sm font-semibold text-emerald-400">
@@ -99,88 +103,94 @@ export default function ContinueLearning() {
           </p>
         </motion.div>
       );
-    }
-    return (
-      <motion.div
-        key="next-up"
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="max-w-xl mx-auto mb-8"
-      >
-        <Link
-          href={`/modules/${nextUnstarted.id}`}
-          className="group flex items-center gap-4 rounded-xl border border-white/[0.08] bg-surface-1/30 px-5 py-4 hover:border-neon-cyan/30 hover:bg-surface-1/50 transition-all"
+    } else {
+      // All started modules complete — point to next unstarted
+      content = (
+        <motion.div
+          key="next-up"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -10 }}
+          className="max-w-xl mx-auto mb-8"
         >
-          <span className="text-2xl">{nextUnstarted.icon}</span>
-          <div className="flex-1 min-w-0">
-            <p className="text-[10px] uppercase tracking-wider text-text-muted mb-0.5">
-              Next up
-            </p>
-            <p className="text-sm font-semibold text-text-primary group-hover:text-neon-cyan transition-colors truncate">
-              Module {nextUnstarted.number}: {nextUnstarted.title}
-            </p>
-          </div>
-          <svg
-            className="w-4 h-4 text-text-muted group-hover:text-neon-cyan group-hover:translate-x-0.5 transition-all"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
+          <Link
+            href={`/modules/${nextUnstarted.id}`}
+            className="group flex items-center gap-4 rounded-xl border border-white/[0.08] bg-surface-1/30 px-5 py-4 hover:border-neon-cyan/30 hover:bg-surface-1/50 transition-all"
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M9 5l7 7-7 7"
-            />
-          </svg>
-        </Link>
-      </motion.div>
-    );
+            <span className="text-2xl">{nextUnstarted.icon}</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] uppercase tracking-wider text-text-muted mb-0.5">
+                Next up
+              </p>
+              <p className="text-sm font-semibold text-text-primary group-hover:text-neon-cyan transition-colors truncate">
+                Module {nextUnstarted.number}: {nextUnstarted.title}
+              </p>
+            </div>
+            <svg
+              className="w-4 h-4 text-text-muted group-hover:text-neon-cyan group-hover:translate-x-0.5 transition-all"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9 5l7 7-7 7"
+              />
+            </svg>
+          </Link>
+        </motion.div>
+      );
+    }
+  } else {
+    const mod = candidates[0];
+    const mp = progressModules[mod.id];
+    if (mp) {
+      const pct = getModuleCompletionPercent(mod.id, mod.labCount);
+      const action = getNextAction(mod.id, mod.labCount, mp);
+      content = (
+        <motion.div
+          key="resume"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -10 }}
+          className="max-w-xl mx-auto mb-8"
+        >
+          <Link
+            href={action.href}
+            className="group flex items-center gap-4 rounded-xl border border-white/[0.08] bg-surface-1/30 px-5 py-4 hover:border-neon-cyan/30 hover:bg-surface-1/50 transition-all"
+          >
+            <span className="text-2xl">{action.emoji}</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] uppercase tracking-wider text-text-muted mb-0.5">
+                Continue where you left off
+              </p>
+              <p className="text-sm font-semibold text-text-primary group-hover:text-neon-cyan transition-colors truncate">
+                {action.label}
+              </p>
+              <p className="text-[10px] text-text-muted mt-0.5">
+                Module {mod.number}: {mod.shortTitle} · {pct}% complete
+              </p>
+            </div>
+            <svg
+              className="w-4 h-4 text-text-muted group-hover:text-neon-cyan group-hover:translate-x-0.5 transition-all shrink-0"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9 5l7 7-7 7"
+              />
+            </svg>
+          </Link>
+        </motion.div>
+      );
+    }
   }
 
-  const mod = candidates[0];
-  const mp = progressModules[mod.id];
-  if (!mp) return null;
-  const pct = getModuleCompletionPercent(mod.id, mod.labCount);
-  const action = getNextAction(mod.id, mod.labCount, mp);
-
-  return (
-    <motion.div
-      key="resume"
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="max-w-xl mx-auto mb-8"
-    >
-      <Link
-        href={action.href}
-        className="group flex items-center gap-4 rounded-xl border border-white/[0.08] bg-surface-1/30 px-5 py-4 hover:border-neon-cyan/30 hover:bg-surface-1/50 transition-all"
-      >
-        <span className="text-2xl">{action.emoji}</span>
-        <div className="flex-1 min-w-0">
-          <p className="text-[10px] uppercase tracking-wider text-text-muted mb-0.5">
-            Continue where you left off
-          </p>
-          <p className="text-sm font-semibold text-text-primary group-hover:text-neon-cyan transition-colors truncate">
-            {action.label}
-          </p>
-          <p className="text-[10px] text-text-muted mt-0.5">
-            Module {mod.number}: {mod.shortTitle} · {pct}% complete
-          </p>
-        </div>
-        <svg
-          className="w-4 h-4 text-text-muted group-hover:text-neon-cyan group-hover:translate-x-0.5 transition-all shrink-0"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M9 5l7 7-7 7"
-          />
-        </svg>
-      </Link>
-    </motion.div>
-  );
+  return <AnimatePresence mode="wait">{content}</AnimatePresence>;
 }

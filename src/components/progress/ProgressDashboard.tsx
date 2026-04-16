@@ -10,7 +10,7 @@
  * Reads from progressStore (localStorage-persisted). Zero network calls.
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { useProgressStore } from "@/stores/progressStore";
@@ -32,7 +32,10 @@ export default function ProgressDashboard() {
   );
 
   const hasAnyProgress = startedModules.length > 0;
-  const [open, setOpen] = useState(hasAnyProgress);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (hasAnyProgress) setOpen(true);
+  }, [hasAnyProgress]);
 
   if (!hasAnyProgress) return null;
 
