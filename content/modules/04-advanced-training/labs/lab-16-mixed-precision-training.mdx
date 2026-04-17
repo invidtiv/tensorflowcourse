@@ -184,16 +184,22 @@ print("All validation checks passed ✅")
 
 The lab compares float32 vs mixed_float16 training on a CNN.
 
-Expected results:
+Expected results (example run on a T4/Turing GPU):
 ```
-Policy          Train Acc   Val Acc   Epoch Time   Speedup   Peak Memory
-float32         0.88        0.85      14.2 s       1.0×      1.8 GB
-mixed_float16   0.88        0.85      9.1 s        1.56×     1.2 GB
+Policy          Train Acc   Val Acc   Epoch Time   Speedup          Peak Memory
+float32         0.88        0.85      14.2 s       1.0×             1.8 GB
+mixed_float16   0.88        0.85      9.1 s        1.56× (T4 obs.)  1.2 GB
 ```
+
+The 1.56× figure above is a single observed T4 result. Actual speedup is hardware-dependent:
+- T4 / Turing Tensor Cores: **1.3–1.6×**
+- V100 / Volta: **1.5–1.9×**
+- A100 / Ampere: **1.8–2.3×**
+- Non-Tensor-Core GPUs (K80, P100, CPU): **~1.0–1.2×** (negligible or no speedup)
 
 Signals:
 - **Accuracy** should be nearly identical (< 0.5% difference)
-- **Speedup** of 1.3–1.8× is expected on Volta+ GPUs with Tensor Cores
+- **Speedup** of 1.3–1.8× is expected on Volta/Turing Tensor Cores; negligible on older hardware without Tensor Cores
 - On CPU or pre-Volta, speedup ≈ 1.0× or even slower
 - **Loss scale** should start at 2^15 and stabilize
 - If loss goes to NaN with mixed precision, the dynamic loss scaler is failing — usually means the initial scale is too high or gradients are genuinely huge
