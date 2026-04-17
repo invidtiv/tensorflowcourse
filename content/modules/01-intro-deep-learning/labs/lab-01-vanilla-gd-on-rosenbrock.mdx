@@ -245,6 +245,19 @@ assert val_momentum < val_vanilla * 10, \
 print("All validations passed!")
 ```
 
+<Callout type="note" title="Expected Output">
+
+After running the full script with the defaults (`lr=0.001`, `n_iter=5000`, `x_init=[-1, 2]`), you should see:
+
+- **Vanilla GD final position**: approximately `[0.60, 0.36]` with `f(x) ≈ 0.16`. It gets *into* the Rosenbrock valley but crawls along it extremely slowly — 5000 iterations is nowhere near enough to reach `(1, 1)`.
+- **Momentum GD final position**: approximately `[0.98, 0.96]` with `f(x) ≈ 4e-4` — a **~400× lower** loss in the same iteration budget.
+- **Trajectory plot**: the vanilla path hugs the curved valley floor in tiny steps; the momentum path overshoots the walls once or twice before settling in, then accelerates down the valley.
+- **Validation assert** (`val_momentum < val_vanilla * 10`) should pass. If it fails with a NaN or inf, your learning rate is too high — halve it.
+
+If your vanilla-GD loss is **NaN within the first 50 steps**, check that `x.copy()` is being appended to `history` (not the mutable `x` reference) and that `lr ≤ 0.002`. If momentum never beats vanilla, verify that the velocity `v` is being reused across iterations rather than reset inside the loop.
+
+</Callout>
+
 <Callout type="warning" title="Common Pitfalls">
 
 - **Learning rate too large for Rosenbrock**: lr > 0.002 often causes divergence because the narrow valley has very different curvatures along its two axes. If your loss explodes to NaN, halve the learning rate.

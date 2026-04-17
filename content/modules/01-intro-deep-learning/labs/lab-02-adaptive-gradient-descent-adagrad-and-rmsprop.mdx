@@ -388,3 +388,87 @@ print("=" * 70)
 ```
 
 ---
+
+## Expected Output
+
+After running the full comparison on the default 2D convex test problem
+(quadratic bowl with mild anisotropy, `lr=0.1`, 200 iterations, same
+initialization `w₀ = [-4, -4]` for all optimizers), you should see:
+
+**Final loss (lower is better):**
+
+| Optimizer | Final loss (order of magnitude) | Notes |
+|-----------|----------------------------------|-------|
+| Vanilla GD | `1e-2 … 1e-1` | Slow along the ill-conditioned axis — visible zig-zag in the trajectory plot. |
+| AdaGrad | `1e-3 … 1e-2` | Faster than vanilla early, then stalls as the cache accumulates. |
+| RMSProp | `1e-5 … 1e-4` | Smooth monotone decrease, no stalling. |
+| Adam | `1e-6 … 1e-5` | Fastest and smoothest. Bias correction matters most in the first ~10 steps. |
+
+**Trajectory plot:** vanilla GD traces the classic zig-zag across the narrow
+valley; AdaGrad takes large early steps that shrink rapidly; RMSProp and Adam
+produce near-straight paths to the minimum.
+
+**Cache magnitudes at convergence:**
+
+- `adagrad_cache.max()` grows unboundedly — typically `10²–10³` after 200 steps.
+- `rmsprop_cache.max()` stays bounded, usually `< 10×` the AdaGrad initial cache
+  due to the exponential moving average (`ρ=0.9` default).
+
+**Timing (single CPU core, numpy reference implementation):**
+~0.05 s per 200-step run for each optimizer. If a run takes `> 1 s`,
+check for accidental Python-level loops inside the update step — all
+operations should be vectorized over the parameter vector.
+
+If your Adam curve is noticeably worse than RMSProp, the bias-correction
+terms `m̂`, `v̂` are almost certainly missing — this is the single most
+common bug when re-implementing Adam from scratch.
+
+---
+
+## Validation Checkpoint
+
+Before moving on, verify your implementation produces sensible results:
+
+```python
+# === Validation Assertions ===
+
+# 1. Check that adaptive optimizers converge faster than vanilla GD
+#    (lower final loss after the same number of iterations)
+assert adam_losses[-1] < vanilla_losses[-1], \
+    "Adam should converge to a lower loss than vanilla GD on this problem"
+
+# 2. Verify AdaGrad's per-parameter learning rate decay:
+#    the accumulated squared gradients (cache) should be strictly positive
+assert np.all(adagrad_cache > 0), \
+    "AdaGrad cache entries must be > 0 after training (accumulated squared gradients)"
+
+# 3. RMSProp's moving average should stay bounded (not explode like AdaGrad's cache)
+assert np.max(rmsprop_cache) < np.max(adagrad_cache), \
+    "RMSProp cache should be smaller than AdaGrad cache (exponential moving average vs. sum)"
+
+# 4. All optimizers should produce finite parameters (no NaN/Inf)
+for name, params in [("Vanilla", vanilla_w), ("AdaGrad", adagrad_w),
+                      ("RMSProp", rmsprop_w), ("Adam", adam_w)]:
+    assert np.all(np.isfinite(params)), f"{name} produced non-finite parameters"
+
+print("✓ All validation checks passed!")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|----------------|-----|
+| **AdaGrad learning rate decays to zero** | The denominator accumulates squared gradients indefinitely, so the effective learning rate shrinks monotonically. After many steps the updates become vanishingly small. | Switch to RMSProp or Adam, which use an exponential moving average instead of an unbounded sum. If you must use AdaGrad, increase the initial learning rate. |
+| **Epsilon set too large** | Beginners sometimes set ε = 0.1 or 1.0 to "stabilize" AdaGrad/RMSProp. This dominates the denominator and neutralizes the adaptive behavior entirely. | Keep ε ≈ 1e-7 to 1e-8 (default in TF/PyTorch). Its only purpose is to prevent division by zero. |
+| **Adam's bias correction ignored** | Implementing Adam from scratch but forgetting the bias-correction terms `m̂ = m/(1-β₁ᵗ)` and `v̂ = v/(1-β₂ᵗ)`. Early updates are heavily biased toward zero because m and v are initialized to zero. | Always apply bias correction, especially in the first ~10 steps where the bias is largest. Compare your loss curve against `tf.keras.optimizers.Adam` to catch the bug. |
+| **Comparing optimizers at different learning rates** | Running vanilla GD at lr=0.01 and Adam at lr=0.01 and concluding "Adam is always better." Adam's effective per-parameter rate is lr / √v̂, so the same nominal lr means very different step sizes. | For fair comparison, tune each optimizer's learning rate independently. Use a learning rate sweep or the LR range test (Smith, 2017). |
+| **Confusing RMSProp's decay rate with momentum** | RMSProp's `ρ` (or `decay`) controls the moving average of squared gradients, NOT a momentum term. Mixing them up leads to wrong hyperparameter settings. | Use `ρ ∈ [0.9, 0.999]` for the cache decay and add momentum separately if needed (TF's `tf.keras.optimizers.RMSprop` has a distinct `momentum` parameter). |
+
+## Stretch Goals
+
+1. **Saddle-point escape comparison**: Create a 3D loss surface with a saddle point (e.g., `f(x,y) = x² - y²`) and visualize how each optimizer navigates it. Momentum-based optimizers should escape faster than vanilla GD — animate the trajectories to see the difference.
+2. **Sparse gradient simulation**: Construct a problem where only 10% of features have non-zero gradients per step (simulating NLP embeddings). Compare AdaGrad vs. Adam — AdaGrad should shine here because its per-parameter adaptation naturally handles sparse updates. Measure convergence speed in "effective gradient evaluations."
+3. **Learning rate sensitivity heatmap**: For each optimizer, sweep learning rate over `[1e-5, 1e-4, 1e-3, 1e-2, 1e-1]` and initial conditions over a grid. Plot a heatmap of final loss values. Adam should be the most robust to learning rate choice; vanilla GD should show sharp divergence boundaries.
+4. **Implement AMSGrad**: A variant of Adam (Reddi et al., 2018) that uses the maximum of past squared gradients instead of the exponential average. Compare against Adam on a non-convex toy problem — AMSGrad guarantees convergence where Adam can diverge.
+
+---

@@ -291,3 +291,77 @@ print("=" * 70)
 ```
 
 ---
+
+## Expected Output
+
+After running the full script on a typical CPU (single core, float32 arrays), you should observe:
+
+| Benchmark | Loop time | Vectorized time | Speedup |
+|-----------|-----------|-----------------|---------|
+| NumPy matmul 1000×1000 | ~200–400 ms | ~3–8 ms | **30–80×** |
+| TF matmul 1000×1000 (CPU) | — | ~5–15 ms | comparable to NumPy |
+| Broadcasting `A + b` (5000×5000) | — | ~20–60 ms | ~2–4× vs `np.tile` |
+| Row-wise sum C-order vs F-order | — | ~5–15 ms | **2–5×** faster for C-order |
+| Batch dot product 1000×100 | ~3–8 ms | ~0.05–0.2 ms | **20–60×** |
+
+The visualization PNG (`lab5_vectorization_speed.png`) should show four subplots with speedup bars all above 1× and a clear upward trend as array size increases.
+
+```python
+# === Validation Assertions ===
+
+import numpy as np
+import time
+
+# 1. Vectorized matmul should be at least 10× faster than a Python loop
+n = 500
+A = np.random.randn(n, n).astype(np.float32)
+B = np.random.randn(n, n).astype(np.float32)
+
+start = time.time()
+C_loop = np.zeros((n, n), dtype=np.float32)
+for i in range(n):
+    for j in range(n):
+        C_loop[i, j] = np.dot(A[i], B[:, j])
+loop_time = time.time() - start
+
+start = time.time()
+C_vec = A @ B
+vec_time = time.time() - start
+
+speedup = loop_time / (vec_time + 1e-9)
+assert speedup > 10, f"Expected >10× speedup, got {speedup:.1f}×"
+
+# 2. Broadcasting must produce the same result as np.tile
+A2 = np.random.randn(200, 200).astype(np.float32)
+b2 = np.random.randn(200).astype(np.float32)
+assert np.allclose(A2 + b2, A2 + np.tile(b2, (200, 1))), \
+    "Broadcasting and tile must produce identical results"
+
+# 3. C-order row-sum should be faster than F-order row-sum
+arr_c = np.random.randn(2000, 2000).astype(np.float32)
+arr_f = np.asfortranarray(arr_c)
+t0 = time.time(); _ = np.sum(arr_c, axis=1); t_c = time.time() - t0
+t0 = time.time(); _ = np.sum(arr_f, axis=1); t_f = time.time() - t0
+assert t_c < t_f * 2, "C-order row-sum should not be dramatically slower than F-order"
+
+print("✓ All vectorization validation checks passed!")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|----------------|-----|
+| **Benchmarking TensorFlow before the first call completes tracing** | TF uses `@tf.function` tracing on the first call, adding ~0.5–2 s overhead. Naively timing the very first call inflates TF timings by orders of magnitude. | Always run one warm-up call before starting the timer: `_ = tf_fn(x); start = time.time(); ...`. |
+| **Measuring loop overhead with small arrays** | When arrays are tiny (e.g., 10×10), Python overhead dominates and vectorized code shows no advantage — even appearing slower in some cases. | Use sizes ≥ 500×500 to measure meaningful speedups; always plot speedup *vs. size* to see the crossover point. |
+| **`np.tile` copying data vs broadcasting in-place** | `np.tile` allocates a full expanded array before the addition, doubling peak memory. Broadcasting never materializes the repeated copy. | Prefer broadcasting whenever the semantics allow; only fall back to `np.tile` when you explicitly need the repeated array for indexing or assignment. |
+| **Forgetting `astype(np.float32)` before benchmarking** | Default NumPy arrays are float64. TensorFlow and GPUs are optimized for float32. Mixed-precision comparisons give misleading speedup numbers. | Cast both NumPy and TF tensors to float32 before timing. Add `assert arr.dtype == np.float32` at the start of each benchmark. |
+| **C-order vs F-order confusion in multi-axis reductions** | Row-wise reductions (`axis=1`) are cache-friendly for C-order arrays; column-wise reductions (`axis=0`) are cache-friendly for F-order. Applying the wrong reduction axis to the wrong layout causes unexpected slowdowns. | Use `np.isfortran(arr)` to check memory layout. Default NumPy arrays are C-order — reshape and transpose before heavy column-wise reductions if performance is critical. |
+
+## Stretch Goals
+
+1. **GPU vs CPU speedup curve**: If you have a GPU available, wrap each benchmark in a `with tf.device('/GPU:0'):` block and re-run. Plot GPU vs CPU speedup as a function of matrix size. Identify the crossover point where GPU overhead is amortized.
+2. **Mixed-precision benchmark**: Replace `float32` with `float16` for the matmul benchmarks. Measure whether float16 is faster on your hardware (it should be on modern GPUs with Tensor Cores). Add an assertion that float16 and float32 results agree to 1% relative error.
+3. **Batched einsum vs matmul**: Rewrite the batch dot-product benchmark using `np.einsum('bi,i->b', X, w)` and compare against `X @ w`. Extend to a batched matrix-vector product `(B, N, M) × (B, M) → (B, N)` and measure the speedup of `einsum` vs a Python loop over the batch dimension.
+4. **Memory bandwidth estimation**: Use the matmul benchmark timings and the known array sizes to estimate effective memory bandwidth (GB/s) for each operation. Compare against the theoretical memory bandwidth of your CPU/GPU (available from hardware specs). This connects low-level performance to hardware constraints.
+
+---

@@ -178,3 +178,70 @@ print("normalized col std: ", X_standardized.std(axis=0).round(6))
 - Axis-aware reductions (`axis=0` vs `axis=1`) are the most common source of
   bugs for newcomers — always say the axis out loud when you write one.
 - `np.random.default_rng(seed)` is the modern reproducible RNG. Use it.
+
+---
+
+## Expected Output
+
+After working through all five parts and exercises, your script should produce:
+
+| Operation | Input | Expected result |
+|-----------|-------|-----------------|
+| `X.reshape(-1, 784)` on MNIST-shaped array `(60000,784)` | `(60000, 784)` float32 | Shape `(60000, 784)`, dtype float32 |
+| `X_cnn = X_images[..., np.newaxis]` | `(60000, 28, 28)` | Shape `(60000, 28, 28, 1)` |
+| `X_chw = X_cnn.transpose(0,3,1,2)` | `(60000, 28, 28, 1)` | Shape `(60000, 1, 28, 28)` |
+| Per-sample L2 norm after normalization | `(100, 10)` random matrix | All row norms ≈ 1.0 (within 1e-6) |
+| Pairwise distance matrix (20 rows) | `(20, 5)` random matrix | Shape `(20, 20)`, diagonal = 0 |
+
+```python
+# === Validation Assertions ===
+
+import numpy as np
+
+rng = np.random.default_rng(42)
+
+# 1. reshape / transpose roundtrip
+X = rng.standard_normal((60000, 784)).astype(np.float32)
+X_images = X.reshape(60000, 28, 28)
+assert X_images.shape == (60000, 28, 28), f"Expected (60000,28,28), got {X_images.shape}"
+X_cnn = X_images[..., np.newaxis]
+assert X_cnn.shape == (60000, 28, 28, 1), f"Expected (60000,28,28,1), got {X_cnn.shape}"
+X_chw = X_cnn.transpose(0, 3, 1, 2)
+assert X_chw.shape == (60000, 1, 28, 28), f"Expected (60000,1,28,28), got {X_chw.shape}"
+
+# 2. Per-sample L2 normalization via broadcasting
+X2 = rng.standard_normal((100, 10)).astype(np.float32)
+norms = np.linalg.norm(X2, axis=1, keepdims=True)
+X_norm = X2 / norms
+row_norms = np.linalg.norm(X_norm, axis=1)
+assert np.allclose(row_norms, 1.0, atol=1e-5), \
+    f"All row norms should be 1.0, got min={row_norms.min():.6f}"
+
+# 3. Pairwise distance matrix via broadcasting — no loops
+X3 = rng.standard_normal((20, 5)).astype(np.float32)
+diff = X3[:, None, :] - X3[None, :, :]        # (20, 20, 5)
+dist = np.sqrt((diff ** 2).sum(axis=-1))       # (20, 20)
+assert dist.shape == (20, 20), f"Expected (20,20), got {dist.shape}"
+assert np.allclose(np.diag(dist), 0, atol=1e-5), "Diagonal should be 0 (self-distance)"
+
+print("✓ All NumPy fundamentals validation checks passed!")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|----------------|-----|
+| **`reshape(-1, 784)` returns the wrong shape** | If the total number of elements isn't divisible by 784, NumPy raises a `ValueError`. Beginners often forget to flatten or pre-check the total element count. | Print `X.size` before reshaping. The total elements must equal `new_dim1 × new_dim2 × ...`. Use `assert X.size % 784 == 0` as a guard. |
+| **`axis=0` vs `axis=1` reductions swapped** | `np.mean(X, axis=0)` collapses rows → returns shape `(features,)`; `axis=1` collapses columns → returns shape `(samples,)`. First-time users routinely swap them when computing per-feature vs per-sample statistics. | Read the axis argument as "collapse along axis N": axis=0 means "for each column, average all rows." Write a comment stating the intent and verify output shape with `assert`. |
+| **Mutating a reshape view corrupts the original array** | `reshape` returns a view (no copy). Modifying elements in the reshaped array also modifies the original. | If you need an independent copy, call `.copy()`: `X_reshaped = X.reshape(-1, 784).copy()`. |
+| **`np.random.seed` vs `np.random.default_rng`** | The legacy `np.random.seed(42)` sets global state, causing surprising interactions when code is refactored or run in parallel. `default_rng` is instance-based and fully isolated. | Use `rng = np.random.default_rng(42)` and call `rng.standard_normal(...)` instead of `np.random.randn(...)`. |
+| **Float64 default dtype causing silent performance regression** | NumPy defaults to float64. Deep learning frameworks (TF, PyTorch) expect float32. Passing float64 arrays to `model.fit()` triggers a silent cast every batch, adding overhead. | Always cast early: `X = X.astype(np.float32)`. Make dtype-checking a habit: `assert X.dtype == np.float32` at data-loading time. |
+
+## Stretch Goals
+
+1. **Implement a vectorized softmax from scratch**: Given a `(N, C)` logits matrix, compute `softmax(X, axis=1)` using only NumPy element-wise ops and reductions. Apply the numerically stable log-sum-exp trick (`X - X.max(axis=1, keepdims=True)`) and verify your result matches `scipy.special.softmax` to 1e-6.
+2. **Build a mini im2col for convolution**: Given a `(N, H, W, C)` input and a `(kH, kW)` kernel size with stride 1, implement `im2col` that extracts sliding patches into a `(N * out_H * out_W, kH * kW * C)` matrix using only NumPy strides (`np.lib.stride_tricks.as_strided`). Verify the output matches a reference `tf.nn.conv2d` result.
+3. **Vectorized k-NN classifier**: Using the pairwise distance matrix exercise as a starting point, implement a full k-NN classifier (k=3) for a synthetic 2-class dataset of `(500, 2)` points. Compute predictions for all test points simultaneously (no loops), and verify accuracy exceeds 85%.
+4. **Memory profiling with `tracemalloc`**: Wrap each operation (Python loop, `np.tile`, broadcasting) in `tracemalloc.start() / tracemalloc.stop()` and report peak memory usage. Show that broadcasting uses significantly less peak memory than `np.tile` for a `(5000, 5000)` array.
+
+---

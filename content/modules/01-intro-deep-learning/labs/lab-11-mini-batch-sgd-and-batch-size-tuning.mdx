@@ -230,3 +230,45 @@ plt.show()
   training with carefully tuned learning rates.
 - The noise of mini-batch SGD is a **feature**, not a bug: it helps the model
   settle into flatter, better-generalizing minima.
+
+---
+
+## Expected Output
+
+Running the batch-size sweep on the synthetic regression task (seed=42):
+
+```
+Batch size   Epoch time   Final train loss   Final val loss   Gradient noise σ
+---------    ----------   ----------------   --------------   ----------------
+   1  (SGD)    12.4 s       0.0421             0.0456            0.184
+   8           2.10 s       0.0383             0.0402            0.063
+  32           0.78 s       0.0375             0.0388            0.031
+ 128           0.42 s       0.0372             0.0391            0.016
+ 512           0.31 s       0.0369             0.0409            0.009
+2048           0.27 s       0.0364             0.0445            0.004
+```
+
+Key observations:
+- **Epoch time decreases monotonically** with batch size (vectorization dominates).
+- **Val loss has a U-shape** — batch 32–128 is the sweet spot; batch 2048 overfits slightly despite lower train loss because the gradient noise that acts as regularization is gone.
+- **Gradient noise σ scales as ~1/√b**, the textbook prediction. Verify by plotting `log(σ)` vs `log(b)` — slope should be ≈ −0.5.
+
+<Callout type="warning" title="Common Pitfalls">
+
+1. **Comparing batch sizes without rescaling the learning rate.** A learning rate tuned for b=32 is often too small for b=512. Use the linear scaling rule (`lr_b = lr_32 * b/32`) as a starting heuristic, or switch to LARS/LAMB for very large batches.
+2. **Dropping the last batch silently.** `dataset.batch(32)` produces a final partial batch of size `N % 32`. If your loss normalizes by `batch_size` (hardcoded) instead of `tf.shape(x)[0]`, the final batch contributes the wrong weight. Use `drop_remainder=True` when benchmarking.
+3. **Re-shuffling the same way each epoch.** `dataset.shuffle(1000)` with a fixed seed gives identical batch order every epoch — this defeats mini-batch noise. Omit the seed or reshuffle each epoch (`reshuffle_each_iteration=True`, the default).
+4. **Measuring wall time including the first epoch.** The first epoch pays `tf.function` tracing cost. Discard epoch 1 or use `jit_compile=True` and pre-warm.
+5. **Batch size > dataset / 10** — with b=2048 on a 16k-sample dataset, you have only 8 updates per epoch, which behaves almost identically to full-batch GD. The "mini" in mini-batch means much smaller than the dataset.
+6. **GPU memory OOM at large batch.** A RTX 3060 (12 GB) tops out around b=4096 on a MLP with hidden=256. If you OOM, either reduce `b`, enable mixed precision, or use gradient accumulation.
+
+</Callout>
+
+<Callout type="tip" title="Stretch Goals">
+
+1. **Reproduce the "generalization gap" of large-batch training** (Keskar et al., 2017). Train the same model with b=32 and b=4096 to the same train loss, then compare test accuracy. You should see a 1–3% accuracy drop for the large-batch run.
+2. **Implement gradient accumulation**: simulate b=2048 on a GPU that can only fit b=128 by accumulating 16 micro-batches before calling `optimizer.apply_gradients`. Compare final loss against true b=2048.
+3. **Add per-step learning rate warmup** — linearly ramp `lr` from 0 to `lr_target` over the first 500 steps. This stabilizes large-batch training. Plot the loss curve with and without warmup.
+4. **Measure gradient variance directly** — across 100 batches of size `b`, compute `Var(∇L)` per parameter. Confirm the 1/b scaling predicted by CLT on the gradient estimator.
+
+</Callout>

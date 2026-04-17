@@ -238,6 +238,92 @@ optimizer calls it every step automatically. This is the canonical pattern.
    approaches for the same cosine schedule; the loss curves should be
    identical.
 
+## Expected Output
+
+### Part 1 — Schedule shape plot
+
+Your matplotlib figure should show five distinct curves over 1 000 steps:
+
+| Schedule | Shape description |
+|---|---|
+| constant | Flat horizontal line at 0.1 |
+| step decay | Staircase: 0.1 → 0.05 → 0.025 → 0.0125 → 0.00625 (drops at steps 200, 400, 600, 800) |
+| exponential | Smooth monotone decay, crosses 0.05 near step ~230, approaches 0.0 by step ~800 |
+| cosine | S-shaped, slow start, rapid middle, slow finish; terminates at `eta_min=1e-4` |
+| warmup + cosine | Ramps up linearly for the first 100 steps, then follows the cosine curve |
+
+All five curves should be visible — if one is hidden behind another, check that
+your `eta_min` and decay constants match the defaults in the code.
+
+### Part 2 — Training output (representative)
+
+```
+Training for 3120 total steps
+constant            final loss: 0.09231
+step decay          final loss: 0.08847
+exponential         final loss: 0.08903
+cosine              final loss: 0.08612
+warmup + cosine     final loss: 0.08584
+```
+
+**Invariant checks:**
+
+| Property | Expected range |
+|---|---|
+| All five final losses | 0.07 – 0.13 |
+| Warmup+cosine final loss ≤ constant final loss | Always (after 40 epochs) |
+| `cosine` and `warmup+cosine` within 5% of each other | Almost always (tiny problem) |
+| Any schedule diverging to NaN | Never (lr never exceeds `eta0=0.1`) |
+
+### Part 3 — Loss-curve comparison (log scale)
+
+Your log-scale plot should show:
+- **Constant** flattening noticeably higher than the decaying schedules in the
+  last 10–15 epochs.
+- **Step decay** showing 4 distinct "elbow" drops aligned with the schedule steps.
+- **Cosine** and **warmup + cosine** tracing the lowest curve in the final epochs.
+- All curves converging to within 2× of each other by epoch 40 — the gap is
+  regime-dependent and grows with model depth.
+
+### Part 4 — Keras CosineDecay (production API)
+
+```
+Epoch 40/40  ... loss: 0.0868
+```
+
+This should be within ±5% of the cosine result from Part 2. If it's far off,
+confirm you passed `alpha=eta_min/eta0` (not `alpha=eta_min` directly).
+
+<Callout type="tip" title="Diagnostic tree — if something looks wrong">
+
+1. **Step decay curve never drops** → Confirm `drop_every` is set to `total_steps // 5` (≈200), not a value larger than `total_steps`. Print `step_decay(0)`, `step_decay(201)`, `step_decay(401)` to verify the drops.
+2. **Warmup ramp is invisible** → `warmup` is set relative to `total_steps` but `ts` in Part 1 only has 1 000 points. For the schedule-shape plot, use a fixed `warmup=100`; for Part 2, use `warmup=total_steps // 20`.
+3. **`optimizer.learning_rate.assign(...)` raises AttributeError** → Some Keras versions wrap the LR in a `LearningRateSchedule` object; check `type(optimizer.learning_rate)`. If it's not a plain `tf.Variable`, construct the optimizer with a plain float first: `optimizer = tf.keras.optimizers.SGD(learning_rate=eta0, momentum=0.9)`.
+4. **Part 4 loss is much higher than Part 2 cosine** → Confirm `decay_steps=total_steps` (not `decay_steps=epochs`). `CosineDecay` is a per-step schedule, not a per-epoch one.
+
+</Callout>
+
+---
+
+## Common Pitfalls
+
+1. **Confusing per-step vs. per-epoch schedules** — `tf.keras.optimizers.schedules.CosineDecay` decrements every optimizer step (one per mini-batch), not once per epoch. Passing `decay_steps=40` (epochs) instead of `decay_steps=3120` (steps) causes the LR to reach `eta_min` in the very first epoch, effectively training with a near-zero rate.
+2. **Manual schedule + `model.fit` step count mismatch** — When using `model.fit`, Keras controls the step counter internally. If you build a custom schedule function that references an outer `step` variable, `model.fit` will NOT increment it. Use a `LearningRateScheduler` callback or pass a `tf.keras.optimizers.schedules.*` object.
+3. **Forgetting to reset the optimizer state between runs** — Adam accumulates first- and second-moment estimates. If you reuse an Adam optimizer across training runs with different schedules, the warm second moments from run 1 distort run 2. Always call `build_model()` to get a fresh optimizer.
+4. **`CosineDecay` `alpha` parameter** — `alpha` is the *fraction* of the initial LR to end at (i.e., `final_lr = initial_lr * alpha`), not the absolute final LR. Passing `alpha=1e-4` when you want a final LR of `1e-4` from an initial rate of `0.1` gives `final_lr = 0.1 * 1e-4 = 1e-5`, ten times too small.
+5. **Warmup with Adam** — Warmup matters most for Adam because Adam's second-moment estimate ($v_t$) is near-zero in the first few hundred steps, making the effective step size `lr / sqrt(v_t + eps)` very large. Skipping warmup with Adam on a deep network often causes loss spikes or divergence in the first epoch.
+
+---
+
+## Stretch Goals
+
+1. **Cosine annealing with warm restarts (SGDR)** — Implement the schedule from Loshchilov & Hutter (2017): every $T_i$ steps, reset the learning rate to `eta0` and cosine-decay again. Double $T_i$ after each restart. Compare a 3-restart run (80 epochs total) vs. a single cosine run of the same length. Do the "snapshots" at each restart correspond to identifiable dips in the loss curve?
+2. **Learning rate range test** — Implement the LR range test (Smith, 2015): start at `lr=1e-5`, increase geometrically to `lr=1.0` over 200 steps, and plot loss vs. lr. The optimal LR is slightly to the left of where the loss starts climbing. Verify it agrees with the best `eta0` you found in Exercise 1.
+3. **Schedule sensitivity plot** — For each schedule, sweep `eta0` over `[0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 1.0]`. For each `(schedule, eta0)` pair record the final loss. Build a heat-map. Which schedule has the widest "green zone" (low loss over a broad eta0 range)?
+4. **OneCycleLR** — Implement the 1-cycle policy (Smith & Touvron, 2019): 30% warmup from `eta0/10` to `eta0`, then 70% cosine anneal from `eta0` to `eta0/10000`. Compare with warmup+cosine on the same 40-epoch training run.
+
+---
+
 ## Key takeaways
 
 - A constant learning rate leaves performance on the table. Use a schedule.

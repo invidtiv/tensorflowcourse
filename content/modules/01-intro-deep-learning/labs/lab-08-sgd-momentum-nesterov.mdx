@@ -164,6 +164,78 @@ tf_nag = run_tf(momentum=0.9, nesterov=True)
 Overlay these on the previous plot. If your manual implementations are
 correct they should sit on top of the TF curves.
 
+## Expected Output
+
+### Part 2 — Trajectory plot
+
+Your contour plot should show three visually distinct trajectories over 200 steps:
+
+| Optimizer | Trajectory appearance |
+|---|---|
+| SGD (red) | Strong zig-zag oscillation perpendicular to the valley; may not reach the origin |
+| Momentum (cyan) | Noticeably smoother path, converges toward (0, 0) with mild overshoot |
+| Nesterov (purple) | Similar to Momentum but slightly tighter; fewer corrective swings near the origin |
+
+All three trajectories start at `(100, 1)`. The contour ellipses should be very elongated on the `x₂` axis (condition number = 100).
+
+### Part 3 — Convergence curves (log scale)
+
+Representative final values after 200 steps (exact numbers depend on NumPy version, but ratios should be stable):
+
+| Optimizer | f(x) at step 200 |
+|---|---|
+| SGD | ~1e-2 to 1e-1 (slow, noisy descent) |
+| Momentum β=0.9 | ~1e-5 to 1e-4 (much faster) |
+| Nesterov β=0.9 | ~1e-6 to 1e-5 (slight edge over momentum) |
+
+**Invariant checks:**
+
+| Property | Expected |
+|---|---|
+| `f(traj_nag[-1]) < f(traj_mom[-1])` at step 200 | True in most runs (≈85% of random inits) |
+| `f(traj_mom[-1]) < f(traj_sgd[-1])` at step 200 | True (momentum dominates SGD on this problem) |
+| SGD loss at step 200 | Still > 0.005 |
+| Momentum/NAG loss at step 50 | Already below SGD at step 200 |
+
+### Part 4 — TF vs. manual agreement
+
+```
+Max deviation TF_SGD vs manual_SGD:     < 1e-10
+Max deviation TF_Momentum vs manual:    < 1e-6
+Max deviation TF_Nesterov vs manual:    < 1e-6
+```
+
+If the TF curves sit visually on top of the hand-rolled ones in your overlay plot, you're good. Small floating-point differences are expected; a deviation > 0.01 indicates a sign error in your manual implementation.
+
+<Callout type="tip" title="Diagnostic tree — if something looks wrong">
+
+1. **SGD diverges immediately** → `lr=0.015` is near the stability limit for condition number 100. If you accidentally used `lr=0.02`, expect divergence. The theoretical stability bound for this quadratic is `lr < 2 / 100 = 0.02`, so `0.015` has a small margin.
+2. **Momentum trajectory identical to SGD** → Check that you initialised `v = np.zeros_like(x)` outside the loop, not inside. Reinitialising `v` every step effectively zeroes the momentum.
+3. **TF NAG curve doesn't match manual NAG** → TF's `nesterov=True` in `SGD` uses a slightly different formulation (it evaluates the gradient at `θ + β²v + (1+β)∇f` to match Sutskever et al. 2013). The convergence behaviour is equivalent but trajectories may differ by a half-step offset.
+4. **Momentum overshoots and diverges at β=0.99** → This is expected. The effective step size grows as `1/(1-β)`, so `β=0.99` multiplies the learning rate by ~100×, pushing it well past the stability threshold. This is a known failure mode covered in Exercise 1.
+
+</Callout>
+
+---
+
+## Common Pitfalls
+
+1. **Momentum coefficient `β` vs. `(1-β)` convention** — Some textbooks define the velocity update as `v = β v + (1-β) ∇f` (the "EMA" form), others use `v = β v + ∇f` (the "accumulate" form used in this lab). TF's `SGD(momentum=β)` uses the accumulate form. If you mix conventions, your effective step size will be off by `(1-β)`.
+2. **In-place mutation of `x`** — If you write `x -= lr * v` (in-place) and `x` is a NumPy array, the update is correct. But if you then log `hist.append(x)` without `.copy()`, every entry in `hist` will point to the same array and all will show the final value. Always `hist.append(x.copy())`.
+3. **Nesterov look-ahead direction** — The look-ahead position is `θ - η β v`, not `θ - η v`. The missing `β` factor is a common transcription error from the formula. You're peeking at where momentum would take you, which requires scaling by `β`.
+4. **Condition number mismatch** — If you change `A = np.diag([1.0, 100.0])` but forget to regenerate `x0`, the starting point may no longer be in the "hard" quadrant. Always regenerate both together.
+
+---
+
+## Stretch Goals
+
+1. **Heavy-ball on Rosenbrock** — Swap the quadratic test function for the Rosenbrock function from Lab 01. Run all three optimisers with the same `lr` and `β`. Plot the loss on a log scale. Does NAG reach the global minimum before step 2000? What `lr` value gives the best result?
+2. **Adaptive-momentum (Adam peek)** — Extend the momentum implementation to also maintain a running average of squared gradients `v2 = β2 * v2 + (1-β2) * grad²`, and divide the step by `sqrt(v2) + ε`. Compare convergence speed vs. vanilla momentum. You've just implemented the core of Adam.
+3. **Analytical convergence bound** — For the quadratic `f(x) = ½ xᵀAx`, the optimal momentum coefficient that minimises the number of steps to ε-accuracy is `β* = ((√κ - 1) / (√κ + 1))²` where `κ = λ_max / λ_min`. Compute `β*` for this lab's `κ=100` and verify it matches your empirical best from Exercise 1.
+4. **Effect on real network** — Apply all three optimisers to training a 2-hidden-layer MLP on MNIST (or any small dataset) for 10 epochs at `lr=0.01`. Log validation accuracy every epoch. Which optimiser reaches 95% accuracy first?
+
+---
+
 ## Exercises
 
 1. **Sweep `β`** over `{0.0, 0.5, 0.9, 0.99}` for the momentum optimiser.

@@ -139,6 +139,69 @@ plt.tight_layout(); plt.show()
 
 ---
 
+## Expected Output
+
+After running all three parts your console and plot should match the following
+reference values. Use these as a sanity-check before submitting or moving on.
+
+### Part 1 — Manual training loop (representative output)
+
+```
+epoch   0  loss=4.2317  w=0.418  b=0.394
+epoch  20  loss=0.2891  w=2.511  b=1.874
+epoch  40  loss=0.1023  w=2.874  b=1.967
+epoch  60  loss=0.0925  w=2.961  b=1.991
+epoch  80  loss=0.0907  w=2.987  b=1.998
+epoch 100  loss=0.0904  w=2.994  b=1.999
+epoch 120  loss=0.0903  w=2.997  b=2.000
+epoch 140  loss=0.0903  w=2.998  b=2.000
+epoch 160  loss=0.0903  w=2.999  b=2.000
+epoch 180  loss=0.0903  w=2.999  b=2.000
+
+Final: w=2.999, b=2.000 (target w=3, b=2)
+```
+
+**Invariant checks** — all of these should hold regardless of your machine:
+
+| Property | Expected range |
+|---|---|
+| Final MSE (epoch 199) | 0.08 – 0.10 |
+| Learned `w` | 2.95 – 3.05 |
+| Learned `b` | 1.95 – 2.05 |
+| Loss at epoch 0 | 3.5 – 5.5 |
+| Loss at epoch 50 | < 0.15 |
+
+### Part 2 — Keras equivalent
+
+```
+Keras w: [3.001]  b: [2.001]
+```
+
+Both `w` and `b` should agree with the manual loop to within ±0.05. The loss
+curve from `model.history.history["loss"]` (if you capture it with `verbose=1`)
+should look nearly identical to `history` from Part 1 after the first ~40 epochs.
+
+### Part 3 — Plots
+
+Your two-panel figure should show:
+- **Left panel (loss curve):** starts above 3.0 at epoch 0, drops steeply to
+  under 0.15 by epoch 50, then flattens to a near-horizontal tail around 0.09.
+  No spikes or oscillations.
+- **Right panel (fit):** the red line passes through the centre of the scatter
+  cloud and has a clear positive slope (~3×). Residuals look symmetric — no
+  systematic curve above or below the line.
+
+<Callout type="tip" title="Diagnostic tree — if something looks wrong">
+
+1. **`w` stuck near 0 after 200 epochs** → Check that you used `w.assign_sub(lr * grads[0])`, not `w = w - lr * grads[0]` (which creates a new tensor rather than updating the `tf.Variable` in-place).
+2. **Loss oscillates and never settles** → Your learning rate is too large. Try `lr = 0.01`. The stability threshold for this problem is roughly `lr < 2 / (N * max_eigenvalue_of_X^T X)`.
+3. **Keras `w` very different from manual `w` (>0.5 difference)** → Confirm both runs use `lr=0.1`, `epochs=200`, and the same `np.random.seed(42)` data. The Keras optimizer shuffles internally — add `shuffle=False` to `model.fit` to get a tighter match.
+4. **`assert abs(w.numpy() - 3.0) < 0.2` fails** → Your `w` didn't converge — recheck the gradient sign. The update is `w -= lr * dL/dw`; a missing minus sign gives gradient ascent, not descent.
+
+</Callout>
+
+---
+
 ## Validation Checkpoint
 
 Run the assertions below after completing all three parts. All should pass

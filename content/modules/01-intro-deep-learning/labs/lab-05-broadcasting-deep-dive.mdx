@@ -266,3 +266,70 @@ print("=" * 70)
 ```
 
 ---
+
+## Expected Output
+
+After running the full broadcasting script, you should see output matching these ranges:
+
+| Operation | Input shapes | Output shape | Notes |
+|-----------|-------------|--------------|-------|
+| Row broadcast `matrix + row` | `(3,3)` + `(3,)` | `(3,3)` | Row vector added to every row |
+| Column broadcast `matrix + col` | `(3,3)` + `(3,1)` | `(3,3)` | Column vector added to every column |
+| Both-axis broadcast `a + b` | `(1,3)` + `(4,1)` | `(4,3)` | Outer-sum pattern |
+| 3D channel scaling `image * scale` | `(10,10,3)` + `(3,)` | `(10,10,3)` | Per-channel scalar multiply |
+| Feature normalization `(data-mean)/std` | `(100,5)` - `(5,)` | `(100,5)` | Per-feature zero-mean, unit-variance |
+
+Normalized data statistics: `mean ≈ [0.0, 0.0, 0.0, 0.0, 0.0]` (within ±1e-14) and `std ≈ [1.0, 1.0, 1.0, 1.0, 1.0]` (within ±1e-14).
+
+```python
+# === Validation Assertions ===
+
+import numpy as np
+
+# 1. Broadcasting (1,3) + (4,1) must produce (4,3) outer-sum
+a = np.arange(3).reshape(1, 3)
+b = np.arange(4).reshape(4, 1)
+result = a + b
+assert result.shape == (4, 3), f"Expected (4,3), got {result.shape}"
+assert result[2, 1] == 3, f"result[2,1] should be 2+1=3, got {result[2,1]}"
+
+# 2. Feature normalization: mean ≈ 0, std ≈ 1 after broadcasting subtract+divide
+np.random.seed(0)
+data = np.random.randn(100, 5) * [10, 5, 2, 1, 0.5] + [5, 0, -5, 10, 2]
+mean = np.mean(data, axis=0)
+std = np.std(data, axis=0)
+normalized = (data - mean) / std
+assert np.allclose(np.mean(normalized, axis=0), 0, atol=1e-10), \
+    "Normalized means should be ~0"
+assert np.allclose(np.std(normalized, axis=0), 1, atol=1e-10), \
+    "Normalized stds should be ~1"
+
+# 3. 3D channel scaling must not change spatial shape
+image = np.random.rand(10, 10, 3)
+scale = np.array([1.0, 0.5, 0.8])
+scaled = image * scale
+assert scaled.shape == (10, 10, 3), f"Expected (10,10,3), got {scaled.shape}"
+assert np.allclose(scaled[:, :, 1], image[:, :, 1] * 0.5), \
+    "Channel 1 should be multiplied by 0.5"
+
+print("✓ All broadcasting validation checks passed!")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|----------------|-----|
+| **`ValueError: operands could not be broadcast` on axis mismatch** | Shapes are compared right-to-left: `(3, 4)` + `(3,)` fails because the trailing `(3,)` matches the last axis of `(3, 4)` only if sizes agree — here it does. But `(4, 3)` + `(3, 1)` fails because `(3, 1)` != `(4, 3)` on the leading axis. | Always sketch shape alignment right-to-left before coding. Use `np.broadcast_shapes(a.shape, b.shape)` to preview the result shape without materializing the arrays. |
+| **Column vector `(N,)` vs `(N,1)` confusion** | `np.mean(data, axis=0)` returns shape `(F,)` — a 1D array. Subtracting it from `(N, F)` works, but trying to subtract it from `(F, N)` silently produces the wrong shape. | Use `.reshape(-1, 1)` or `[:, np.newaxis]` to make the intent explicit. Verify with `print(mean.shape)` before broadcasting. |
+| **In-place broadcasting with `+=` widens dtype silently** | `arr += scalar` on an int array truncates the result back to int, discarding fractional parts. This is especially confusing when normalizing integer pixel arrays. | Cast to float first: `arr = arr.astype(np.float32)` before any in-place arithmetic. |
+| **Broadcasting `np.tile` vs `broadcasting` giving different memory peaks** | `np.tile(b, (N, 1))` materializes a full `(N, F)` array in memory. On large datasets this can cause OOM errors that pure broadcasting avoids entirely. | Benchmark both and prefer broadcasting. Only use `np.tile` when you need the repeated array as a standalone object (e.g., for fancy indexing). |
+| **Forgetting `axis=0` in per-feature reductions** | `np.mean(data)` returns a scalar (mean of all elements). `np.mean(data, axis=0)` returns a `(F,)` vector of per-feature means. Mixing these up normalizes by the global mean, not the per-feature mean. | Always state the axis explicitly and validate the output shape: `assert mean.shape == (n_features,)`. |
+
+## Stretch Goals
+
+1. **Pairwise distance matrix without loops**: Implement the full `(N, N)` Euclidean distance matrix for a `(N, D)` dataset using only broadcasting (`X[:, None, :] - X[None, :, :]`). Verify your result matches `scipy.spatial.distance.cdist(X, X)` and benchmark both approaches for `N=1000, D=128`.
+2. **Outer product and attention scores**: Compute scaled dot-product attention scores `Q @ K.T / sqrt(d_k)` for shapes `Q=(8, 64)`, `K=(8, 64)` without any loops. Then extend to multi-head attention with batch dimension: `(batch, heads, seq, d_k)` and verify the output shape is `(batch, heads, seq, seq)`.
+3. **Broadcasting-based one-hot encoding**: Given a label vector `y` of shape `(N,)` with values in `[0, C)`, create the one-hot matrix `(N, C)` using broadcasting comparison `(y[:, None] == np.arange(C)[None, :])`. Compare memory usage and speed against `np.eye(C)[y]`.
+4. **Custom batch normalization**: Implement `BatchNorm` forward pass using only broadcasting: compute per-channel mean `(C,)` and variance `(C,)` from a `(N, C, H, W)` feature map, then normalize. Verify output mean ≈ 0 and variance ≈ 1 per channel, and match `tf.keras.layers.BatchNormalization` output to within 1e-5.
+
+---

@@ -490,3 +490,75 @@ tensorboard --logdir=logs/
 ```
 
 Then open http://localhost:6006 in your browser.
+
+---
+
+## Expected Output
+
+After running the full TensorBoard lab script (20 training epochs, binary-classification model with Dense(64)→Dense(32)→Dense(1)), you should observe:
+
+| Metric | Expected range | Where to verify |
+|--------|---------------|-----------------|
+| Final training accuracy | 85–95% | TensorBoard Scalars tab, `epoch_accuracy` |
+| Final validation accuracy | 82–93% | TensorBoard Scalars tab, `epoch_val_accuracy` |
+| Final training loss | 0.15–0.35 | TensorBoard Scalars tab, `epoch_loss` |
+| Log directory size | 50–500 KB | `os.path.getsize(log_dir)` or `du -sh logs/` |
+| Histogram entries logged | 40 steps (every 5 in 0–200) | TensorBoard Histograms tab |
+| Image steps logged | 10 steps | TensorBoard Images tab |
+
+The `logs/` directory tree should contain at least three subdirectories: `train/`, `test/` (or `validation/`), and `complete_training/`.
+
+```python
+# === Validation Assertions ===
+
+import os
+import tensorflow as tf
+import numpy as np
+
+# Recreate the same data and model to validate training converges
+np.random.seed(42)
+n_samples = 1000
+X = np.random.randn(n_samples, 10).astype(np.float32)
+y = (X[:, 0] + X[:, 1] * 2 - X[:, 2] * 0.5 > 0).astype(np.float32)
+split = int(0.8 * n_samples)
+X_train, X_val = X[:split], X[split:]
+y_train, y_val = y[:split], y[split:]
+
+model = tf.keras.Sequential([
+    tf.keras.layers.Dense(64, activation='relu', input_shape=(10,)),
+    tf.keras.layers.Dense(32, activation='relu'),
+    tf.keras.layers.Dense(1, activation='sigmoid')
+])
+model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+history = model.fit(X_train, y_train, epochs=20,
+                    validation_data=(X_val, y_val), verbose=0)
+
+final_acc = history.history['accuracy'][-1]
+final_val_acc = history.history['val_accuracy'][-1]
+
+assert final_acc > 0.80, f"Training accuracy should exceed 80%, got {final_acc:.2%}"
+assert final_val_acc > 0.78, f"Validation accuracy should exceed 78%, got {final_val_acc:.2%}"
+assert os.path.exists('logs'), "TensorBoard logs/ directory must exist"
+
+print(f"✓ Training acc: {final_acc:.2%}, val acc: {final_val_acc:.2%}")
+print("✓ All TensorBoard validation checks passed!")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|----------------|-----|
+| **TensorBoard shows no data / blank dashboard** | The log directory path passed to `TensorBoard(log_dir=...)` doesn't match the path you pass to `tensorboard --logdir=`. Even a trailing slash difference can cause the UI to find no runs. | Always print `log_dir` and use that exact string in the CLI: `tensorboard --logdir=<printed_path>`. |
+| **`histogram_freq=1` with large models causes slow training** | Setting `histogram_freq=1` logs weight and gradient histograms every epoch. For models with millions of parameters this can double epoch time and fill disk quickly. | Use `histogram_freq=5` or `histogram_freq=10` for large models. Disable with `histogram_freq=0` if only tracking scalars. |
+| **Old runs pollute the Scalars tab** | Re-running the script appends new runs to the same `logs/` directory. TensorBoard displays all runs simultaneously, making the dashboard cluttered. | Append a timestamp to the log directory: `log_dir = "logs/" + datetime.now().strftime("%Y%m%d-%H%M%S")`. Or delete the old `logs/` directory before each experiment. |
+| **`tf.summary.image` expects `[N, H, W, C]` shape** | Passing a single image of shape `(H, W, C)` raises a shape error or silently logs nothing. The batch dimension `N` is mandatory. | Always wrap: `tf.summary.image('name', image[None, ...], step=step)` — the `[None, ...]` adds the required batch axis. |
+| **Custom `SummaryWriter` not flushed before TensorBoard reads** | `tf.summary.scalar` writes are buffered. If the script crashes or ends without calling `writer.flush()`, the final events may not appear in TensorBoard. | Call `writer.flush()` after each `with writer.as_default():` block, or use the context manager's `__exit__` which flushes automatically. |
+
+## Stretch Goals
+
+1. **Hyperparameter tuning dashboard with `tf.summary.text`**: Run three training experiments varying learning rate (`[1e-4, 1e-3, 1e-2]`) and log each to a separate subdirectory. Use `tf.summary.text` to log the hyperparameters at step 0. Open TensorBoard and compare all three runs on the same Scalars chart — identify the learning rate that converges fastest without diverging.
+2. **Custom gradient histograms via `GradientTape`**: Replace the Keras callback with a manual training loop using `tf.GradientTape`. Log per-layer gradient L2 norms as scalars and per-layer gradient distributions as histograms. Observe whether gradients shrink (vanishing) or explode across layers.
+3. **Profiler integration**: Enable the TensorBoard profiler by setting `profile_batch='500,520'` in the callback. Capture a 20-step profile and identify the top-3 most time-consuming ops in the Timeline view. Report whether the bottleneck is compute-bound or memory-bound.
+4. **Embedding projector**: Train a small embedding layer (`tf.keras.layers.Embedding(vocab_size=100, embedding_dim=8)`) on a synthetic sequence classification task. Log the learned embeddings using `tensorboard.plugins.projector.visualize_embeddings` and explore the 3D PCA and t-SNE projections in TensorBoard's Projector tab.
+
+---
