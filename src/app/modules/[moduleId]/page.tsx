@@ -64,7 +64,9 @@ export default function ModuleOverviewPage() {
           <h1 className="text-3xl sm:text-4xl font-heading font-bold text-text-primary mb-3">
             {mod.title}
           </h1>
-          <CompletionBadge moduleId={moduleId} totalLabs={mod.labCount} />
+          <div className="mt-3 mb-2">
+            <CompletionBadge moduleId={moduleId} totalLabs={mod.labCount} />
+          </div>
           <p className="text-text-secondary text-lg leading-relaxed">
             {mod.description}
           </p>

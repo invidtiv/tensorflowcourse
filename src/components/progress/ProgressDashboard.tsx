@@ -24,6 +24,9 @@ export default function ProgressDashboard() {
   );
   const isModuleComplete = useProgressStore((s) => s.isModuleComplete);
 
+  const [hasMounted, setHasMounted] = useState(false);
+  useEffect(() => { setHasMounted(true); }, []);
+
   const startedModules = modules.filter(
     (m) => progressModules[m.id]?.lastAccessed,
   );
@@ -36,6 +39,12 @@ export default function ProgressDashboard() {
   useEffect(() => {
     if (hasAnyProgress) setOpen(true);
   }, [hasAnyProgress]);
+
+  if (!hasMounted) {
+    return (
+      <div className="mb-10 rounded-xl border border-white/[0.08] bg-surface-1/20 h-14 animate-pulse" />
+    );
+  }
 
   if (!hasAnyProgress) return null;
 
