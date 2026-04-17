@@ -490,6 +490,61 @@ Training completed!
 **Symptom**: Loss oscillates wildly
 **Solution**: Lower learning rate, use label smoothing
 
+<Callout type="pitfall" title="Common Pitfalls">
+
+- **Asymmetric optimizers/LRs**: A common early mistake is reusing
+  one `Adam(lr=1e-3)` for both networks. For the vanilla GAN, the
+  discriminator typically needs a **lower** learning rate (e.g.
+  `1e-4`) and `beta_1=0.5` (not the Keras default `0.9`) to avoid
+  overpowering the generator within the first few epochs.
+- **Forgetting `training=True` on BatchNorm in the generator** when
+  calling it inside the custom `train_step`. Without it, BN uses
+  running stats that haven't stabilized yet and the generator output
+  collapses to the BN moving mean (near-grey blobs).
+- **Mixing real/fake in the same discriminator forward pass without
+  separating the losses**: the gradient from real vs fake examples
+  should be computed in two passes (or concatenated with clearly
+  split labels) — otherwise `BatchNorm` statistics leak information
+  between real and fake and the discriminator learns trivial
+  shortcuts.
+- **Evaluating "convergence" from loss values alone**: GAN losses
+  are adversarial and can oscillate indefinitely near equilibrium.
+  Always inspect *generated samples* every N epochs (or a proxy
+  metric like FID on a small eval set) instead of trusting loss
+  curves.
+- **Label flipping off by one**: using `1` for fake and `0` for
+  real (inverted) is silent and produces a generator that learns
+  to produce anti-real data. Add an assert in the first training
+  step to catch this.
+
+</Callout>
+
+<Callout type="tip" title="Stretch Goals">
+
+- **Swap BCE for least-squares (LSGAN) loss** and compare training
+  stability on the same seed. You should observe fewer collapse
+  events and smoother discriminator loss.
+- **Add a minibatch-std layer** to the discriminator (single scalar
+  feature of the batch std of activations) and measure its effect
+  on sample diversity — this is a classic mode-collapse mitigation
+  that you'll see again in lab-10.
+- **Log intermediate activations** from the generator to TensorBoard
+  and watch how they evolve over training; this gives an intuition
+  for why deeper generators with BN converge faster than shallow
+  ones.
+- **Reproducibility harness**: wrap this lab in a deterministic
+  runner (seed TF, NumPy, and Python hash seed; disable cuDNN
+  autotune) and verify that two runs produce bit-identical loss
+  traces for the first 5 epochs. This is essential before claiming
+  any architectural change "improved" training.
+- **Try a tiny Wasserstein variant**: replace the sigmoid + BCE with
+  a linear critic output and mean-difference loss (no gradient
+  penalty yet — that's lab-12). You'll see the loss become more
+  interpretable as a distance, at the cost of weight clipping
+  sensitivity.
+
+</Callout>
+
 ## Exercises
 
 ### Exercise 1: Modify Architecture
@@ -500,5 +555,22 @@ Try latent_dim = 10, 50, 100. How does it affect generation quality?
 
 ### Exercise 3: Learning Rate Schedule
 Implement a learning rate decay and compare convergence speed.
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|---------------|-----|
+| Discriminator wins immediately (D loss ≈ 0) | G starts with random weights; D easily classifies random noise vs real data in the first few batches | Use one-sided label smoothing: set real labels to 0.9 instead of 1.0 to prevent D from becoming over-confident |
+| Generator loss plateaus above 2.0 | Symmetric Adam LR causes D to stay ahead; G receives near-zero gradients through a near-perfect D | Use asymmetric learning rates: D at 1e-4, G at 2e-4, both with `beta_1=0.5` |
+| BatchNorm statistics diverge during training | Calling `generator(noise)` without `training=True` inside the training loop leaves BN in inference mode | Always pass `training=True` to both G and D inside `@tf.function train_step`; never use `model.predict` in the loop |
+| Generated samples are all grey blobs after epoch 10 | Latent dimension too small (e.g., 2) or real/fake labels are inverted | Use `latent_dim >= 32` for 2-D data; add an assert `assert real_labels.mean() > fake_labels.mean()` at step 0 |
+| Loss oscillates endlessly near equilibrium | Both G and D learn too fast; neither converges to Nash equilibrium | Evaluate with generated sample diversity (pairwise std) every 10 epochs rather than monitoring loss; add gradient clipping `clipnorm=1.0` |
+
+## Stretch Goals
+
+1. **Swap BCE for least-squares (LSGAN) loss** (`(D(x)-1)^2` for real, `D(G(z))^2` for fake) on the same seed and compare training stability. LSGAN loss gradients are non-zero everywhere — measure the reduction in mode-collapse events over 200 epochs.
+2. **Add EMA generator weights** — maintain a shadow copy with `ema = tf.train.ExponentialMovingAverage(0.999)` and sample from it at evaluation time. Compare sample sharpness between live and EMA generator at epoch 50, 100, and 200.
+3. **Progressive curriculum**: start with a 2-mode Gaussian and add modes every 20 epochs (2 → 4 → 8 modes). Plot coverage ratio at each stage to confirm the generator tracks the expanding distribution without forgetting earlier modes.
+4. **R1 gradient penalty**: add `lambda * ||∇D(x_real)||^2` to the discriminator loss (penalty on real samples only). Verify that D loss stops dropping below 0.3 and that the penalty coefficient `lambda=10` keeps the Lipschitz constant bounded without needing weight clipping.
 
 ---

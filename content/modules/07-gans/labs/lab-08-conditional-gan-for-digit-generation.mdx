@@ -332,4 +332,53 @@ print(f"Final Generator Loss: {history.history['g_loss'][-1]:.4f}")
 print(f"Final Discriminator Loss: {history.history['d_loss'][-1]:.4f}")
 ```
 
+## Expected Output
+
+**Training console (50 epochs on MNIST, ~10–20 min CPU):**
+
+```
+Training images: (60000, 28, 28, 1)
+Epoch 001/050 | D Loss: 0.6931 | G Loss: 0.6931   ← Nash equilibrium vicinity at start
+Epoch 010/050 | D Loss: 0.4823 | G Loss: 1.1205
+Epoch 025/050 | D Loss: 0.5512 | G Loss: 0.9876
+Epoch 050/050 | D Loss: 0.5134 | G Loss: 1.0423
+
+=== Conditional GAN Training Complete ===
+Final Generator Loss: 1.0423
+Final Discriminator Loss: 0.5134
+```
+
+**Visual output — `cgan_output/all_digits.png`:** A 10×10 grid where each row corresponds to one digit class (0–9). By epoch 30–40 on MNIST, individual digits should be clearly recognisable per row. If all rows look identical, class conditioning is not working (see Pitfalls).
+
+**Quality benchmark at 50 epochs (MNIST CGAN):**
+
+| Metric | Expected range | Notes |
+|---|---|---|
+| D Loss (final) | 0.45–0.65 | Near 0.5 = D uncertain = good balance |
+| G Loss (final) | 0.85–1.20 | Lower than unconditioned GAN typical |
+| FID (optional, if computed) | 15–35 | Strong CGAN implementations reach <20 |
+| Visual digit clarity | ≥8/10 digits recognisable | By epoch 40 |
+
+> **Validation check:** Generate 10 samples each for digits 0–9 using the trained generator. At least 8 of the 10 classes should be visually distinguishable. If digit variety within a class is too low (all 7s look identical), you may be seeing class-level mode collapse — try reducing the discriminator learning rate or adding noise to the label embeddings.
+
+## Common Pitfalls
+
+1. **Label embedding not concatenated at the right stage in both G and D.** The generator embeds the label and concatenates it with the latent noise before the dense projection. The discriminator embeds the label and concatenates it with the flattened image features. If you concatenate the raw integer label (shape `(batch,)`) instead of the embedding (shape `(batch, embed_dim)`), TF will silently broadcast incorrectly and the conditioning will be ignored. Always verify shapes with `model.summary()` and confirm label embedding dimensions flow through the graph.
+
+2. **Conditioning collapse — all classes look the same.** If the discriminator can distinguish real from fake without reading the label (because the real/fake signal is stronger than the class signal), the generator learns to ignore conditioning. Mitigation: (a) tie the discriminator's class signal closer to the final output using label projection (Miyato & Koyama 2018) rather than simple concatenation; (b) scale the label embedding to be similar magnitude to image features before concat; (c) add a small auxiliary classification loss to the discriminator.
+
+3. **One-hot vs. embedding — wrong choice for continuous latent spaces.** One-hot label inputs work for low class counts (10 for MNIST) but don't scale. When class count grows (e.g., 1000 ImageNet classes), use a learned embedding layer. Concatenating a 1000-dim one-hot vector to a 100-dim noise vector makes the label dominate the latent space arithmetically. Use an embedding layer of size ≤ sqrt(num_classes) × 4 as a rough rule of thumb.
+
+4. **Saving with `.h5` and losing the custom training loop.** `generator.save('model.h5')` on a model built with a custom training loop (not `model.compile`) may fail to save optimiser state or custom loss functions. Prefer `tf.saved_model.save(generator, 'cgan_generator_saved')` or `generator.save_weights('gen_weights.h5')` + reconstruct from code. If you need portability, use the SavedModel format.
+
+5. **Batch class balance assumption broken.** If you filter MNIST to a balanced batch (equal samples per class) but the real distribution is already balanced, this is fine. However, on imbalanced datasets, the discriminator sees more real samples from majority classes and learns a biased decision boundary. The generator then produces majority-class images regardless of the conditioning input. Always check class balance before and after any dataset filtering step.
+
+## Stretch Goals
+
+1. **Projection discriminator.** Replace the naive label-concatenation discriminator with a projection discriminator (Miyato & Koyama, 2018): compute the inner product between the discriminator's penultimate feature vector and a learned class embedding, adding it as a class-specific bias to the realness score. This is the method used in BigGAN and consistently outperforms concatenation-based conditioning.
+
+2. **Interpolation in class-conditioned latent space.** After training, generate 10 images for digit `3` and 10 for digit `8`. Then interpolate the latent vectors linearly (`z_interp = α·z_3 + (1-α)·z_8` for `α ∈ {0, 0.1, …, 1}`) while keeping the class label fixed to `3`. Visualise the transition — a well-trained CGAN should show smooth morphing of digit style while retaining the class structure.
+
+3. **Multi-label conditioning for fashion MNIST.** Extend the CGAN to Fashion-MNIST (10 classes) and add a secondary conditioning variable for "style intensity" (a continuous value 0–1 injected into the generator alongside the class embedding). Implement this as a two-input conditioning scheme and observe whether the generator learns to modulate stroke weight or contrast with the continuous variable.
+
 ---

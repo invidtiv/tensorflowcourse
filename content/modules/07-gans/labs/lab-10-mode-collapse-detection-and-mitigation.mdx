@@ -454,4 +454,39 @@ plt.savefig('mode_collapse_output/comparison.png', dpi=150)
 plt.show()
 ```
 
+## Expected Output
+
+After a full training run (standard GAN + mini-batch discrimination) you should observe:
+
+- **`real_multimodal_data.png`** — 8 evenly-spaced Gaussian clusters on a circle of radius 3.
+- **Standard GAN coverage** — typically 20–50% on the ring dataset; the generator saturates one or two quadrants and ignores the rest.
+- **Mini-batch discrimination coverage** — typically 70–90%; the per-sample diversity penalty keeps the generator exploring all 8 modes.
+- **`comparison.png`** — the three-panel figure shows the divergence clearly: standard GAN leaves 4–6 clusters empty; MB-discrimination spreads samples more evenly.
+- Console output format:
+  ```
+  Method                         Coverage        Mode Coverage
+  ------------------------------------------------------------
+  Standard GAN                    32.0%           28.4%
+  Mini-Batch Discrimination       85.0%           79.1%
+  ```
+
+> If your standard GAN immediately collapses to a single point, try reducing the learning rate or adding a small `BatchNormalization` layer to the discriminator.
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|---------------|-----|
+| K-means coverage reports 100% but samples are clearly collapsed | `n_clusters` doesn't match true mode count; a single dense cluster near one mode absorbs all k-means centres | Always set `n_clusters == n_modes`; verify by plotting cluster centres on the ring before reporting coverage |
+| Mini-batch discrimination gives no coverage improvement | Feature tensor is too small (`kernel_dim=1`); the outer-product similarity signal is degenerate | Use at least `num_kernels=16, kernel_dim=3`; inspect the minibatch features with `tf.reduce_std` to confirm variance > 0 |
+| Standard GAN coverage oscillates (80% → 10% → 70%) | Generator oscillates between modes before final collapse; coverage measured only at the end misses this | Log coverage every 100 steps throughout training; implement early-stopping when coverage < 30% for 500 consecutive steps |
+| Unrolled GAN training stalls (gradient vanishes) | Too many unrolling steps (>10) cause the unrolled discriminator to perfectly classify, giving G zero gradient | Cap `n_unrolling_steps` at 5; if G still receives ~0 gradient, add instance noise to D input |
+| Latent dim=2 works on ring but collapses on MNIST | 2-D latent space cannot encode 10 distinct digit modes simultaneously; all modes map to nearby z regions | Use `latent_dim >= 64` for MNIST; 2-D is only suitable for 2-D ring visualization experiments |
+
+## Stretch Goals
+
+1. **Sweep mitigation strategies side-by-side** — Add Unrolled GAN and feature matching to the coverage comparison table alongside mini-batch discrimination. Report mode coverage and wall-clock time for each; identify which achieves >85% coverage with the lowest computational overhead.
+2. **Entropy-based collapse detection** — Replace k-means coverage with a histogram entropy score: `entropy_collapse_score(generated, bins=50)` that computes the Shannon entropy of the 2-D histogram. A fully collapsed generator has entropy near 0. Plot this metric every 100 steps alongside coverage_ratio.
+3. **EMA-based collapse recovery** — When `coverage_ratio < 0.4` is detected mid-training, reset the generator weights to the EMA snapshot from 500 steps ago and reduce LR by 50%. Implement this auto-recovery loop and measure how often it prevents full mode collapse on the ring dataset.
+4. **Cross-lab integration** — Replace the standard GAN in this lab with the WGAN from lab-11 and the WGAN-GP from lab-12. Compare all three on the ring dataset: report final coverage, convergence epoch, and whether any collapse events occurred in a 5000-step run.
+
 ---

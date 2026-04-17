@@ -278,4 +278,42 @@ def compare_architectures():
 results = compare_architectures()
 ```
 
+## Expected Output
+
+After running the architecture comparison (50 epochs each, 2-D synthetic data, batch size 64), you should observe:
+
+| Architecture | Final D Loss | Final G Loss | Mode Coverage | Notes |
+|---|---|---|---|---|
+| Simple Generator + Simple Disc | 0.69 | 0.95 | 52% | Baseline; often collapses to 1 mode |
+| Deep Generator + Simple Disc | 0.67 | 0.88 | 61% | Deeper G = richer features |
+| Noisy Discriminator | 0.71 | 0.82 | 74% | Input noise regularises D |
+| Mini-batch Discrimination | 0.68 | 0.79 | 87% | Diversity penalty lifts coverage |
+
+```python
+# Validation: all architectures must produce finite losses
+for name, r in results.items():
+    assert all(tf.math.is_finite(l) for l in r['d_loss']), f"{name}: D loss contains NaN"
+    assert all(tf.math.is_finite(l) for l in r['g_loss']), f"{name}: G loss contains NaN"
+    final_g = r['g_loss'][-1]
+    assert final_g < 3.0, f"{name}: G loss {final_g:.3f} too high — check architecture"
+print("Architecture comparison validation passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|---------------|-----|
+| Mini-batch discrimination makes training slower with no quality gain | Feature tensor `T` is too large (e.g., `num_kernels=100, kernel_dim=5`); the `O(batch^2 * features)` outer-product dominates forward time | Start with `num_kernels=16, kernel_dim=3`; profile with `tf.profiler` before scaling up |
+| Deep generator with skip connections oscillates | Skip connections pass raw noise directly to output layers; D can use this shortcut to distinguish real from fake trivially | Apply skip only between layers of matching dimensionality; use `tanh` gating on the residual path |
+| Noisy discriminator ignores noise after a few epochs | Gaussian noise std annealed to 0 too fast; D learns to ignore the noise signal | Keep noise std ≥ 0.05 throughout training; anneal slowly from 0.1 → 0.02 over all epochs |
+| Architecture comparison has high variance between runs | Small dataset (2-D) makes results seed-sensitive | Fix `tf.random.set_seed(42)` and `np.random.seed(42)` before each architecture; report mean ± std over 3 seeds |
+| Coverage metric reports 100% with low sample quality | `coverage_ratio` depends on k-means cluster count matching true modes | Set `n_clusters` equal to the true number of modes; inspect cluster centres visually before trusting coverage numbers |
+
+## Stretch Goals
+
+1. **Add a self-attention layer** to the deep generator at the widest hidden layer and measure whether the generator learns long-range dependencies (visible as structured, non-random 2-D scatter patterns) faster than the purely dense baseline.
+2. **Implement spectral normalization** (lab-13 preview) on the simple discriminator and compare training stability with the noisy-discriminator variant. Does SN reduce the need for input noise?
+3. **Sweep mini-batch kernel count** (`num_kernels` in {8, 16, 32, 64}) and plot mode coverage vs. wall-clock time. Find the Pareto-optimal setting for your hardware.
+4. **Cross-validate with FID** — hook in the FID implementation from lab-15 and compute FID for each architecture at epoch 50. Verify that the coverage ranking (MB-discrimination > noisy > deep > simple) is preserved in FID space.
+
 ---

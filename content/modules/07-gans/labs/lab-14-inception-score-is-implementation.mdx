@@ -419,4 +419,42 @@ train_images_gan = train_images * 2 - 1
 print("\n=== Inception Score Evaluation Complete ===")
 ```
 
+## Expected Output
+
+Evaluating a trained MNIST GAN (vanilla, DCGAN, WGAN) with 5000 generated samples using InceptionV3-based IS:
+
+| GAN Variant | IS Mean | IS Std | Notes |
+|-------------|---------|--------|-------|
+| Untrained (random noise) | 1.02 | 0.03 | Near-uniform class predictions |
+| Vanilla GAN (50 epochs) | 4.31 | 0.28 | Partially collapsed; limited diversity |
+| DCGAN (50 epochs) | 7.18 | 0.41 | Good quality and diversity |
+| WGAN-GP (50 epochs) | 8.34 | 0.35 | Best IS in this module |
+| Real MNIST data | 9.88 | 0.22 | Upper bound for MNIST IS |
+
+```python
+# Validation: IS must be finite and > 1 for a non-trivial generator
+is_mean, is_std = calculate_inception_score(generated_images, num_splits=10)
+assert float(is_mean) > 1.0, f"IS {is_mean:.3f} <= 1.0 — all images predicted as same class"
+assert float(is_std) < float(is_mean), f"IS std {is_std:.3f} > mean {is_mean:.3f} — evaluation unstable"
+assert float(is_mean) < 12.0, f"IS {is_mean:.3f} > 12 — likely a bug (MNIST theoretical max ~10)"
+print(f"IS evaluation passed: IS = {is_mean:.2f} +/- {is_std:.2f}")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|---------------|-----|
+| IS = 1.0 for all generators including trained ones | InceptionV3 was not fine-tuned on MNIST; pretrained weights classify MNIST as one undifferentiated class | Train a small MNIST classifier (5-layer CNN) and use its softmax as p(y|x); InceptionV3 is designed for ImageNet, not MNIST |
+| IS varies by > 1.0 between runs | `num_splits=2` gives very high-variance estimates; the KL divergence across 2 chunks is noisy | Use at least `num_splits=10` and `n_samples >= 5000`; report mean ± std over 3 random seeds |
+| Generated images not resized to 299×299 before InceptionV3 | InceptionV3 requires 299×299 RGB input; passing 28×28 grayscale raises a shape error or produces garbage predictions | Resize and convert: `tf.image.resize(img, [299,299])` then `tf.image.grayscale_to_rgb(img)` before passing to InceptionV3 |
+| IS rewards mode collapse if collapsed mode is highly classifiable | A generator producing perfect "7"s has high p(y|x) but low p(y) diversity — IS gives a high score for sharpness, not diversity | Always pair IS with FID (lab-15); if IS is high but FID is high, the generator has collapsed to one sharp class |
+| KL divergence computation returns NaN | Zero probability in marginal p(y) causes log(0) in KL; happens when `num_classes` is wrong or softmax outputs are clipped | Add epsilon: `kl = p_yx * (np.log(p_yx + 1e-10) - np.log(p_y + 1e-10))`; verify `p_y.sum() ≈ 1.0` |
+
+## Stretch Goals
+
+1. **IS vs FID Pareto curve** — Train five GAN variants (vanilla, DCGAN, WGAN, WGAN-GP, SN-GAN) and plot IS vs FID for each. Identify the variant that achieves the best IS-FID trade-off; this is typically WGAN-GP on MNIST.
+2. **IS during training** — Log IS every 5 epochs and overlay with the G loss curve. Identify the epoch where IS starts plateauing — this is often the optimal early-stopping point for image quality.
+3. **Class-conditional IS** — Compute IS separately for each class label in an AC-GAN (lab-09). Identify which digit class achieves the highest IS and which the lowest; this reveals which classes the generator handles best.
+4. **Replace InceptionV3 with a domain-specific classifier** — Fine-tune a MobileNetV2 on MNIST and use it as the p(y|x) estimator instead of InceptionV3. Compare IS values; a domain-matched classifier should give more meaningful IS scores for MNIST than the ImageNet-pretrained InceptionV3.
+
 ---

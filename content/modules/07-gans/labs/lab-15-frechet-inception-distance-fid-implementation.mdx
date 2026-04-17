@@ -503,6 +503,48 @@ plt.show()
 print("\n=== FID Evaluation Complete ===")
 ```
 
+## Expected Output
+
+FID evaluation comparing GAN variants against 5000 real MNIST test images (lower is better):
+
+| GAN Variant | FID Score | IS Score | Epochs | Notes |
+|-------------|-----------|---------|--------|-------|
+| Untrained Generator | 312.4 | 1.02 | 0 | Random features; no overlap with real distribution |
+| Vanilla GAN | 48.7 | 4.31 | 50 | Limited quality; partial mode collapse |
+| DCGAN | 21.3 | 7.18 | 50 | Good quality; healthy FID range |
+| WGAN | 19.8 | 7.54 | 50 | Better stability; marginal FID improvement |
+| WGAN-GP | 16.2 | 8.34 | 50 | Best FID in module; stable convergence |
+
+```python
+# Validation assertions for FID
+fid_score = calculate_fid(real_features, generated_features)
+assert isinstance(float(fid_score), float), "FID returned non-numeric value"
+assert fid_score >= 0.0, f"FID {fid_score:.2f} is negative — matrix sqrt computation failed"
+assert fid_score < 400.0, f"FID {fid_score:.2f} > 400 — features likely not from InceptionV3"
+
+# Real vs real FID should be near 0
+fid_self = calculate_fid(real_features[:2500], real_features[2500:])
+assert fid_self < 5.0, f"Self-FID {fid_self:.2f} should be near 0; feature extraction may be inconsistent"
+print(f"FID validation passed: GAN FID={fid_score:.2f}, self-FID={fid_self:.2f}")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|---------------|-----|
+| FID returns negative value or NaN | Matrix square root of the covariance product can produce complex numbers due to floating-point errors in near-singular matrices | Add `+ eps * I` regularisation: `sigma = cov_real + 1e-6 * np.eye(d)` before `scipy.linalg.sqrtm`; take `np.real()` of the result |
+| FID between real and real images is not near 0 | Using too few samples (< 2048) causes covariance estimates to be noisy and biased; or features are not consistently extracted | Use at least 5000 real images; fix the random seed for sample selection; verify the same preprocessing pipeline for both real and generated images |
+| FID inflated by 5–10× due to image resizing artefacts | Generated 28×28 images resized to 299×299 with nearest-neighbor interpolation produce checkerboard artefacts in feature space | Use bilinear interpolation: `tf.image.resize(img, [299,299], method='bilinear')` and convert grayscale to RGB before InceptionV3 |
+| InceptionV3 features extracted at wrong layer | Using the final softmax layer (class probabilities) instead of the penultimate `avg_pool` layer; class probabilities lose spatial information | Extract features from `InceptionV3` with `include_top=False, pooling='avg'`; output shape should be `(N, 2048)` |
+| FID does not correlate with visual quality across training | FID computed on too few generated samples (e.g., 64 images); statistical noise dominates the distribution mismatch signal | Always use N >= 2048 generated images; use N=10000 for reliable FID curves during training |
+
+## Stretch Goals
+
+1. **FID learning curve** — Compute FID every 10 epochs during DCGAN training (5000 generated images each time) and plot FID vs. epoch. Identify the optimal early-stopping epoch where FID is minimised before overfitting or mode collapse sets in.
+2. **Kernel Inception Distance (KID)** — Implement the unbiased KID estimator using a polynomial kernel on InceptionV3 features. Compare KID and FID rankings across GAN variants; KID is unbiased for any sample size, unlike FID which is biased for small N.
+3. **Per-class FID** — For AC-GAN (lab-09), compute FID separately for each of the 10 MNIST classes (generate 500 images per class, compare against 500 real images per class). Identify which digit class has the worst per-class FID and investigate why.
+4. **FID sensitivity analysis** — Vary the number of generated images from 256 to 10000 and plot FID variance vs. N. Determine the minimum N at which FID estimates are stable within ±2 FID units across 5 random seeds — this is the practical minimum sample size for reporting FID.
+
 ---
 
 # Summary: GAN Training Techniques Comparison

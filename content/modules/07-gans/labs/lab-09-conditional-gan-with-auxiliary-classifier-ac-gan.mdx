@@ -330,4 +330,51 @@ discriminator.save('acgan_output/acgan_discriminator.h5')
 print("\n=== AC-GAN Training Complete ===")
 ```
 
+## Expected Output
+
+After training AC-GAN on MNIST for 30 epochs (batch size 64, latent dim 100, 10 classes, Adam LR=2e-4):
+
+| Epoch | G Loss | D Adv Loss | D Aux Loss | Class Accuracy | Notes |
+|-------|--------|-----------|-----------|----------------|-------|
+| 1 | 2.31 | 0.89 | 2.30 | 10.1% | Random baseline (10-class) |
+| 5 | 1.74 | 0.72 | 1.45 | 47.3% | Classifier learning class structure |
+| 10 | 1.42 | 0.69 | 0.87 | 72.6% | G-D adversarial near-equilibrium |
+| 20 | 1.18 | 0.68 | 0.52 | 88.4% | High class consistency |
+| 30 | 1.09 | 0.67 | 0.38 | 93.1% | AC-GAN mature; diverse per class |
+
+```python
+# Validation assertions
+noise = tf.random.normal([10, 100])
+labels = tf.range(10)   # one sample per class
+fake_images = generator([noise, labels], training=False)
+assert fake_images.shape == (10, 28, 28, 1), f"Expected (10,28,28,1), got {fake_images.shape}"
+assert float(tf.reduce_min(fake_images)) >= -1.0, "Generator output below -1"
+assert float(tf.reduce_max(fake_images)) <= 1.0,  "Generator output above 1"
+
+disc_out, class_out = discriminator(fake_images, training=False)
+assert disc_out.shape == (10, 1),  f"Discriminator adv output wrong: {disc_out.shape}"
+assert class_out.shape == (10, 10), f"Auxiliary classifier output wrong: {class_out.shape}"
+predicted_classes = tf.argmax(class_out, axis=1).numpy()
+correct = sum(predicted_classes[i] == i for i in range(10))
+assert correct >= 6, f"Only {correct}/10 classes correctly identified — AC-GAN not conditioning properly"
+print(f"AC-GAN validation passed. {correct}/10 classes correctly identified.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|---------------|-----|
+| Class accuracy stays at 10% (random) throughout training | Auxiliary loss weight too small relative to adversarial loss; classifier gradient is swamped | Balance losses: use `g_loss = adv_loss + lambda_aux * aux_loss` with `lambda_aux=1.0`; increase to 2.0 if accuracy < 50% at epoch 5 |
+| Class embedding dimension mismatch | Embedding output `(batch, embed_dim)` concatenated with latent `(batch, latent_dim)` but dims don't broadcast correctly | Use `Embedding(num_classes, embed_dim)(label)` then `Flatten()` before concatenating; verify shape explicitly with `print(label_embed.shape)` |
+| Discriminator auxiliary head outputs wrong shape | Multi-output model returns `(adv_logit, class_logit)` but class head has wrong `units` | Set `Dense(num_classes)` (not `num_classes+1`) for the auxiliary classifier head; verify with `assert class_out.shape[-1] == num_classes` |
+| Label smoothing applied to auxiliary classifier targets | Soft labels (e.g., 0.9 instead of 1) on the classification head corrupt the class signal | Apply label smoothing only to the adversarial loss (`real_labels = 0.9`); use hard one-hot labels for the auxiliary classification loss |
+| Mode collapse per class (all "3"s look identical) | Latent vector not diverse enough relative to class embedding; G ignores z and outputs class prototype | Increase `latent_dim` to at least 100; add minibatch discrimination or instance noise to prevent per-class collapse |
+
+## Stretch Goals
+
+1. **Class interpolation** — Fix two class labels (e.g., "3" and "8") and interpolate the label embeddings while keeping z fixed. Observe whether the generator smoothly morphs between digit identities or jumps discontinuously, revealing whether the embedding space is disentangled.
+2. **AC-GAN vs cGAN comparison** — Train the standard conditional GAN from lab-08 on the same data and compare class accuracy, FID per class, and training stability. AC-GAN should achieve higher class accuracy but may have lower diversity.
+3. **Self-attention at the 14×14 feature map** — Add a self-attention block in the generator after the first `Conv2DTranspose` upsampling step. Measure whether long-range dependencies (e.g., digit stroke consistency) improve compared to the purely local convolutional baseline.
+4. **Projection discriminator** — Replace the auxiliary classifier head with a projection-based conditioning approach (multiply class embedding with penultimate D features and add as a bias). This is more stable and avoids the auxiliary loss balance problem — compare class accuracy and FID against the AC-GAN baseline.
+
 ---

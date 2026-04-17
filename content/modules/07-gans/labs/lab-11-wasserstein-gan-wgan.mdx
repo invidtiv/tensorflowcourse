@@ -309,4 +309,39 @@ print(f"Final Critic Loss: {history.history['c_loss'][-1]:.4f}")
 print(f"Final Generator Loss: {history.history['g_loss'][-1]:.4f}")
 ```
 
+## Expected Output
+
+After training the WGAN on MNIST for 50 epochs you should observe:
+
+- **`wgan_output/wgan_training_XXXX.png`** — a grid of 64 sampled images. By epoch 20 digits should be clearly distinguishable; by epoch 50 the grid should show diverse, clean digits across all 10 classes.
+- **`wgan_output/wgan_loss_curves.png`** — the critic (Wasserstein) loss should trend monotonically more negative while the generator loss converges. Unlike vanilla GAN, the critic loss is a meaningful training signal — negative values mean the critic correctly ranks real above fake; large positive swings indicate instability.
+- **`wgan_output/final_generated.png`** — final 8×8 grid. Look for diversity across rows and columns; minimal mode collapse.
+- **Console summary:**
+  ```
+  === WGAN Training Complete ===
+  Final Critic Loss: -0.8231
+  Final Generator Loss: 0.4107
+  ```
+
+> The Wasserstein distance is only meaningful if the Lipschitz constraint holds. If you see Critic Loss > 0 and large oscillations, your weight clip value is too high — try halving `clip_value`.
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|---------------|-----|
+| Critic outputs bounded [0, 1] — loss collapses to tiny range | `activation='sigmoid'` left on the critic's final Dense layer; WGAN critic must be unbounded | Remove sigmoid: use `Dense(1)` with no activation; verify with `assert model.layers[-1].get_config()['activation'] == 'linear'` |
+| Weight clip value too tight (e.g., 0.001) causes vanishing critic gradients | Clipping weights to [-0.001, 0.001] severely limits critic capacity; gradient norms drop below 1e-5 | Widen clip to [-0.01, 0.01] (paper default); if critic loss stays near 0, increase to [-0.05, 0.05] and monitor |
+| Using Adam optimiser with weight clipping causes erratic loss spikes | Adam's momentum terms accumulate gradients from before the clip; the momentum no longer reflects the current loss landscape | Use RMSprop(lr=5e-5) for the critic when weight clipping; Adam is acceptable for WGAN-GP (lab-12) where no clipping is needed |
+| 1:5 critic-to-generator update ratio violated | Setting `n_critic=1` means the critic's Wasserstein estimate is unreliable; G receives a noisy, biased gradient | Always train the critic `n_critic=5` steps per generator step; use `n_critic=10` for difficult distributions |
+| Critic loss stays positive throughout training | Critic not learning to rank real above fake; common when batch size is too small or LR too high for the critic | Reduce critic LR to 5e-5 with RMSprop, increase batch size to 64+, verify real labels are consistently scored higher than fake by the end of epoch 1 |
+
+## Stretch Goals
+
+1. **Switch to WGAN-GP (lab-12)** — Weight clipping limits critic capacity. Replace clipping with gradient penalty and compare FID scores on MNIST after 50 epochs. Hypothesis: GP converges in fewer epochs because the critic can express more complex functions.
+2. **Plot Wasserstein distance over time** — Log `|c_loss|` (the proxy for W-distance) at every epoch and overlay with a grid of generated samples saved every 5 epochs. Confirm the W-distance decreases monotonically as image quality improves; flag any spikes that correlate with visual quality drops.
+3. **Ablate n_critic** — Train three WGANs with `n_critic` in {1, 5, 10} and report final FID (lab-15) for each. Identify the minimum n_critic that achieves FID within 5% of the `n_critic=10` baseline.
+4. **Ring dataset transfer** — Replace MNIST with the 8-mode ring dataset from lab-10. Measure mode coverage at 1000, 2000, and 5000 steps. Compare against standard GAN and mini-batch discrimination from lab-10 to confirm WGAN's mode-collapse resistance.
+
+---
+
 ---

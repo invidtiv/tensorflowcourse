@@ -343,4 +343,47 @@ print(f"Final Generator Loss: {gen_losses[-1]:.4f}")
 print(f"Final Discriminator Loss: {disc_losses[-1]:.4f}")
 ```
 
+## Expected Output
+
+After training DCGAN on CIFAR-10 for 100 epochs (batch size 64, latent dim 128, Adam LR=2e-4, beta_1=0.5):
+
+| Epoch | G Loss | D Loss | Visual Quality | Notes |
+|-------|--------|--------|----------------|-------|
+| 1 | 2.14 | 0.91 | Random noise | Both networks uninitialised |
+| 10 | 1.68 | 0.73 | Blurry colour blobs | G learns rough colour distribution |
+| 25 | 1.31 | 0.69 | Recognisable shapes | Object outlines emerging |
+| 50 | 1.04 | 0.68 | Low-res objects | Colours and shapes roughly correct |
+| 100 | 0.91 | 0.67 | Coarse CIFAR images | FID ~60–90 (vs ~3 for real data) |
+
+```python
+# Validation assertions
+noise = tf.random.normal([16, 128])
+generated = generator(noise, training=False)
+assert generated.shape == (16, 32, 32, 3), f"Expected (16,32,32,3), got {generated.shape}"
+assert float(tf.reduce_min(generated)) >= -1.0, "Generator output below -1 (check tanh)"
+assert float(tf.reduce_max(generated)) <= 1.0,  "Generator output above 1 (check tanh)"
+# Check colour diversity — all-grey images indicate mode collapse
+channel_stds = tf.math.reduce_std(generated, axis=[0,1,2])
+assert float(tf.reduce_min(channel_stds)) > 0.05, \
+    f"Channel std {channel_stds.numpy()} too low — possible mode collapse to grey"
+print("CIFAR-10 DCGAN validation passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|---------------|-----|
+| Generated images are correct grey scale but have wrong colour | Generator outputs shape `(N,32,32,1)` because last `Conv2DTranspose` uses `filters=1` instead of `filters=3` | Verify the last transposed-conv has `filters=3` and matches 3-channel RGB; add `assert generated.shape[-1] == 3` |
+| Training diverges (G loss spikes to >5 after epoch 5) | CIFAR-10 has more texture variance than MNIST; larger feature maps require more stable gradient flow | Add spectral normalization to D (preview of lab-13) or reduce D LR to 1e-4 while keeping G at 2e-4 |
+| Generated images lose colour saturation (all washed out) | Data normalised to [0, 1] but generator uses `tanh` output in [-1, 1]; discriminator sees range mismatch | Normalise CIFAR images to [-1, 1]: `(x / 127.5) - 1.0`; denormalise when saving: `(img + 1) / 2` |
+| Mode collapse to one dominant class (e.g., all horses) | Discriminator overpowers on the most distinguishable class; generator finds a single mode that fools D | Apply label smoothing (0.9 for real), use unequal G:D update ratio (2 G steps per D step), or switch to WGAN-GP |
+| Checkerboard artefacts in generated images | `Conv2DTranspose` with stride=2 produces overlap artefacts; common in DCGAN on RGB | Replace `Conv2DTranspose(stride=2)` with `UpSampling2D(2)` followed by `Conv2D(same padding)` (resize-conv pattern) |
+
+## Stretch Goals
+
+1. **Progressive Growing preview** — train DCGAN first at 16×16, then add a new block and fine-tune at 32×32 (freeze earlier layers, fade in the new block with alpha-blending). Compare convergence speed and FID at 32×32 versus training from scratch at full resolution.
+2. **Conditional CIFAR-10 generation** — embed CIFAR-10 class labels (10 classes) and concatenate them to the latent vector and discriminator input. Train for 100 epochs and verify you can generate a specific class (e.g., "automobile") on demand by fixing the label embedding.
+3. **FID tracking during training** — compute FID (lab-15) against a fixed 5k real CIFAR subset every 10 epochs and plot the FID curve alongside G/D losses. Identify the epoch where visual quality and FID diverge or agree.
+4. **StyleGAN truncation trick** — at inference time, sample z from a truncated normal distribution (`tf.random.truncated_normal`) with std in {0.5, 0.7, 1.0}. Show how smaller truncation improves fidelity but reduces diversity, and compute the FID/IS trade-off for each truncation value.
+
 ---

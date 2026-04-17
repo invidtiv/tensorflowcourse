@@ -540,3 +540,52 @@ Apply DCGAN to Fashion-MNIST instead of MNIST. What changes are needed?
 Generate images by varying only one dimension of the latent vector. Can you find interpretable directions?
 
 ---
+
+## ✅ Validation Checkpoint
+
+Before moving to the next lab, verify the following:
+
+```python
+import os, numpy as np
+
+# 1. Generator output shape is correct (batch, 28, 28, 1) with values in [-1, 1]
+noise = tf.random.normal([4, 100])
+fake_images = generator(noise, training=False)
+assert fake_images.shape == (4, 28, 28, 1), f"Expected (4, 28, 28, 1), got {fake_images.shape}"
+assert fake_images.numpy().min() >= -1.0 and fake_images.numpy().max() <= 1.0, \
+    "Generator output should be in [-1, 1] (tanh activation)"
+
+# 2. Discriminator output shape is (batch, 1) — a scalar logit per image
+disc_output = discriminator(fake_images, training=False)
+assert disc_output.shape == (4, 1), f"Expected (4, 1), got {disc_output.shape}"
+
+# 3. Generator loss is decreasing (not stuck at initial value)
+assert gen_loss < 3.0, f"Generator loss {gen_loss:.3f} is too high — check training loop"
+
+# 4. Output directory exists with saved samples
+assert os.path.exists('dcgan_output'), "Output directory 'dcgan_output/' not created"
+
+print("✅ All DCGAN validation checks passed!")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|---------------|-----|
+| Tanh output but data not scaled to [-1, 1] | MNIST pixels default to [0, 255]; normalizing to [0, 1] while generator outputs [-1, 1] causes distribution mismatch the discriminator exploits trivially | Normalize with `(images - 127.5) / 127.5` to map to [-1, 1]; verify with `assert images.min() >= -1 and images.max() <= 1` |
+| BatchNorm in the discriminator's first layer | The DCGAN paper warns against this; normalizing the raw input destroys the real/fake signal before the network can learn to separate them | Start the discriminator directly with a `Conv2D` (or `Dense`) layer — no BN until the second layer or later |
+| Wrong Adam beta_1 (using default 0.9) | Default momentum 0.9 accumulates gradients across the shifting adversarial loss landscape, causing oscillating losses that never settle | Set `beta_1=0.5` for both optimisers: `Adam(lr=2e-4, beta_1=0.5)` |
+| D loss drops to ~0 while G loss climbs above 3 | D is much stronger than G and provides vanishing gradients; common when D is deeper or trained more steps | Use equal-capacity G and D; if D still dominates, reduce its LR by 2x or add label smoothing (real labels = 0.9) |
+| `training=True` omitted inside train_step | Without it, BatchNorm uses frozen running stats and Dropout is disabled; G fails to update BN moving averages, collapsing to uniform grey output | Always call `generator(noise, training=True)` and `discriminator(images, training=True)` inside `@tf.function train_step` |
+
+## Stretch Goals
+
+1. **Interpolation in latent space:** Generate two random latent vectors `z1` and `z2`, then create 10 intermediate points via linear interpolation `z_t = (1-t)*z1 + t*z2` for `t ∈ [0, 1]`. Visualize the smooth transition between generated digits. Do you observe semantic changes (e.g., digit identity morphing)?
+
+2. **Fashion-MNIST transfer:** Swap MNIST for Fashion-MNIST (same 28×28 grayscale format, `tf.keras.datasets.fashion_mnist`). Train the same DCGAN architecture. Compare FID scores and visual quality — fashion items have more complex textures than handwritten digits.
+
+3. **Conditional DCGAN:** Extend the architecture to accept a class label (0–9). Concatenate a one-hot label embedding to the latent vector for the generator, and to the feature maps for the discriminator. Verify that you can generate specific digits on demand.
+
+4. **Training dynamics visualization:** Log generator and discriminator losses per batch (not just per epoch) and plot them on the same graph. Add a second plot showing the discriminator's average output on real vs. fake batches over time. This reveals whether the discriminator is "winning" (outputs diverge) or the game is balanced (outputs converge to ~0.5).
+
+---

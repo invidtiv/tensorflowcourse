@@ -346,24 +346,58 @@ results = compare_loss_functions()
 
 ## Expected Output
 
+| Loss Variant | Final D Loss | Final G Loss | Notes |
+|---|---|---|---|
+| Minimax | ~0.50–0.55 | ~1.1–1.4 | G saturates early when D is strong |
+| Non-saturating | ~0.55–0.65 | ~0.85–1.0 | Stronger G gradients throughout |
+| Label smoothing | ~0.60–0.70 | ~0.90–1.1 | D less overconfident; smoothed targets |
+| Feature matching | ~0.55–0.70 | N/A (feature L2) | G loss ~0.02–0.10 feature MSE |
+
+Typical console output snippet:
 ```
 ==================================================
 Training with minimax loss
 ==================================================
+Epoch 010/050 | D: 0.5234 | G: 1.2345
+Epoch 020/050 | D: 0.5102 | G: 1.1987
 Final D Loss: 0.5234
 Final G Loss: 1.2345
 
 ==================================================
 Training with non_saturating loss
 ==================================================
+Epoch 010/050 | D: 0.6123 | G: 0.9012
 Final D Loss: 0.6123
 Final G Loss: 0.8765
 
 ==================================================
 Training with label_smoothing loss
 ==================================================
+Epoch 010/050 | D: 0.6789 | G: 0.9401
 Final D Loss: 0.6789
 Final G Loss: 0.9234
 ```
+
+> **Validation check:** If minimax G loss stays flat at ~0.693 (= log 2) for the first 10+ epochs, the discriminator is already dominant. Switch to non-saturating loss or reduce the discriminator's learning rate.
+
+## Common Pitfalls
+
+1. **Minimax G gradient saturation.** When `D(G(z)) ≈ 0`, the gradient of `log(1 − D(G(z)))` is near zero — the generator receives almost no signal. Always prefer the non-saturating variant (`−log D(G(z))`) in practice. A diagnostic: plot G loss per epoch; if it plateaus at `log 2 ≈ 0.693` from epoch 1, saturation is occurring.
+
+2. **Label smoothing value too aggressive.** Smoothing real labels to 0.9 is standard; smoothing fake labels below 0.0 (negative smoothing) or using the same smoothed value for both real and fake can inadvertently help the generator by reducing the true/fake margin. Only smooth real labels. Typical range: 0.85–0.95.
+
+3. **Feature matching target network not frozen.** The discriminator used to compute feature-matching targets must be evaluated in inference mode (`training=False`). If the intermediate layer is called with `training=True`, batch normalization statistics shift every batch and the feature targets become noisy, destabilizing the generator update.
+
+4. **Comparing loss values across variants directly.** Each loss function operates on a different scale and has a different theoretical equilibrium — minimax equilibrium gives `D_loss = 2·log(2) ≈ 1.386`, WGAN critic loss should trend to 0, feature-matching loss is an L2 distance. Do not compare final loss numbers across variants; compare generated image quality (FID, visual inspection) instead.
+
+5. **Forgetting `from_logits=True` when switching loss implementations.** TensorFlow's `BinaryCrossentropy` applies a sigmoid internally if `from_logits=True`. If your discriminator already applies `sigmoid` in its final layer and you pass `from_logits=True`, you double-apply sigmoid, collapsing outputs toward 0.5 and making both losses indistinguishable. Choose one: either remove sigmoid from the model and use `from_logits=True`, or keep sigmoid and use `from_logits=False`.
+
+## Stretch Goals
+
+1. **Hinge loss variant.** Implement the hinge loss used in SAGAN and BigGAN: `D_loss = mean(relu(1 − D(real))) + mean(relu(1 + D(fake)))`. Compare training stability against non-saturating loss on the same dataset. Hinge loss tends to keep the discriminator confidently separated without gradient vanishing.
+
+2. **R1 gradient penalty.** Add the R1 regularisation term `λ · ||∇_x D(x)||²` evaluated only on real samples (Mescheder et al., 2018). This is a zero-centred gradient penalty that has replaced weight clipping and WGAN-GP in most modern GAN papers (e.g., StyleGAN2). Tune `λ ∈ {1, 5, 10}` and observe the effect on training stability.
+
+3. **Relativistic average GAN (RaGAN) loss.** In RaGAN, the discriminator predicts "how much more real is the real sample compared to the average fake". Implement `D_loss = BCE(D(real) − mean(D(fake)), 1) + BCE(D(fake) − mean(D(real)), 0)`. This has been shown to stabilise training on harder datasets where standard GAN losses diverge.
 
 ---

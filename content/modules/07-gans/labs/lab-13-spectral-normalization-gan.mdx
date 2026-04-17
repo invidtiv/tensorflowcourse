@@ -327,4 +327,54 @@ discriminator.save('sngan_output/sngan_discriminator.h5')
 print("\n=== SNGAN Training Complete ===")
 ```
 
+## Expected Output
+
+Training SNGAN on MNIST for 50 epochs (batch size 64, latent dim 128, hinge loss, Adam LR=2e-4):
+
+| Epoch | D Loss (Hinge) | G Loss | Spectral Norm σ₁ (D) | Visual Quality |
+|-------|---------------|--------|---------------------|----------------|
+| 1 | 1.94 | 1.31 | ~1.00 (initialised) | Random noise |
+| 10 | 1.21 | 0.87 | 0.98 | Rough digit outlines |
+| 25 | 0.84 | 0.71 | 0.97 | Clear digit shapes |
+| 40 | 0.71 | 0.68 | 0.96 | Sharp diverse digits |
+| 50 | 0.68 | 0.66 | 0.96 | FID ~15–22; IS ~7–9 |
+
+```python
+# Validation assertions for SNGAN
+noise = tf.random.normal([16, 128])
+fake_images = generator(noise, training=False)
+assert fake_images.shape == (16, 28, 28, 1), f"Wrong shape: {fake_images.shape}"
+assert float(tf.reduce_min(fake_images)) >= -1.0 and float(tf.reduce_max(fake_images)) <= 1.0, \
+    "Output out of [-1, 1] range"
+
+# Verify spectral normalization is applied: sigma should be <= 1.0
+for layer in discriminator.layers:
+    if hasattr(layer, 'layer') and hasattr(layer, 'u'):   # SpectralNormalization wrapper
+        # kernel's largest singular value should be normalised to ~1
+        w = layer.layer.kernel
+        sigma = tf.reduce_max(tf.linalg.svd(tf.reshape(w, [-1, w.shape[-1]]), compute_uv=False))
+        assert float(sigma) < 1.05, f"Spectral norm {sigma:.3f} > 1 — SN not applied correctly"
+
+final_d = history.history['d_loss'][-1]
+assert final_d < 1.0, f"D hinge loss {final_d:.4f} too high — SN may be preventing D from learning"
+print(f"SNGAN validation passed. D_loss={final_d:.3f}")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|---------------|-----|
+| SpectralNormalization wrapper not applied to all discriminator layers | Manually wrapping only the first Conv2D leaves the remaining layers unconstrained; Lipschitz bound doesn't hold | Wrap every `Conv2D` and `Dense` in the discriminator: `SpectralNormalization(Conv2D(...))` for each layer systematically |
+| Spectral norm initialises to values > 10, causing training instability | Power-iteration starts from a random `u` vector; the first few `call` invocations have very poor σ estimates | Run 5–10 power-iteration steps at build time: call `layer.build(input_shape)` then `layer(dummy_input)` before the training loop |
+| Hinge loss produces NaN when discriminator output has wrong sign convention | Hinge loss formula assumes D(real) > 0 and D(fake) < 0 (unnormalised logits); adding sigmoid to D output maps everything to [0,1] and breaks the hinge | Remove activation from D's last layer; use raw logits for hinge loss: `tf.nn.relu(1.0 - real_logits)` + `tf.nn.relu(1.0 + fake_logits)` |
+| SN applied to generator causes mode collapse | Spectral normalization constrains gradient flow in G; applying it too aggressively prevents G from exploring the latent space | Apply SN only to the discriminator (as in the original SN-GAN paper); use BatchNorm in G for stability instead |
+| Singular value u vector not updated during inference | `u` is a non-trainable variable updated only during `training=True` calls; evaluating with `training=False` freezes σ at the last training value | This is expected and correct behaviour; always call `generator(noise, training=False)` for inference but verify `training=True` is set in the training step |
+
+## Stretch Goals
+
+1. **Apply SN to the generator as well** — Train a variant with SpectralNormalization on both G and D. Compare FID and training stability against D-only SN. The original paper applies SN only to D; verify whether G-SN improves or degrades quality.
+2. **Self-attention SNGAN** — Add a self-attention layer at the 8×8 feature map of both G and D (as in the SA-GAN paper). Measure whether long-range spatial consistency in generated digits improves compared to the purely convolutional SN-GAN.
+3. **Spectral norm tracking** — Log the estimated spectral norm σ₁ for each discriminator layer every 5 epochs. Verify that all σ values remain in [0.95, 1.05] throughout training; if any layer's σ drifts, diagnose whether the power-iteration count needs increasing.
+4. **SN-GAN vs WGAN-GP on CIFAR-10** — Train both architectures on CIFAR-10 for 100 epochs and compare FID (lab-15) and IS (lab-14). Determine which method achieves lower FID and which has more stable training (fewer loss spikes).
+
 ---

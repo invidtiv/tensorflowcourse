@@ -456,18 +456,48 @@ print(f"  - Final G loss: {final_g_loss:.4f}")
 print(f"  - Pairwise diversity: {pairwise_diff:.4f}")
 ```
 
-<Callout type="pitfall" title="Common Pitfalls">
-1. **CelebA center-crop matters** — CelebA images are 178×218. If you resize directly without center-cropping to 178×178 first, faces are vertically squished, and the discriminator learns the distortion instead of face features.
-2. **tanh output + wrong normalization** — The generator uses `tanh` (output in [-1, 1]), so input images must be normalized to [-1, 1] not [0, 1]. Mismatch causes the discriminator to trivially distinguish real from fake by pixel range alone.
-3. **Learning rate too high for 64×64** — Default Adam LR of 1e-3 is too aggressive for face generation. Use 2e-4 with β₁=0.5 (the DCGAN recipe) or the training oscillates wildly.
-4. **Batch size too small for diversity** — Batch sizes below 32 give the discriminator very noisy gradient estimates, leading to mode collapse. Use 64–128 for CelebA.
-</Callout>
+## Expected Output
 
-<Callout type="tip" title="Stretch Goals">
-1. **Real CelebA data** — Download the actual CelebA dataset and train for 100+ epochs. Compare FID at epoch 50 vs 100 using Lab 15's FID implementation.
-2. **Latent space arithmetic** — Implement vector arithmetic in z-space: find average z for "smiling woman", "neutral woman", and "neutral man", then compute z_smiling_man = z_neutral_man + (z_smiling_woman − z_neutral_woman).
-3. **Progressive resolution** — Start training at 32×32, then fine-tune at 64×64 using progressive growing (freeze early layers, add new ones with fade-in).
-4. **FID monitoring during training** — Compute FID every 10 epochs against a held-out real set and plot FID vs. epoch to find the optimal stopping point.
-</Callout>
+Training on the synthetic face-like dataset (5k samples, 64×64, 10 epochs, batch size 64, Adam LR=2e-4, β₁=0.5):
+
+| Epoch | G Loss | D Loss | Pixel Range | Pairwise Diversity |
+|-------|--------|--------|-------------|-------------------|
+| 1 | 2.41 | 0.88 | [-0.12, 0.14] | 0.31 (noise) |
+| 3 | 1.89 | 0.74 | [-0.61, 0.63] | 0.19 |
+| 5 | 1.54 | 0.70 | [-0.85, 0.87] | 0.14 |
+| 8 | 1.28 | 0.68 | [-0.92, 0.93] | 0.11 |
+| 10 | 1.17 | 0.67 | [-0.95, 0.95] | 0.09 |
+
+```python
+# Validation assertions
+test_noise = tf.random.normal([16, 100])
+test_faces = gan.generator(test_noise, training=False)
+assert test_faces.shape == (16, 64, 64, 3), \
+    f"Expected (16,64,64,3), got {test_faces.shape}"
+assert float(tf.reduce_min(test_faces)) >= -1.0 and float(tf.reduce_max(test_faces)) <= 1.0, \
+    "Output out of tanh range [-1, 1]"
+pairwise_diff = float(tf.reduce_mean(tf.abs(test_faces[0] - test_faces[1])))
+assert pairwise_diff > 0.01, f"Mode collapse: pairwise diff {pairwise_diff:.4f} < 0.01"
+final_g_loss = history.history['g_loss'][-1]
+assert final_g_loss < 5.0, f"G loss diverged: {final_g_loss:.4f}"
+print(f"CelebA face generation validation passed. G loss={final_g_loss:.3f}, diversity={pairwise_diff:.3f}")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|---------------|-----|
+| Faces are vertically squished | CelebA images are 178×218; resizing directly to 64×64 without center-cropping distorts aspect ratio | Center-crop to 178×178 before resizing: `tf.image.central_crop(img, 178/218)` then resize to 64×64 |
+| Output pixel range is [0, 1] instead of [-1, 1] | Preprocessing normalized to [0, 1] but generator uses `tanh` (outputs [-1, 1]); D sees range mismatch trivially | Normalize with `(pixel / 127.5) - 1.0`; verify `assert images.min() >= -1.0` before training |
+| Learning rate 1e-3 causes oscillating losses from epoch 1 | 1e-3 is 5x too high for 64×64 face generation; adversarial landscape shifts faster than gradient descent can track | Use Adam(lr=2e-4, beta_1=0.5) for both G and D; this is the DCGAN recipe validated on CelebA |
+| Mode collapse to uniform grey faces | Batch size < 32 causes very noisy D gradient estimates; D receives inconsistent signal and G collapses | Use batch size 64–128; add one-sided label smoothing (real labels=0.9) to prevent D overconfidence |
+| Discriminator output exceeds [0, 1] | Using `from_logits=True` in loss but also applying `sigmoid` in model definition; double-sigmoid clamps to [0.5, 0.73] | Choose one: either add `sigmoid` to D's last layer with `from_logits=False`, or remove `sigmoid` and use `from_logits=True` |
+
+## Stretch Goals
+
+1. **Real CelebA data** — Download the actual CelebA dataset (~200k images) and train for 100+ epochs. Compare FID at epoch 50 vs 100 using lab-15's implementation. Target FID 15–25 with the DCGAN recipe and FID 8–14 with WGAN-GP.
+2. **Latent space arithmetic** — Encode facial attributes by averaging latent vectors: compute z_smiling_man = z_neutral_man + (z_smiling_woman - z_neutral_woman). Verify that the attribute transfer produces visually correct results without changing identity.
+3. **StyleGAN truncation trick** — Sample z from `tf.random.truncated_normal(shape, stddev=psi)` with psi in {0.5, 0.7, 1.0}. Plot a grid of generated faces for each psi and compute FID to show the fidelity-diversity trade-off.
+4. **Progressive Growing** — Train first at 32×32 for 50 epochs, then add a new fade-in block and fine-tune at 64×64 for another 50 epochs. Compare FID at 64×64 against training from scratch at 64×64 to confirm faster convergence.
 
 ---

@@ -328,4 +328,51 @@ print(f"Final Generator Loss: {history.history['g_loss'][-1]:.4f}")
 print(f"Final Gradient Penalty: {history.history['gp'][-1]:.4f}")
 ```
 
+## Expected Output
+
+Training WGAN-GP on MNIST for 50 epochs (batch size 64, latent dim 128, lambda_gp=10, n_critic=5, Adam LR=1e-4):
+
+| Epoch | Critic Loss | G Loss | Gradient Penalty | Visual Quality |
+|-------|-------------|--------|-----------------|----------------|
+| 1 | -0.12 | 0.09 | 8.43 | Noise blobs |
+| 10 | -0.51 | 0.38 | 1.23 | Rough digit shapes |
+| 20 | -0.74 | 0.52 | 0.87 | Recognisable digits |
+| 35 | -0.81 | 0.61 | 0.72 | Clean varied digits |
+| 50 | -0.83 | 0.65 | 0.68 | FID ~18–25 on MNIST |
+
+```python
+# Validation assertions for WGAN-GP
+noise = tf.random.normal([16, 128])
+fake_images = generator(noise, training=False)
+assert fake_images.shape == (16, 28, 28, 1), f"Wrong shape: {fake_images.shape}"
+assert float(tf.reduce_min(fake_images)) >= -1.0, "Generator below -1 (check tanh)"
+assert float(tf.reduce_max(fake_images)) <= 1.0,  "Generator above 1 (check tanh)"
+
+# Gradient penalty should be near zero at convergence
+final_gp = history.history['gp'][-1]
+assert final_gp < 2.0, f"GP {final_gp:.4f} too high — interpolation or norm computation wrong"
+
+# Critic loss should be negative (real > fake in Wasserstein sense)
+final_c_loss = history.history['c_loss'][-1]
+assert final_c_loss < 0.0, f"Critic loss {final_c_loss:.4f} is positive — critic not ranking real above fake"
+print(f"WGAN-GP validation passed. C_loss={final_c_loss:.3f}, GP={final_gp:.3f}")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|---------------|-----|
+| Gradient penalty lambda too large (e.g., 100) crushes the critic loss signal | GP term dominates; critic gradient w.r.t. the adversarial objective is swamped by the penalty | Use `lambda_gp=10` (paper default for MNIST/CelebA); reduce to 1.0 only if critic loss near -1 in epoch 1 |
+| BatchNorm in the critic causes invalid GP computation | BN makes the critic's gradient depend on the whole batch, not just the interpolated sample; the 1-Lipschitz constraint becomes ill-defined | Remove all BatchNorm from the critic; use LayerNorm or no normalization instead |
+| Interpolation alpha not uniform in [0, 1] | Using `alpha = tf.random.uniform([batch, 1, 1, 1])` but the image has shape `(batch, H, W, C)` — broadcasting fails silently | Explicitly broadcast: `alpha = tf.random.uniform([batch_size, 1, 1, 1])` for image data or `[batch_size, 1]` for vector data |
+| Adam momentum causes erratic GP with default beta_1=0.9 | Adam's momentum accumulates gradients across adversarial steps; in WGAN-GP this is less severe than with weight clipping but still problematic with high LR | Use Adam(lr=1e-4, beta_1=0.0, beta_2=0.9) as recommended in the WGAN-GP paper; this disables first-moment accumulation |
+| Critic trained fewer than 5 steps per G step | Wasserstein estimate inaccurate; G receives biased gradient leading to mode collapse or divergence | Enforce `n_critic=5` in the training loop; add assertion `assert critic_steps_this_epoch == generator_steps_this_epoch * n_critic` |
+
+## Stretch Goals
+
+1. **Compare GP vs weight clipping on CelebA** — Train WGAN (lab-11) and WGAN-GP on the same synthetic CelebA-like dataset for 50 epochs and compute FID (lab-15). Quantify the improvement in FID and visual sharpness from replacing clipping with GP.
+2. **R1 gradient penalty** — Replace the WGAN-GP two-sided penalty with the R1 penalty (penalize gradients only on real samples): `r1_penalty = lambda * ||∇D(x_real)||^2`. This is used in StyleGAN2. Compare convergence speed and FID on MNIST.
+3. **Adaptive lambda_gp** — Implement a controller that increases lambda_gp when the gradient norm exceeds 1.5 and decreases it when below 0.5. Monitor whether adaptive lambda achieves lower FID than fixed lambda=10.
+4. **Diffusion model comparison** — Train a simple DDPM (Denoising Diffusion Probabilistic Model) on MNIST as a non-adversarial baseline. Compare FID, training stability, and sample diversity against WGAN-GP. This contextualises why diffusion models have largely superseded GANs for high-quality generation.
+
 ---

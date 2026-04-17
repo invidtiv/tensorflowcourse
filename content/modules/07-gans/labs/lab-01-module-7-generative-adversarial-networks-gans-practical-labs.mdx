@@ -8,6 +8,138 @@ source: "lab-01-complete.md"
 ---
 # Module 7: Generative Adversarial Networks (GANs) - Practical Labs
 
+## Introduction
+
+Generative Adversarial Networks (GANs), introduced by Ian Goodfellow et al. in 2014, represent one of the most influential breakthroughs in modern deep learning. The core insight is elegantly simple: train two neural networks in an adversarial game — a **Generator** that learns to synthesize realistic data from random noise, and a **Discriminator** that learns to distinguish real data from generated fakes. As each network improves, the other is forced to improve in turn, driving the generator toward producing samples indistinguishable from real data.
+
+Since 2014, GAN research has exploded across dozens of variants. This module traces that trajectory from the original vanilla GAN through architectural improvements (DCGAN), conditional generation (cGAN, AC-GAN), training-stability advances (WGAN, WGAN-GP, SN-GAN), all the way to rigorous evaluation metrics (Inception Score, FID). Each lab is a self-contained implementation that builds conceptually on the previous one.
+
+## Module Trajectory
+
+| Lab | Topic | Key Concept |
+|-----|-------|-------------|
+| 7.1 | This overview | GAN history, minimax objective, module map |
+| 7.2 | Basic GAN | Vanilla minimax, BCE loss, 2-D data |
+| 7.3 | Custom Loss Functions | LSGAN, Hinge loss, loss landscape |
+| 7.4 | Architecture Variations | Skip connections, mini-batch discrimination |
+| 7.5 | DCGAN for MNIST | Strided Conv, BatchNorm, tanh output |
+| 7.6 | DCGAN for CIFAR-10 | RGB generation, 32×32 color images |
+| 7.7 | Face Generation (CelebA) | High-res 64×64 faces, progressive tricks |
+| 7.8 | Conditional GAN | Label conditioning, class-controlled output |
+| 7.9 | AC-GAN | Auxiliary classifier, joint adv+class loss |
+| 7.10 | Mode Collapse Detection | Mini-batch diversity, collapse metrics |
+| 7.11 | WGAN | Wasserstein distance, Lipschitz via clipping |
+| 7.12 | WGAN-GP | Gradient penalty, interpolated samples |
+| 7.13 | SN-GAN | Spectral normalization, stable discriminator |
+| 7.14 | Inception Score | IS formula, InceptionV3 feature extraction |
+| 7.15 | FID | Frechet distance, covariance matching |
+
+## Scaffold: Minimal GAN in 60 Lines
+
+The following scaffold captures every structural element you will encounter across this module. Read it before starting lab 7.2.
+
+```python
+"""
+Module 7 — GAN Scaffold
+=======================
+Minimal generator / discriminator / training loop skeleton.
+Replace the placeholder architectures with the real implementations
+from each lab.
+"""
+
+import tensorflow as tf
+import numpy as np
+from tensorflow.keras import layers
+
+# ── Hyper-parameters ──────────────────────────────────────────────────────────
+LATENT_DIM  = 100     # z dimension; 128 for DCGAN, 256 for CelebA
+BATCH_SIZE  = 64
+EPOCHS      = 50
+LR_GEN      = 2e-4    # DCGAN recipe; use 5e-5 for WGAN/WGAN-GP
+LR_DISC     = 2e-4
+BETA_1      = 0.5     # Adam β₁; default 0.9 causes instability in GANs
+
+# ── Generator stub ────────────────────────────────────────────────────────────
+def build_generator(latent_dim: int) -> tf.keras.Model:
+    """Maps z ~ N(0,I) → fake sample.  Replace Dense layers with
+    Conv2DTranspose for image GANs (labs 7.5–7.13)."""
+    return tf.keras.Sequential([
+        layers.Dense(256, input_shape=(latent_dim,)),
+        layers.LeakyReLU(0.2),
+        layers.BatchNormalization(),
+        layers.Dense(512),
+        layers.LeakyReLU(0.2),
+        layers.BatchNormalization(),
+        layers.Dense(2, activation='tanh'),   # output dim matches real data
+    ], name='Generator')
+
+# ── Discriminator stub ────────────────────────────────────────────────────────
+def build_discriminator(data_dim: int) -> tf.keras.Model:
+    """Maps real/fake sample → logit (or Wasserstein score for WGAN)."""
+    return tf.keras.Sequential([
+        layers.Dense(512, input_shape=(data_dim,)),
+        layers.LeakyReLU(0.2),
+        layers.Dropout(0.3),
+        layers.Dense(256),
+        layers.LeakyReLU(0.2),
+        layers.Dense(1),   # no sigmoid for WGAN; add sigmoid for BCE variants
+    ], name='Discriminator')
+
+# ── Loss functions ────────────────────────────────────────────────────────────
+cross_entropy = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+
+def generator_loss(fake_logits):
+    """Generator wants D(G(z)) → 1 (fool the discriminator)."""
+    return cross_entropy(tf.ones_like(fake_logits), fake_logits)
+
+def discriminator_loss(real_logits, fake_logits):
+    """Discriminator wants D(real)→1, D(fake)→0."""
+    return (cross_entropy(tf.ones_like(real_logits),  real_logits) +
+            cross_entropy(tf.zeros_like(fake_logits), fake_logits))
+
+# ── Optimisers ────────────────────────────────────────────────────────────────
+gen_opt  = tf.keras.optimizers.Adam(LR_GEN,  beta_1=BETA_1)
+disc_opt = tf.keras.optimizers.Adam(LR_DISC, beta_1=BETA_1)
+
+# ── Single training step ──────────────────────────────────────────────────────
+@tf.function
+def train_step(real_batch, generator, discriminator):
+    noise = tf.random.normal([tf.shape(real_batch)[0], LATENT_DIM])
+    with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape:
+        fake_batch   = generator(noise, training=True)
+        real_logits  = discriminator(real_batch,  training=True)
+        fake_logits  = discriminator(fake_batch,  training=True)
+        g_loss = generator_loss(fake_logits)
+        d_loss = discriminator_loss(real_logits, fake_logits)
+    gen_opt.minimize(g_loss,  generator.trainable_variables,  tape=gen_tape)
+    disc_opt.minimize(d_loss, discriminator.trainable_variables, tape=disc_tape)
+    return g_loss, d_loss
+
+# ── Evaluation stub (plug in IS / FID from labs 7.14–7.15) ───────────────────
+def evaluate_is(generator, n_samples: int = 1000) -> float:
+    """Placeholder — returns a dummy IS.  Replace with lab 7.14 implementation."""
+    noise = tf.random.normal([n_samples, LATENT_DIM])
+    _     = generator(noise, training=False)   # warm up
+    return 1.0   # stub; real IS typically 1.0–11.0 depending on dataset
+
+# ── Training loop ─────────────────────────────────────────────────────────────
+if __name__ == '__main__':
+    # Synthetic 2-D mixture of Gaussians — replace with real dataset loader
+    real_data = tf.data.Dataset.from_tensor_slices(
+        np.random.randn(10_000, 2).astype('float32')
+    ).shuffle(10_000).batch(BATCH_SIZE)
+
+    G = build_generator(LATENT_DIM)
+    D = build_discriminator(2)
+
+    for epoch in range(1, EPOCHS + 1):
+        for real_batch in real_data:
+            g_loss, d_loss = train_step(real_batch, G, D)
+        if epoch % 10 == 0:
+            is_score = evaluate_is(G)
+            print(f"Epoch {epoch:3d}/{EPOCHS} | G={g_loss:.4f} | D={d_loss:.4f} | IS≈{is_score:.2f}")
+```
+
 ## Table of Contents
 1. [Lab 7.1: Basic GAN from Scratch](#lab-71-basic-gan-from-scratch)
 2. [Lab 7.2: GAN with Custom Loss Functions](#lab-72-gan-with-custom-loss-functions)
@@ -23,5 +155,57 @@ source: "lab-01-complete.md"
 12. [Lab 7.12: Spectral Normalization GAN](#lab-712-spectral-normalization-gan)
 13. [Lab 7.13: Inception Score (IS) Implementation](#lab-713-inception-score-is-implementation)
 14. [Lab 7.14: Frechet Inception Distance (FID) Implementation](#lab-714-frechet-inception-distance-fid-implementation)
+
+---
+
+## Expected Output
+
+Running the scaffold above with default settings (50 epochs, 2-D Gaussian data, LATENT_DIM=100) should produce:
+
+| Epoch | G Loss | D Loss | IS (stub) | Notes |
+|-------|--------|--------|-----------|-------|
+| 1 | 1.82 | 1.31 | 1.00 | Both networks random |
+| 10 | 1.43 | 0.98 | 1.00 | D gaining advantage |
+| 20 | 1.21 | 0.87 | 1.00 | G starts closing gap |
+| 30 | 0.97 | 0.91 | 1.00 | Near-equilibrium region |
+| 50 | 0.89 | 1.02 | 1.00 | Healthy G/D balance |
+
+```python
+# Validation assertions for the scaffold
+import tensorflow as tf, numpy as np
+
+G = build_generator(LATENT_DIM)
+D = build_discriminator(2)
+
+noise = tf.random.normal([8, LATENT_DIM])
+fake  = G(noise, training=False)
+assert fake.shape == (8, 2), f"Generator output shape wrong: {fake.shape}"
+
+logits = D(fake, training=False)
+assert logits.shape == (8, 1), f"Discriminator output shape wrong: {logits.shape}"
+
+# Losses are finite and in a reasonable range before training
+g_loss = generator_loss(logits)
+assert tf.math.is_finite(g_loss), "Generator loss is NaN/Inf before training"
+assert 0.0 < float(g_loss) < 5.0, f"Unexpected initial G loss: {g_loss:.4f}"
+print("Module 7 scaffold assertions passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|---------------|-----|
+| G loss instantly NaN | Learning rate too high or missing BN in G; gradient explodes on first step | Clip gradients (`clipnorm=1.0`), add `BatchNormalization` after every Dense/Conv layer in G, use LR 2e-4 |
+| D loss drops to 0 in < 5 epochs | D is much stronger than G; G receives vanishing gradients and never learns | Reduce D capacity by half, add label smoothing (`real_labels = 0.9`), or train G twice per D step |
+| Mode collapse at epoch 1 | Latent dimension too small or G output activation wrong (e.g., `relu` instead of `tanh`) | Set `LATENT_DIM >= 64`, verify last G layer uses `tanh`, inspect generated samples every 5 epochs |
+| Losses oscillate but never converge | `beta_1=0.9` (Keras default) causes momentum to accumulate across the shifting adversarial landscape | Set `beta_1=0.5` for both optimisers; switch to RMSprop for WGAN variants |
+| IS/FID stays at placeholder value | `evaluate_is` stub was not replaced with a real InceptionV3-based implementation | Wire in labs 7.14 and 7.15; ensure generated images are resized to 299×299 before feature extraction |
+
+## Stretch Goals
+
+1. **Replace the 2-D Gaussian dataset with a Swiss-roll distribution** (`sklearn.datasets.make_swiss_roll`) and visualize how well the generator recovers the manifold after 200 epochs. Compare coverage using the k-modes metric from lab 7.10.
+2. **Add an EMA (Exponential Moving Average) generator** — maintain a shadow copy of the generator's weights with momentum 0.999 and use it for sample generation. EMA generators produce noticeably smoother outputs than the live weights, especially in the early training phase. This technique is used in StyleGAN2 and BigGAN.
+3. **Implement self-attention** in both G and D (one `SelfAttention` layer at the 8×8 feature map level for image GANs) and observe whether the generator learns long-range dependencies faster on MNIST than the purely convolutional DCGAN.
+4. **Benchmark against a flow-based baseline** — train a RealNVP or Glow model on the same 2-D Gaussian data and compare log-likelihood, sample diversity, and wall-clock time. This provides a concrete reference point for why adversarial training can outperform likelihood-based models on perceptual quality while being harder to train.
 
 ---
