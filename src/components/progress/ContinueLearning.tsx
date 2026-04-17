@@ -17,6 +17,7 @@
  */
 
 import type React from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { useProgressStore } from "@/stores/progressStore";
@@ -62,9 +63,14 @@ function getNextAction(
 }
 
 export default function ContinueLearning() {
+  const [hasMounted, setHasMounted] = useState(false);
+  useEffect(() => { setHasMounted(true); }, []);
+
   const progressModules = useProgressStore((s) => s.modules);
   const isModuleComplete = useProgressStore((s) => s.isModuleComplete);
   const getModuleCompletionPercent = useProgressStore((s) => s.getModuleCompletionPercent);
+
+  if (!hasMounted) return null;
 
   // No progress at all → render nothing
   if (Object.keys(progressModules).length === 0) return null;

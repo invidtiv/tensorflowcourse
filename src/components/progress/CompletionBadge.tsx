@@ -11,6 +11,7 @@
  * isModuleComplete() in progressStore.
  */
 
+import { useState, useEffect } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useProgressStore } from "@/stores/progressStore";
 
@@ -20,9 +21,14 @@ interface Props {
 }
 
 export default function CompletionBadge({ moduleId, totalLabs }: Props) {
+  const [hasMounted, setHasMounted] = useState(false);
+  useEffect(() => { setHasMounted(true); }, []);
+
   const isComplete = useProgressStore((s) =>
     s.isModuleComplete(moduleId, totalLabs),
   );
+
+  if (!hasMounted) return null;
 
   return (
     <AnimatePresence>
