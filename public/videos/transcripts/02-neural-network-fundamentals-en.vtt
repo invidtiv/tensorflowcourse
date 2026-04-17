@@ -1,0 +1,93 @@
+WEBVTT
+Kind: captions
+Language: en
+
+NOTE
+Module 02 — Neural Network Fundamentals
+Scaffold transcript (slot 39 / cycle 7 — Video Delivery focus run, Apr 14 2026).
+Second real .vtt in public/videos/transcripts/ — exists to exercise the
+per-module transcript lookup path with > 1 file present, and to validate the
+VideoTranscript cue index builder when it has to route between siblings.
+Replace with Whisper output once the recorded lecture is available.
+Targets a ~7 minute lecture hook covering perceptron → activations → loss →
+backprop → Keras API preview.
+
+1
+00:00:00.000 --> 00:00:09.000
+Welcome to Module 02. Here we move from "what is deep learning" to "what is a neural network, mathematically, one neuron at a time."
+
+2
+00:00:09.000 --> 00:00:20.000
+Three things run this module: the perceptron, the activation function, and the loss function. Those three ingredients — plus backprop — are the entire machinery.
+
+3
+00:00:20.000 --> 00:00:32.000
+A perceptron is a weighted sum plus a bias, passed through a non-linearity. Written out: y equals sigma of w dot x plus b. That's it. Everything else is stacking and training.
+
+4
+00:00:32.000 --> 00:00:45.500
+Why the non-linearity matters: without it, stacking layers collapses to a single linear map. No matter how deep you go, you'd still only fit a hyperplane. Non-linearities buy you expressivity.
+
+5
+00:00:45.500 --> 00:00:58.000
+The universal approximation theorem says a network with one hidden layer and enough neurons can approximate any continuous function on a compact set. But "enough" may be astronomical — depth is what makes this tractable.
+
+6
+00:00:58.000 --> 00:01:12.000
+Activation choices: sigmoid and tanh saturate and kill gradients in deep nets. ReLU is the default — cheap, non-saturating on the positive side, but it can "die" when a neuron outputs zero forever. Leaky ReLU and GELU are the common fixes.
+
+7
+00:01:12.000 --> 00:01:25.000
+Softmax sits at the output of multi-class classifiers. It turns arbitrary logits into a probability simplex. Pair it with categorical cross-entropy, not MSE — the gradients are far better behaved.
+
+8
+00:01:25.000 --> 00:01:39.000
+Loss functions encode what "good" means. MSE for regression. Binary cross-entropy for two-class. Categorical cross-entropy for multi-class. Huber for outlier-robust regression. Your loss is your contract with the optimizer.
+
+9
+00:01:39.000 --> 00:01:54.000
+Backpropagation is not magic — it's the chain rule applied to a computation graph, cached so you don't redo shared work. Forward pass stores activations. Backward pass multiplies local Jacobians from the loss back to every parameter.
+
+10
+00:01:54.000 --> 00:02:08.000
+A practical mental model: every trainable tensor has a gradient. SGD updates it by minus learning rate times that gradient. Everything else — Adam, RMSProp, momentum — is a clever way to denoise or rescale that step.
+
+11
+00:02:08.000 --> 00:02:22.000
+In Keras the Sequential API is a straight stack — input, a few Dense layers, an output. It's the right tool for 80% of classification and regression problems.
+
+12
+00:02:22.000 --> 00:02:36.000
+The Functional API exposes the computation graph. You build layers as callable objects on tensors, and you can fork, merge, share weights. Use it for residual connections, multi-input or multi-output models, and anything non-linear in topology.
+
+13
+00:02:36.000 --> 00:02:50.000
+Subclassing Model gives you a custom call method and full imperative control. Reach for it only when Functional cannot express your topology — custom dynamic behavior, autoregressive decoders, meta-learning.
+
+14
+00:02:50.000 --> 00:03:05.000
+Normalization layers — BatchNorm, LayerNorm — stabilize training by reparameterizing activations. BatchNorm across the batch dimension, LayerNorm across the feature dimension. LayerNorm is the sequence-model default because it doesn't depend on batch size.
+
+15
+00:03:05.000 --> 00:03:20.000
+Weight initialization matters more than beginners expect. Glorot for tanh-family activations, He for ReLU-family. Bad init can make deep networks refuse to train at all.
+
+16
+00:03:20.000 --> 00:03:35.000
+The custom training loop. Keras gives you model.fit for the common case, but GradientTape lets you write the forward-loss-backward-update dance yourself. That's the door to GANs, reinforcement learning, and research work.
+
+17
+00:03:35.000 --> 00:03:50.000
+The three checks before you trust a trained network: training loss decreased, validation loss didn't explode, the predictions pass a sanity baseline. Skip these and you will ship bugs that look like models.
+
+18
+00:03:50.000 --> 00:04:05.000
+Common first-network bugs: forgetting to normalize inputs, using the wrong loss for the task, mismatched output layer shape, and confusing logits with probabilities when computing cross-entropy.
+
+19
+00:04:05.000 --> 00:04:20.000
+The labs for this module walk you through each piece. You'll hand-code backprop on a two-layer net before touching Keras. That one exercise pays for the rest of the course.
+
+20
+00:04:20.000 --> 00:04:35.000
+Next module we move from fully-connected networks to convolutional networks — the architecture that first let deep learning dominate computer vision. See you there.

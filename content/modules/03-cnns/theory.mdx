@@ -99,6 +99,12 @@ Input I:          Kernel K:
 The convolution at position (0,0) with no padding:
 $$(I * K)[0,0] = 1 \cdot a + 2 \cdot b + 5 \cdot c + 6 \cdot d$$
 
+<Callout type="tip" title="Interactive Demo — Convolution Explorer">
+Step through a 2D convolution in real time. Select a preset kernel (edge detect, sharpen, box blur, Sobel X) or enter your own weights, adjust stride and padding, then watch the kernel slide over the input grid and build the output feature map one cell at a time. Click any input cell to toggle its value.
+</Callout>
+
+<ConvolutionViz />
+
 ### 1.1.3 3D Convolution for Volumetric Data and Video
 
 For 3D data (e.g., video with time dimension, volumetric medical images, or RGB images treated as 3D):

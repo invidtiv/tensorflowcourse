@@ -339,6 +339,32 @@
         }
       ],
       "explanation": "The key difference is in the exponent bits: FP16 uses 5 exponent bits (range ~6×10⁻⁸ to 65504), while BF16 uses 8 exponent bits — the same as FP32 (range ~10⁻³⁸ to 10³⁸). This means BF16 can represent the same magnitude of small gradients that FP32 can, eliminating the underflow problem that makes loss scaling mandatory for FP16. The trade-off is precision: BF16 has only 7 mantissa bits (~2 decimal digits) vs FP16's 10 mantissa bits (~3 decimal digits), but deep learning is robust to this because stochastic gradient noise already dominates. In Keras: `tf.keras.mixed_precision.set_global_policy('mixed_bfloat16')` — no `LossScaleOptimizer` wrapping required. FP16 remains useful when BF16 hardware support is absent (older GPUs)."
+    },
+    {
+      "id": "m4-q14",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "Learning Rate Finder",
+      "question": "You run an LR-range test (Leslie Smith) and set your production learning rate to the LR at which loss reached its minimum. Training immediately diverges. What is the most likely cause?",
+      "options": [
+        {
+          "text": "The loss-minimum LR sits on the edge of the divergence cliff; Smith's rule recommends using roughly an order of magnitude lower (`lr_min / 10`) as a stable operating point",
+          "correct": true
+        },
+        {
+          "text": "LR-range tests are only valid for SGD; Adam requires a completely different procedure",
+          "correct": false
+        },
+        {
+          "text": "You must anneal the LR to zero after the sweep; using a flat LR after a range test always diverges",
+          "correct": false
+        },
+        {
+          "text": "The range test returns the LR in log-space and must be exponentiated before use",
+          "correct": false
+        }
+      ],
+      "explanation": "The LR-range test plots loss vs. an exponentially increasing LR. The loss-minimum point is where the optimizer is *already on the verge of blowing up* — step size just big enough to still shrink loss, but any noise pushes it over the edge. Smith's published heuristic is to pick an LR about 10× smaller than the loss-minimum LR (equivalently: the point of steepest *negative* slope on the log-LR vs loss curve). Other distractors: the test works for any optimizer (though the *value* shifts — Adam typically wants ~10–100× smaller LR than SGD); a flat LR after the test is fine and is exactly what single-cycle training uses; and the returned value is already in linear LR units, not log-space."
     }
   ]
 }

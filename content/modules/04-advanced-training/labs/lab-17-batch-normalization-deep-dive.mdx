@@ -129,3 +129,121 @@ results = analyze_batch_size_effect()
 ```
 
 ---
+
+## Expected Output
+
+### 1. CustomBatchNorm — Shape Invariants
+
+| Input shape | Output shape | Notes |
+|---|---|---|
+| `(batch, features)` | `(batch, features)` | Normalizes across axis=0 (batch axis) per feature |
+| `(32, 128)` | `(32, 128)` | gamma/beta shapes: `(128,)` each |
+| `(1, 128)` — inference | `(1, 128)` | Uses moving_mean / moving_var — no batch stats needed |
+
+The `gamma` weight is initialized to **1.0** (identity scale) and `beta` to **0.0** (zero shift), so the very first forward pass outputs approximately zero-mean, unit-variance activations before learning adjusts them.
+
+### 2. Moving Statistics Convergence
+
+After training for several epochs on a large dataset, the `moving_mean` and `moving_var` buffers should converge close to the true per-feature statistics of the training set. With `momentum=0.99` (slow EMA), convergence takes more steps than PyTorch's default of `0.1`. Expect:
+
+```
+Epoch 1, batch 0:   moving_mean ≈ 0.0     (initial — dominated by zeros)
+Epoch 1, batch 50:  moving_mean ≈ 0.003   (slowly updating)
+Epoch 5, batch 390: moving_mean ≈ true μ  (≈ converged for most features)
+```
+
+> **Note:** Keras `BatchNormalization` uses `momentum=0.99` by default (slow update). PyTorch's `BatchNorm2d` uses `momentum=0.1` (fast update — effectively 10× more aggressive). If you port a PyTorch model to Keras and see stale moving stats, this is why.
+
+### 3. Batch Size Comparison — Expected Accuracy Ranges (CIFAR-10, 20 epochs)
+
+| Batch size | Expected val_accuracy (20 ep) | Typical train-val gap | Notes |
+|---|---|---|---|
+| 8 | 0.55 – 0.65 | wide (0.10–0.20) | Noisy BN stats degrade training |
+| 16 | 0.60 – 0.68 | moderate | Still noisy; EMA updates are volatile |
+| 32 | 0.65 – 0.72 | moderate | Sweet spot lower bound |
+| 64 | 0.68 – 0.74 | small | Common default; good BN stability |
+| 128 | 0.69 – 0.75 | small | Near-optimal for this architecture |
+| 256 | 0.68 – 0.74 | very small | May slightly underfit; LR often needs scaling |
+
+> **If your bs=8 accuracy is below 0.50:** the small-batch BN statistics are too noisy. Try replacing `BatchNormalization` with `LayerNormalization` for small-batch regimes. If bs=256 underperforms bs=128 significantly (>3%), consider the linear LR scaling rule: multiply LR by `bs_new / bs_reference`.
+
+### 4. Console Progress Invariants
+
+Each `Training with batch size: N` block should print a test accuracy line. A healthy run looks like:
+
+```
+Training with batch size: 8
+  Test Accuracy: 0.6124
+Training with batch size: 16
+  Test Accuracy: 0.6448
+...
+Training with batch size: 128
+  Test Accuracy: 0.7213
+Training with batch size: 256
+  Test Accuracy: 0.7155
+```
+
+The accuracy should form a concave curve peaking around bs=64–128, then declining slightly for bs=256 due to sharp minima effects (Keskar et al., 2017).
+
+---
+
+## Common Pitfalls
+
+### 1. `training=None` Silently Runs in Inference Mode
+
+The `call(inputs, training=None)` signature uses Python truthiness: `if training:` is `False` when `training` is `None`. This means if you call `layer(x)` without specifying the training flag (as happens in pure eager Python scripts outside Keras model training), the layer silently uses moving statistics — even during what you intend to be a training forward pass. This is particularly dangerous when you manually call `model(x)` in a custom training loop without `training=True`.
+
+**Fix:** Always pass `training=True` in custom loops:
+```python
+# ❌ Uses inference stats silently
+logits = model(x_batch)
+
+# ✅ Uses batch stats correctly
+logits = model(x_batch, training=True)
+```
+
+### 2. Forgetting to Freeze BN During Fine-Tuning
+
+When you load a pretrained model and freeze its layers for fine-tuning, Keras's `model.trainable = False` does NOT stop `BatchNormalization` layers from updating their moving stats — it only stops gradient updates to gamma/beta. The moving stats continue updating via `assign` inside `call`. On a small fine-tuning dataset this corrupts the pretrained statistics and degrades accuracy.
+
+**Fix:** Explicitly set BN layers to inference mode:
+```python
+for layer in base_model.layers:
+    if isinstance(layer, tf.keras.layers.BatchNormalization):
+        layer.trainable = False
+# Then call with training=False during fine-tuning
+```
+
+### 3. Small Batch Sizes Degrade BN Quality
+
+With `bs=8` on CIFAR-10 (3072 features per image), each mini-batch mean and variance is computed from only 8 samples — extremely noisy estimates. The resulting normalized activations have high variance, making optimization erratic. The `moving_mean` EMA also takes much longer to stabilize because each update incorporates noisy batch statistics.
+
+**Diagnostic:** If val_accuracy at bs=8 is more than 10 percentage points below bs=64, it's a BN issue — not a learning rate issue.
+
+### 4. Keras BN Momentum ≠ PyTorch BN Momentum
+
+Keras `BatchNormalization(momentum=0.99)` means: `moving_mean = 0.99 * moving_mean + 0.01 * batch_mean`. PyTorch `BatchNorm2d(momentum=0.1)` means: `running_mean = 0.1 * batch_mean + 0.9 * running_mean`. Despite the reversed naming convention, PyTorch's default is effectively a **10× faster** EMA update. If you reproduce a PyTorch paper result in Keras and the moving stats converge slowly, set `momentum=0.9` (Keras) to match PyTorch's default behavior.
+
+### 5. BN Placement — Before or After Activation?
+
+The original BN paper (Ioffe & Szegedy, 2015) places BN **before** the activation: `Conv → BN → ReLU`. However, several follow-up studies find that **post-activation BN** (`Conv → ReLU → BN`) can work equally well or better for residual networks, because ReLU's non-negative output violates the Gaussian assumption that BN was designed for. The code in this lab uses the original pre-activation order (correct for the original paper). Switching to post-activation is a valid experiment but inconsistently supported across architectures.
+
+---
+
+## Stretch Goals
+
+### 1. Replace BN with Layer Normalization at Small Batch Sizes
+Replace `tf.keras.layers.BatchNormalization()` with `tf.keras.layers.LayerNormalization()` in `create_model()` and re-run the experiment for bs ∈ {8, 16, 32}. You should observe that LayerNorm no longer degrades at small batch sizes because it normalizes across features (not across the batch). Report the crossover point where BN starts outperforming LN.
+
+### 2. Visualize Internal Covariate Shift
+Build an intermediate-output model using `tf.keras.Model(inputs, outputs=[layer.output for layer in model.layers])`. After each epoch, extract activations on a fixed 256-sample validation batch and plot histograms of the first two BN layers' outputs. Observe how the distribution stabilizes across epochs — this directly demonstrates BN's internal covariate shift suppression.
+
+### 3. Virtual Batch Normalization (VBN)
+Implement VBN for small-batch stability: cache a reference batch of 256 samples at the start of training. During each forward pass, compute BN statistics by concatenating `[reference_batch, current_batch]` then apply the resulting normalization to `current_batch` only. Compare train/val curves for bs=8 with standard BN vs VBN.
+
+### 4. Batch Size Warm-up Strategy
+Implement progressive batch size scaling: start with bs=16 for the first 5 epochs, then increase to bs=64 for epochs 6–15, then bs=256 for the final 5 epochs. Compare against a fixed bs=64 baseline. This strategy stabilizes early BN statistics when the model is randomly initialized and is common in large-scale training recipes (e.g., LLRD + batch warm-up).
+
+### 5. Compare BN vs GN vs LN vs IN on Same Architecture
+Modify `create_model()` to accept a `norm_type` argument and implement Group Normalization (8 groups) and Instance Normalization alongside BN and LN. Run the full batch size sweep for each normalization type and produce a heatmap of `(norm_type × batch_size) → test_accuracy`. This replicates the core finding of Wu & He (2018) in a compact experiment.
+

@@ -339,6 +339,32 @@
         }
       ],
       "explanation": "CNNs encode two strong inductive biases: locality (each filter sees a small spatial region) and translation equivariance (the same filter is applied everywhere). ViT has neither — it treats patch embeddings as an unordered set (modulo positional embeddings). Dosovitskiy et al. (2020) showed that without these biases, ViT needs ~10–100× more training data to match CNN accuracy. On large datasets (JFT-300M, LAION-5B) ViT excels, but on ImageNet-1K alone it underperforms well-tuned ResNets. This is why DeiT (Touvron et al., 2021) introduced distillation and strong augmentation to make ViT competitive at smaller data scales."
+    },
+    {
+      "id": "m3-q14",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Grad-CAM / Feature Visualization",
+      "question": "You implement Grad-CAM for a VGG16 classifier and the resulting heatmaps are nearly identical across very different target classes. What is the MOST likely cause?",
+      "options": [
+        {
+          "text": "You are computing gradients with respect to post-softmax probabilities instead of pre-softmax logits, so gradients vanish as the top class saturates near 1.0 and carry almost no class-specific signal",
+          "correct": true
+        },
+        {
+          "text": "VGG16 does not support gradient computation with tf.GradientTape and requires a custom autograd implementation",
+          "correct": false
+        },
+        {
+          "text": "Grad-CAM is inherently class-agnostic; all classes produce the same heatmap because it uses only forward activations",
+          "correct": false
+        },
+        {
+          "text": "You forgot to apply cv2.INTER_CUBIC during upsampling, which collapses the heatmap into a uniform image",
+          "correct": false
+        }
+      ],
+      "explanation": "Grad-CAM weights each feature-map channel by ∂y_c/∂A_k, where y_c is the score for the target class. Once softmax saturates, ∂softmax_c/∂logit_j ≈ 0 for the top class, so gradients become tiny and dominated by numerical noise — every class yields essentially the same weights. The fix is to take gradients of the pre-softmax logit (either rebuild the model with activation=None on the final layer, or grab the `Dense` pre-activation directly). The other options are wrong: VGG16 works fine with GradientTape; Grad-CAM is explicitly class-conditional (that's the whole point); and interpolation choice affects sharpness but not class discriminability."
     }
   ]
 }

@@ -339,6 +339,32 @@
         }
       ],
       "explanation": "As the dilation rate increases, the effective number of kernel weights that fall on valid feature map locations decreases — at extreme rates, a 3×3 atrous convolution degenerates toward a 1×1 convolution (the 'gridding problem'). This means the highest-rate branches in ASPP may not effectively capture the global context they're designed for. The image-level global average pooling branch addresses this by collapsing the entire feature map into a single vector (then upsampled back), providing a guaranteed global context signal regardless of dilation artifacts. Chen et al. (2017) showed this branch contributes 0.5–1.0% mIoU improvement on PASCAL VOC 2012, confirming that explicit global features complement the multi-scale atrous branches."
+    },
+    {
+      "id": "m5-q14",
+      "type": "multiple-choice",
+      "difficulty": "hard",
+      "topic": "Loss Functions — Dice degeneracy",
+      "question": "A student's Dice-loss implementation produces `NaN` gradients on the very first epoch whenever a batch happens to contain a sample whose ground-truth mask is entirely background (all zeros). The prediction for that sample is also near-zero everywhere. Which fix addresses the root cause, and why do simple class weights NOT fix it?",
+      "options": [
+        {
+          "text": "Switch from `sigmoid` to `softmax` activation on the output layer — Dice requires mutually exclusive class probabilities to be well-defined",
+          "correct": false
+        },
+        {
+          "text": "Add a smoothing constant ε to both numerator and denominator of the Dice formula: `(2·|A∩B| + ε) / (|A|+|B| + ε)`. The NaN comes from 0/0 when both masks are empty; class weights only scale a finite loss, they cannot rescue a 0/0 division",
+          "correct": true
+        },
+        {
+          "text": "Apply class weights with a 10× multiplier on the foreground class — this forces the network away from all-zero predictions and eliminates empty-mask batches",
+          "correct": false
+        },
+        {
+          "text": "Clip predictions to [1e-7, 1-1e-7] before computing Dice — this is the standard BCE-logit-stability trick applied to Dice",
+          "correct": false
+        }
+      ],
+      "explanation": "The failure is a division-by-zero: when both `y_true` and `y_pred` are all zeros for a sample, the Dice numerator `2·Σ(y_true·y_pred)` and denominator `Σy_true + Σy_pred` are both exactly 0, so the loss evaluates to 0/0 = NaN and propagates through `tf.GradientTape`. The canonical fix is a Laplace-style smoothing constant on both numerator and denominator (`ε = 1.0` for per-image Dice, or `1e-6` for tiny ROIs) — this makes the loss equal 0 on empty-empty matches (an intuitively correct, gradient-friendly answer) while leaving non-empty cases essentially unchanged. Class weights scale a finite loss by a scalar and do not touch the division; they cannot produce a finite result from 0/0. Clipping predictions helps with log-space instabilities in BCE but does nothing for Dice's structural zero-denominator case. Switching to softmax is orthogonal to the issue and would break a binary-sigmoid model. This pitfall is the #1 cause of first-epoch NaNs in medical-imaging segmentation code."
     }
   ]
 }

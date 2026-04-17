@@ -5,7 +5,10 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build --webpack",
-    "start": "next start"
+    "start": "next start",
+    "check:transcripts": "node scripts/check-transcripts.mjs",
+    "check:transcripts:strict": "node scripts/check-transcripts.mjs --strict",
+    "prebuild": "node scripts/check-transcripts.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",

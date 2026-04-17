@@ -19,6 +19,7 @@
   "icon": "palette",
   "color": "#10b981",
   "videoId": "nDPWywWRIRo",
+  "transcriptUrl": "/videos/transcripts/05-semantic-segmentation-en.vtt",
   "videoCaptions": [
     {
       "src": "/videos/captions/05-semantic-segmentation-en.vtt",

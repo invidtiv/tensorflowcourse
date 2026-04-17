@@ -2,6 +2,84 @@
 
 ---
 
+## April 14, 2026 — Automated hourly check-in (Run 3 — VIDEO FOCUS)
+**Previous report:** April 12, 2026 (Run 2)
+
+### TL;DR
+
+This is the first **Video Delivery focus run**. Key wins: scaffolded `public/videos/README.md` with production guidelines and directory conventions, added `prefers-reduced-motion` accessibility support to `VideoEmbed.tsx` (disables hover scale animation and loading spinner when user prefers reduced motion), verified the "watched" tick on ModuleCard is already fully wired (was still marked incomplete in TODO — now checked off), and updated 6 stale TODO.md items to reflect actual completion state. Content audit of **Module 03 (CNNs)** found excellent 1368-line theory, 13 quiz questions (3 easy, 5 medium, 4 hard + 1 extra ID gap m3-q13), 15 labs, and a "Common Misconceptions" callout already in place. No content edits needed — module 03 is strong. Build fails in sandbox due to virtiofs EPERM (expected, not a code issue). ProgressDashboard, CompletionBadge, and ContinueLearning components are confirmed still missing (Phase 4 gaps).
+
+### Changes landed this run
+
+| File | Edit |
+|------|------|
+| `public/videos/README.md` | **Created** — documents directory structure, self-hosting workflow, production guidelines per Plan §5.2, git-lfs advisory |
+| `src/components/content/VideoEmbed.tsx` | Added `prefers-reduced-motion` support: `useEffect` media query listener, conditionally disables `group-hover:scale-110 transition-all` on play button and `animate-spin` on loading spinner |
+| `TODO.md` | Checked off 6 items: "watched" tick on module card, captions toggle, playback speed selector, prefers-reduced-motion, videoId 10/10 population, updated completion notes |
+
+### Content audit: module 03 (lighter — video focus run)
+
+**Theory (theory.mdx, 1368 lines):** Comprehensive 10-part coverage: convolution math (1D/2D, stride, padding, dilation), receptive field theory, parameter sharing / sparse connectivity, feature hierarchy, architecture evolution (LeNet → AlexNet → VGG → Inception → ResNet → DenseNet → EfficientNet → ViT → ConvNeXt), transfer learning, regularization, and a mathematical appendix with backprop derivations. Has `<VideoEmbed>`, `<Callout>`, KaTeX math (80+ formulas), 30+ tables. "Common Misconceptions" callout already present (line 1237). References section cites 9 foundational papers and 3 textbooks. Quality: excellent — no edits needed.
+
+**Quiz (quiz.json, 13 questions):** Exceeds ≥8 target. Difficulty mix: 3 easy, 5 medium, 4 hard. Topics span convolution basics, cross-correlation, receptive fields, dilated convolution, translation invariance, parameter counting, 1×1 convolutions, transfer learning pitfalls, GAP, ResNet degradation, depthwise separable convolutions, transposed convolutions, ViT vs CNNs. Note: question IDs skip from m3-q11 to m3-q13 before m3-q12 — cosmetic ordering issue only, not functional. Explanations are substantive. Quality: excellent.
+
+**Labs (15 files):** Good volume and coverage: convolution from scratch (parts 1-2), LeNet-5, CIFAR-10 custom CNN, ResNet blocks, architecture comparison, filter/feature map visualization, Grad-CAM, VGG16/ResNet50 transfer learning, fine-tuning, data augmentation. Lab-01 is an overview/index page (not a real lab) — similar pattern to other modules. No generic title issues found.
+
+**Weaknesses (not fixed — propose):** (a) No labs have explicit stretch goals or bonus challenges, (b) no `requirements.txt` or TF version pins in labs, (c) lab-01 overview could link individual labs more cleanly.
+
+**Next rotation slot:** module 04
+
+### Video Delivery status (Point 5) — FOCUS RUN
+
+| Aspect | State | Δ this run |
+|--------|-------|------------|
+| `VideoEmbed.tsx` component | **Complete** | +prefers-reduced-motion |
+| MDX registration | **Complete** | — |
+| `ModuleMeta` type (videoId, videoUrl) | **Complete** | — |
+| Module _meta.json coverage | **Complete** — 10/10 | — |
+| Theory MDX `<VideoEmbed>` usage | **Complete** — all 10 | — |
+| `public/videos/README.md` | **Created** | new |
+| Caption stubs (.vtt) | **Complete** — 10/10 | — |
+| MP4 / self-hosted | No videos yet | — |
+| Progress tracking (videoWatched) | **Complete** | — |
+| "Watched" tick on ModuleCard | **Complete** | was unchecked in TODO |
+| Captions toggle (CC button) | **Complete** | was unchecked in TODO |
+| Playback speed selector | **Complete** | was unchecked in TODO |
+| `prefers-reduced-motion` | **Complete** | new |
+| Keyboard focus ring on facade | Inherited from button | verify dark theme (TODO) |
+| Module-complete condition | **Not implemented** | needs ProgressDashboard |
+| This WAS a video focus run | ✅ | — |
+
+**Video Delivery overall: ~70% (was ~55%).** All infrastructure is built. Remaining: (a) actual video recording/sourcing (real MP4s or final YouTube IDs), (b) real `.vtt` captions from Whisper, (c) keyboard focus ring verification, (d) module-complete condition gating (needs Phase 4 components), (e) picture-in-picture nice-to-have.
+
+### Phase rollup
+
+| Phase | Description | Progress | Δ since Run 2 |
+|-------|-------------|----------|----------------|
+| 1 | Foundation | ✅ ~95% | — |
+| 2 | Content System | ✅ ~95% | — |
+| 3 | Page Routes | ✅ ~85% | — |
+| 4 | Interactive (quiz, progress) | 🟡 ~70% | — (ProgressDashboard, CompletionBadge, ContinueLearning still missing) |
+| 5 | Polish (animations, responsive) | 🟡 ~40% | — |
+| 6 | Deployment | 🟡 ~40% | — |
+| 7 | Video Delivery (Point 5) | 🟢 ~70% | +15% (README, prefers-reduced-motion, TODO cleanup, watched tick confirmed) |
+
+**Overall: ~79% (was ~77% in Run 2).** Video delivery infrastructure is now essentially complete; remaining work is content creation (recordings) and Phase 4 integration.
+
+### Top 3 priorities for next run (Run 4 — content focus)
+
+1. **Content audit module 04 (Advanced Training):** Full depth check on theory, quiz (≥8 questions), labs. Add Common Misconceptions callout if missing.
+2. **Phase 4 gap — ProgressDashboard:** This is the largest remaining interactive feature gap. Scope it: what stats to show, where it lives in the nav/layout.
+3. **CompletionBadge + ContinueLearning:** Design and stub these components to close Phase 4.
+
+### Blockers / input needed from Tiago
+
+1. **Build in sandbox:** `next build` fails with `EPERM: operation not permitted, unlink .next/BUILD_ID` — this is the virtiofs ACL issue from the Cowork sandbox. Not a code bug; real builds work from Tiago's host shell.
+2. **Video recordings:** All video infrastructure is built and wired. The bottleneck is now content creation — real MP4 recordings or final YouTube lecture IDs. Tiago: any timeline on recording the first module lecture?
+3. **Module-complete condition:** The TODO has "Module-complete condition: theory read + video watched + quiz passed" but ProgressDashboard/CompletionBadge don't exist yet. Should I scaffold these on the next content focus run?
+
+---
+
 ## April 12, 2026 — Automated hourly check-in (Run 2)
 **Previous report:** April 12, 2026 (Run 1)
 

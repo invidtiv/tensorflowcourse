@@ -339,6 +339,32 @@
         }
       ],
       "explanation": "The truncation trick trades diversity for quality at inference time (it does not affect training — option C is wrong). A smaller ψ constrains z closer to the origin where the generator has seen the most training signal, producing higher-fidelity but less varied samples. A larger ψ allows exploration of the latent space periphery, increasing diversity but risking artifacts. This is a post-hoc inference-time control — the BigGAN paper showed that IS improves monotonically as ψ decreases, while FID has a sweet spot (too low ψ hurts FID due to lost diversity). Option D is wrong because the truncation trick operates at inference, not during adversarial training."
+    },
+    {
+      "id": "m7-q14",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Image-to-Image Translation",
+      "question": "CycleGAN enables unpaired image-to-image translation (e.g., horse → zebra) without aligned training pairs. What is the key architectural mechanism that makes this possible?",
+      "options": [
+        {
+          "text": "A single generator with a domain label fed as an extra input channel",
+          "correct": false
+        },
+        {
+          "text": "Two generator-discriminator pairs with a cycle-consistency loss that enforces F(G(x)) ≈ x and G(F(y)) ≈ y",
+          "correct": true
+        },
+        {
+          "text": "A shared encoder with two separate decoders, one per domain",
+          "correct": false
+        },
+        {
+          "text": "A pre-trained classifier that provides domain labels as supervision",
+          "correct": false
+        }
+      ],
+      "explanation": "CycleGAN (Zhu et al., 2017) uses two generators (G: X→Y, F: Y→X) and two discriminators (D_X, D_Y). The cycle-consistency loss enforces round-trip reconstruction: translating from domain X to Y and back should recover the original image. This constraint replaces the need for paired training data (as in Pix2Pix) by ensuring the mappings preserve content while changing style. Option A describes StarGAN's approach to multi-domain translation. Option C describes a shared-encoder architecture (like UNIT). Option D would require labeled pairs, defeating the purpose of unpaired translation."
     }
   ]
 }

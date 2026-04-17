@@ -1,0 +1,81 @@
+WEBVTT
+Kind: captions
+Language: en
+
+NOTE
+Module 07 — Generative Adversarial Networks
+Scaffold transcript (slot 54 / Video Delivery focus run, Apr 15 2026).
+Seventh real .vtt in public/videos/transcripts/ — advances coverage to
+7/10 modules. Targets a ~4.5 minute lecture covering the adversarial
+game, the minimax objective, mode collapse, DCGAN architectural
+guidelines, conditional GANs, Wasserstein GAN with gradient penalty,
+StyleGAN's style-based generator, and evaluation via IS and FID.
+Replace with Whisper output once the recorded lecture is available.
+
+1
+00:00:00.000 --> 00:00:14.000
+Welcome to Module 07. Until now every model we trained was discriminative — given an input, predict a label. Generative modeling flips the question: given the data, learn to sample from the same distribution. GANs do this through a game. Two networks — a generator and a discriminator — train against each other, and neither one has access to an explicit likelihood. The magic is that the equilibrium of the game is exactly the data distribution.
+
+2
+00:00:14.000 --> 00:00:29.000
+The generator G takes a noise vector z sampled from a simple prior — typically a standard normal or uniform — and maps it to a synthetic sample. The discriminator D takes a sample, real or fake, and outputs the probability it came from the data. D wants to classify correctly; G wants to fool D. Neither sees a likelihood, neither sees a reconstruction loss — the only supervision is the discriminator's verdict flowing back through the generator by gradient.
+
+3
+00:00:29.000 --> 00:00:45.000
+The original minimax objective from Goodfellow's 2014 paper is simple to write and awkward to optimize. We want to maximize over D and minimize over G the expectation of log D of real plus log one minus D of G of z. In theory the global optimum has D equal to one half everywhere and G matching the data distribution. In practice the generator gradient saturates early — when D easily rejects G's samples, the log one minus D term has tiny gradient — so we use the non-saturating variant instead: G maximizes log D of G of z.
+
+4
+00:00:45.000 --> 00:01:01.000
+Training is a two-step loop. Sample a batch of real images and a batch of noise vectors, generate fakes, update D by one gradient step on the binary cross-entropy loss, then update G by one step pushing D's fake-prediction toward one. The ratio of D-steps to G-steps is a hyperparameter — usually one-to-one, sometimes five-to-one for Wasserstein variants. If you ever see the D loss collapse to near-zero, D has won the game and G will stop learning — that's the signature failure mode.
+
+5
+00:01:01.000 --> 00:01:17.000
+Mode collapse is the other signature failure. The generator discovers one or a handful of outputs that fool the discriminator and stops exploring. You'll see it in the samples — the same face over and over, or CIFAR-10 generating only frogs. The usual diagnostics are per-class coverage statistics on a labeled dataset, nearest-neighbor distance in feature space, or direct FID evaluation. Fixes range from architectural — adding minibatch discrimination — to objective-based, which is where Wasserstein GANs earn their keep.
+
+6
+00:01:17.000 --> 00:01:33.000
+DCGAN — Radford, Metz, Chintala, 2015 — was the first recipe that produced consistently believable images. The rules are specific: replace all pooling with strided and fractionally-strided convolutions, use batch normalization in both G and D except the G output and D input layers, remove fully-connected hidden layers, use ReLU in G with tanh at the output, and LeakyReLU in D. The Adam optimizer with learning rate 0.0002 and beta_1 at 0.5 instead of the usual 0.9 completes the recipe. Follow it — deviations usually hurt.
+
+7
+00:01:33.000 --> 00:01:49.000
+Conditional GANs extend both networks with a label. The generator takes the noise plus a one-hot class vector, the discriminator takes the image plus the same label, and training proceeds identically. Now G can sample class-conditional — generate only sevens, or only dogs — and the label signal stabilizes training by giving G a structured task. Auxiliary-classifier GANs go further: the discriminator predicts the class too, and the generator is penalized when its samples are unclassifiable.
+
+8
+00:01:49.000 --> 00:02:05.000
+Wasserstein GAN reframed the objective around Earth Mover's distance instead of Jensen-Shannon divergence. The critical insight: JS divergence is flat or undefined when the two distributions don't overlap, so gradients vanish. Wasserstein distance is smooth in that regime. The WGAN loss replaces log probabilities with raw scores — D becomes a critic, not a classifier — and requires the critic to be 1-Lipschitz. The original paper enforced this by weight clipping, which was fragile.
+
+9
+00:02:05.000 --> 00:02:21.000
+WGAN-GP — Gulrajani et al., 2017 — replaced weight clipping with a gradient penalty. You sample points on straight lines between real and fake examples, compute the critic's gradient with respect to those interpolated inputs, and add a penalty that pushes the gradient norm toward one. The penalty coefficient lambda is usually 10. This one change makes training dramatically more stable, removes most mode-collapse episodes, and has become the default for anyone training a GAN from scratch today.
+
+10
+00:02:21.000 --> 00:02:37.000
+StyleGAN — Karras et al., 2019 — reorganized the generator around the idea of style. Instead of feeding the noise directly into a stack of transposed convs, a mapping network turns z into an intermediate latent w. That w is injected at every resolution via adaptive instance normalization, controlling per-layer statistics of the feature maps. Coarse layers control pose and large-scale structure, mid layers control identity, fine layers control textures. The disentanglement is strong enough that you can do style mixing across two latents and get coherent results.
+
+11
+00:02:37.000 --> 00:02:53.000
+StyleGAN2 and StyleGAN3 refined the recipe — weight demodulation replaced AdaIN to remove characteristic artifacts, path-length regularization smoothed the latent space, and StyleGAN3 fixed aliasing by making every layer translation-equivariant. These are the models behind the "this person does not exist" demos. On the academic side they're also the reference point for disentanglement and latent-space editing research.
+
+12
+00:02:53.000 --> 00:03:09.000
+Evaluation is harder than it looks. Inception Score — IS — runs a pretrained Inception-V3 on samples and measures the KL divergence between the per-sample class distribution and the marginal. High IS means samples are confident and diverse. The problem: IS is blind to whether samples match the data distribution at all — a GAN that only generates a few perfect ImageNet classes scores well. Report IS but never alone.
+
+13
+00:03:09.000 --> 00:03:25.000
+Fréchet Inception Distance — FID — is the default today. Run Inception-V3 on real and generated samples, take the pool-3 features, fit a Gaussian to each set, then compute the Fréchet distance between the two Gaussians. Lower is better, zero is identical. FID catches mode collapse because a collapsed generator's feature mean and covariance drift from the reals. Standard practice is 50,000 samples; smaller counts have high variance and comparisons across papers with different sample sizes are meaningless.
+
+14
+00:03:25.000 --> 00:03:41.000
+Common training pitfalls worth calling out. First, normalization mismatch: if your real images are in [-1, 1] but your generator outputs sigmoid in [0, 1], D learns to classify by range alone and G never catches up — always verify the ranges match. Second, BatchNorm in the discriminator mixes statistics across real and fake batches and leaks information — use LayerNorm or InstanceNorm in WGAN-GP critics. Third, forgetting to detach the generator's output when updating D will back-propagate into G on the wrong step.
+
+15
+00:03:41.000 --> 00:03:57.000
+The labs walk this stack in order. Start with a one-dimensional toy GAN — a generator learning to fit a mixture of Gaussians — where you can plot the full density and see mode collapse happen in real time. Move to DCGAN on MNIST and CIFAR-10. Add conditioning. Swap the objective for WGAN-GP and observe the stability difference. Finally, load a pretrained StyleGAN2 checkpoint and explore latent-space interpolation and style mixing without retraining.
+
+16
+00:03:57.000 --> 00:04:13.000
+Two meta-pitfalls for the labs. First, don't trust samples at epoch one hundred — always compute FID on a held-out pool of 10,000 samples before declaring the run "done". Visual cherry-picking lies. Second, GANs are stochastic; a seed that looks great at one batch size may collapse at another. Fix the seed, fix the batch size, and log the FID every N epochs so you can spot a regression the moment it starts.
+
+17
+00:04:13.000 --> 00:04:27.000
+That's generative adversarial networks. A minimax game, a non-saturating generator loss, Wasserstein distance with a gradient penalty for stability, DCGAN's architectural rules as a baseline, style-based generators for disentangled control, and FID as the scoring metric that actually correlates with sample quality. Module 08 moves to a very different generative paradigm — language modeling with Transformers. Onward.

@@ -339,6 +339,32 @@
         }
       ],
       "explanation": "A VAR(p) model with K variables has K²p + K parameters (K equations, each with Kp lagged regressors plus an intercept). As K grows, the parameter count explodes quadratically, exhausting degrees of freedom in moderate-sized samples. This is the 'curse of dimensionality' for VAR and motivates regularized variants like LASSO-VAR or factor-augmented VAR (FAVAR). Distractor B is wrong: VAR doesn't require cointegration (VECM does). Distractor C is wrong: VAR is solved via OLS per equation, which is polynomial. Distractor D fabricates a cancellation effect that doesn't exist."
+    },
+    {
+      "id": "m9-q14",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Transformer-based Forecasting",
+      "question": "The Informer model (Zhou et al., 2021) addresses the quadratic O(L²) complexity of standard Transformers for long time series by introducing ProbSparse self-attention. What is its core mechanism?",
+      "options": [
+        {
+          "text": "It selects only the top-u queries with the highest KL-divergence from the uniform distribution, computing full attention only for those queries, reducing complexity to O(L log L)",
+          "correct": true
+        },
+        {
+          "text": "It replaces self-attention entirely with 1D convolutions that have exponentially increasing dilation, identical to TCN architecture",
+          "correct": false
+        },
+        {
+          "text": "It downsamples the time series to a fixed length before applying standard attention, trading resolution for speed",
+          "correct": false
+        },
+        {
+          "text": "It uses random feature approximation (Performer-style) to linearize attention, achieving O(L) complexity but sacrificing the ability to attend to specific positions",
+          "correct": false
+        }
+      ],
+      "explanation": "ProbSparse attention measures each query's 'sparsity' by comparing its attention distribution to a uniform distribution via KL-divergence. Queries whose attention is nearly uniform (low information) are pruned, while 'active' queries (those that attend sharply to specific keys) are retained. Only the top-u = c·ln(L) queries compute full dot-product attention; the rest use the mean value of keys. This achieves O(L log L) complexity. Distractor B describes TCNs, not Transformers. Distractor C is a naive approach that loses fine-grained temporal information. Distractor D describes Performer (Choromanski et al., 2021), which is a different efficiency approach using random Fourier features."
     }
   ]
 }

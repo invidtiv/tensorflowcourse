@@ -26,6 +26,10 @@ export interface ModuleMeta {
     default?: boolean;
     kind?: "captions" | "subtitles";
   }>;
+  /** Optional: VTT transcript path for <VideoTranscript>. Populated as a placeholder for m01–m10 in slot 33. */
+  transcriptUrl?: string;
+  /** Optional: WebVTT chapter cues path for the intro video. Stretch field — not yet consumed. */
+  chaptersUrl?: string;
 }
 
 export interface LabMeta {

@@ -17,6 +17,7 @@
   "icon": "brain",
   "color": "#00d4ff",
   "videoId": "aircAruvnKk",
+  "transcriptUrl": "/videos/transcripts/01-intro-deep-learning-en.vtt",
   "videoCaptions": [
     {
       "src": "/videos/captions/01-intro-en.vtt",

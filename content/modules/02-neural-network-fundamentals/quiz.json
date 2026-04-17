@@ -339,6 +339,32 @@
         }
       ],
       "explanation": "During training, a unit's activation survives with probability (1−p), so its expected contribution is (1−p)·x. At inference, all units are active, contributing x. To match expected values, inference activations are scaled by (1−p). In practice, most frameworks implement *inverted dropout*: divide surviving activations by (1−p) during training so that inference activations need no scaling — the expectation is corrected at training time rather than inference time. Either approach is mathematically equivalent; inverted dropout is preferred for deployment simplicity."
+    },
+    {
+      "id": "m2-q14",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "Feature Normalization",
+      "question": "You are training a neural network on a dataset where Feature A ranges from 0 to 1 and Feature B ranges from 0 to 100,000. You apply StandardScaler (z-score normalization) only to Feature B. What problem does this asymmetric normalization create?",
+      "options": [
+        {
+          "text": "Feature A will dominate gradient updates because its values are smaller and more precise",
+          "correct": false
+        },
+        {
+          "text": "The loss landscape becomes elongated — gradient steps efficient for Feature B's scale overshoot Feature A, causing oscillation and slow convergence",
+          "correct": true
+        },
+        {
+          "text": "StandardScaler cannot be applied to only some features; it will raise an error",
+          "correct": false
+        },
+        {
+          "text": "Feature B will be ignored by the network because z-score normalization centers it at zero",
+          "correct": false
+        }
+      ],
+      "explanation": "When features have different scales, the loss landscape has elongated contours — like a narrow valley. Gradient descent takes steps that are appropriate for the steep (large-scale) dimension but overshoot in the shallow (small-scale) dimension, causing zigzag oscillation. Normalizing all features to comparable scales makes the loss landscape more spherical, so gradient steps move efficiently toward the minimum. The fix is to normalize ALL features consistently, not just the large-scale ones. StandardScaler works fine on subsets — the issue is purely about scale mismatch in the optimization landscape."
     }
   ]
 }

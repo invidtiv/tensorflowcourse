@@ -339,6 +339,31 @@
         }
       ],
       "explanation": "In crowded scenes, legitimate objects often have high IoU with each other (e.g., two pedestrians side by side may overlap at IoU > 0.5). Standard NMS with threshold 0.5 would suppress one of them entirely, reducing recall. Soft-NMS (Bodla et al., 2017) replaces the hard 0/1 suppression with a continuous decay function: s_i = s_i × f(IoU(b_i, b_max)), where f is either linear (1 − IoU) or Gaussian (exp(−IoU²/σ)). This preserves partially occluded detections with reduced but non-zero scores, significantly improving recall in dense scenes (typically +1–2% mAP on COCO) with zero retraining cost."
+    },
+    {
+      "id": "m6-q14",
+      "difficulty": "hard",
+      "topic": "NMS — API correctness",
+      "question": "Your detector outputs boxes in `[x1, y1, x2, y2]` (xyxy) format and you feed them directly into `tf.image.non_max_suppression(boxes, scores, iou_threshold=0.5)`. Evaluation mAP collapses to near zero even though raw detections look correct. What is the single most likely root cause?",
+      "options": [
+        {
+          "text": "`tf.image.non_max_suppression` expects `[y1, x1, y2, x2]` (yxyx) — with xyxy input, every IoU is computed on swapped coordinates and NMS silently suppresses (or keeps) the wrong boxes",
+          "correct": true
+        },
+        {
+          "text": "The IoU threshold of 0.5 is too strict for inference; lowering it to 0.3 restores mAP",
+          "correct": false
+        },
+        {
+          "text": "`tf.image.non_max_suppression` requires scores in logit space, not sigmoid-probability space, so passing post-sigmoid scores breaks the ordering",
+          "correct": false
+        },
+        {
+          "text": "`tf.image.non_max_suppression` requires boxes to be normalized to [0, 1]; absolute-pixel coordinates trigger an internal clip to zero area",
+          "correct": false
+        }
+      ],
+      "explanation": "`tf.image.non_max_suppression` (and `tf.image.combined_non_max_suppression`) use TensorFlow's canonical box convention `[y1, x1, y2, x2]`, not `[x1, y1, x2, y2]`. Passing xyxy-formatted boxes does not raise an error because the op only requires a `[N, 4]` float tensor — but the internal IoU computation treats the first coordinate pair as (y1, x1), so rectangles are effectively transposed. For most real scenes the transposed IoU matrix has neither near-zero nor near-one values, so suppression behaves *plausibly* (some boxes kept, some dropped) while being completely wrong against the ground truth, producing a near-zero mAP that is easy to misattribute to the threshold, the score calibration, or the coordinate scale. The fix is a single `tf.stack([y1, x1, y2, x2], axis=-1)` transform at the boundary, not hyperparameter tuning. Scores are not required to be logits and boxes are not required to be normalized — both distractors are plausible-sounding myths. The IoU threshold being 'too strict' would degrade mAP gradually, not collapse it, so that distractor is also ruled out."
     }
   ]
 }

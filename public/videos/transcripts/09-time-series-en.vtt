@@ -1,0 +1,84 @@
+WEBVTT
+Kind: captions
+Language: en
+
+NOTE
+Module 09 — Time Series and Sequence Prediction
+Scaffold transcript (slot 55 — user-directed Video Delivery sweep,
+Apr 15 2026). Ninth real .vtt in public/videos/transcripts/ — advances
+coverage to 9/10 modules. Targets a ~4.5 minute lecture arc covering
+stationarity and decomposition, train/val/test splits that respect
+temporal order, windowing with tf.data, classical baselines (naive,
+seasonal-naive, ARIMA), 1D CNNs, LSTMs and GRUs, sequence-to-sequence
+forecasting, multi-step strategies (recursive vs direct vs seq2seq),
+multivariate and exogenous inputs, quantile and probabilistic
+forecasting, and anomaly detection. Replace with Whisper output once
+the recorded lecture is available.
+
+1
+00:00:00.000 --> 00:00:14.000
+Welcome to Module 09. Time series is the data modality where order is the signal. Scramble the rows of an image dataset and nothing changes; scramble the rows of a time series and the problem disappears. Everything in this module — data prep, model choice, evaluation — is organized around preserving and exploiting temporal structure. Before we touch a model we need the two concepts that drive every decision: stationarity and autocorrelation.
+
+2
+00:00:14.000 --> 00:00:30.000
+A series is stationary when its statistical properties — mean, variance, autocovariance — do not drift with time. Most real series are not: sales trend up, temperatures cycle, network traffic spikes. Classical forecasting assumed stationarity and handled non-stationarity by differencing and by subtracting seasonal components. Deep models are more forgiving but they still benefit when you hand them a stabilized series. The ADF test and KPSS test are the two standard stationarity checks — run them before anything else.
+
+3
+00:00:30.000 --> 00:00:46.000
+Decomposition separates a series into trend, seasonality, and residual. Classical additive decomposition assumes these combine linearly; multiplicative decomposition assumes they multiply, which fits series where the seasonal amplitude grows with the level. STL — seasonal and trend decomposition using Loess — is the robust modern default. Inspecting the decomposition is diagnostic: flat residuals mean the classical baseline is already strong; structured residuals mean there is signal a neural model can still extract.
+
+4
+00:00:46.000 --> 00:01:02.000
+Splitting time series is where most beginners go wrong. You cannot shuffle and split — that leaks future information into training. The correct pattern is a chronological split: the oldest contiguous block is train, the middle block is validation, the newest block is test. For model selection across long horizons, rolling-origin evaluation or expanding-window cross-validation gives a more honest estimate. Always verify your test window has never been seen by any preprocessing step, including normalization constants.
+
+5
+00:01:02.000 --> 00:01:18.000
+Windowing turns a univariate series into supervised learning. You pick an input length — the lookback window — and an output length — the forecast horizon — and slide them together across the series. In TensorFlow, tf.data.Dataset.window followed by flat_map and batch is the idiomatic pipeline. Stride controls how many timesteps you shift between windows. Shuffle the window batches but never the timestamps inside a window. And keep the normalization statistics fitted on the training partition only.
+
+6
+00:01:18.000 --> 00:01:34.000
+Always start with naive baselines. The naive forecast predicts the last observed value; the seasonal-naive predicts the value from one season ago. These are embarrassingly strong on well-behaved series and they provide a sanity floor — if your LSTM cannot beat seasonal-naive, something is wrong with your setup, not with your architecture. Report the naive baseline on every experiment; a paper or dashboard without it is hiding something.
+
+7
+00:01:34.000 --> 00:01:50.000
+ARIMA — autoregressive integrated moving average — is the classical workhorse. Autoregressive order p captures dependence on recent values; differencing order d handles trend; moving-average order q captures dependence on recent errors. Seasonal ARIMA adds a seasonal version of the same triplet. Fitting is fast, parameter selection via AIC or BIC is automatable with auto_arima, and for short univariate series ARIMA often beats deep models on accuracy per compute. Know when not to reach for a neural network.
+
+8
+00:01:50.000 --> 00:02:06.000
+One-dimensional convolutional networks translate directly from images. A Conv1D layer with kernel size k looks at k consecutive timesteps; stacking layers grows the effective receptive field geometrically if you use dilation. Dilated causal convolutions — the WaveNet recipe — give you a long receptive field with a modest parameter count and full parallelism at training time. For many forecasting problems a small dilated TCN beats an LSTM on both accuracy and training speed.
+
+9
+00:02:06.000 --> 00:02:22.000
+LSTMs and GRUs remain competitive for time series because autoregressive state is a natural fit. Use a stateful RNN when the time series is a single very long stream; use a stateless RNN when you have many independent windows. Watch the initial state — by default it is zeros, which biases the first few predictions of every window. Bidirectional LSTMs are fine for anomaly detection but not for forecasting — the backward pass leaks future into the present.
+
+10
+00:02:22.000 --> 00:02:38.000
+There are three multi-step strategies and each has failure modes. Recursive forecasting feeds the model's own prediction back in — cheap to train but errors compound over the horizon. Direct forecasting trains a separate model for each horizon — accurate but expensive and inconsistent across horizons. Sequence-to-sequence forecasting with a single encoder and a decoder that emits H steps at once is the modern default; it amortizes the encoder cost and keeps predictions coherent across the horizon.
+
+11
+00:02:38.000 --> 00:02:54.000
+Multivariate forecasting introduces exogenous inputs: weather affects electricity demand, price affects sales, upstream queue depth affects downstream latency. Concatenate exogenous features onto the input channels and let the model learn their influence. Be careful to separate known-future covariates — calendar features, scheduled promotions — from unknown-future covariates, which must themselves be forecast or held out. Mixing them silently leaks the target into the features.
+
+12
+00:02:54.000 --> 00:03:10.000
+Point forecasts are rarely enough in production. A single number hides uncertainty, and downstream decisions — inventory levels, capacity provisioning, alert thresholds — depend on that uncertainty. Quantile forecasting trains the model with the pinball loss at a set of target quantiles, giving you a forecast interval for free. Probabilistic forecasting goes further and outputs a parametric distribution — Gaussian, Student-t, negative binomial for counts — or a non-parametric sample set via dropout or deep ensembles.
+
+13
+00:03:10.000 --> 00:03:26.000
+Transformer-based forecasters have entered the field. Informer, Autoformer, PatchTST, and the Temporal Fusion Transformer apply self-attention to time series with various tricks for long-horizon efficiency and seasonality handling. They are strong on very long horizons but they are not universally better — on short horizons and small datasets, a well-tuned dilated TCN or LSTM often matches them at a fraction of the compute. Benchmark both before committing.
+
+14
+00:03:26.000 --> 00:03:42.000
+Anomaly detection is the inverse task — not forecasting the future, but flagging when the present disagrees with expectation. The simplest recipe fits a forecaster and flags residuals that exceed a robust threshold, for example three median absolute deviations from the rolling median of residuals. Reconstruction-based methods use autoencoders or variational autoencoders and flag points with high reconstruction error. Isolation Forest is the strong classical baseline. Always report precision at a fixed recall — raw accuracy is meaningless on imbalanced anomaly data.
+
+15
+00:03:42.000 --> 00:03:58.000
+Evaluation metrics matter more here than elsewhere. Mean absolute error and root mean squared error measure magnitude but not scale; mean absolute percentage error is scale-free but explodes near zero; symmetric MAPE fixes that but has its own bias. For probabilistic forecasts use CRPS or pinball loss on the quantiles. For anomaly detection report precision, recall, F1, and time-to-detection. Always plot forecast versus actual on the test window — summary numbers hide systematic biases that the eye catches immediately.
+
+16
+00:03:58.000 --> 00:04:14.000
+Common pitfalls in this module's labs. First, normalization leakage — fit scalers on train only, never on the concatenated series. Second, look-ahead in feature engineering — rolling statistics and lagged aggregates must use only past values. Third, forgetting daylight-saving or irregular timestamps — a gap in the index breaks windowing silently. Fourth, evaluating with shuffled splits — the accuracy will look great on the notebook and collapse in production.
+
+17
+00:04:14.000 --> 00:04:28.000
+That is time series forecasting. Stabilize the series, respect temporal order in every split, start with a naive baseline, consider ARIMA before reaching for deep learning, pick a windowing strategy and a multi-step recipe that matches the horizon, and report uncertainty wherever the downstream decision cares about it. Module 10 closes the course with the hardest question in machine learning — how to keep any of this alive in production. Onward.

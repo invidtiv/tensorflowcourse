@@ -1,0 +1,82 @@
+WEBVTT
+Kind: captions
+Language: en
+
+NOTE
+Module 06 — Object Detection Systems
+Scaffold transcript (slot 51 / Video Delivery focus run, Apr 15 2026).
+Sixth real .vtt in public/videos/transcripts/ — advances coverage to
+6/10 modules. Targets a ~4.5 minute lecture covering the detection
+task, anchors + IoU + NMS, two-stage (R-CNN family) vs one-stage
+(SSD, YOLO, RetinaNet) detectors, Feature Pyramid Networks, the
+focal loss breakthrough, DETR / transformer-based detection, and the
+TF Object Detection API. Replace with Whisper output once the
+recorded lecture is available.
+
+1
+00:00:00.000 --> 00:00:14.000
+Welcome to Module 06. Segmentation asked "which pixels belong to what?" Detection asks a different question: "what objects are in this image, and where is each one?" The output is a variable-length list of class-labeled bounding boxes, each with a confidence score. That "variable-length" part is what makes detection architecturally harder than classification or segmentation.
+
+2
+00:00:14.000 --> 00:00:29.000
+Three concepts underpin every modern detector. First, the anchor — a reference box of fixed size and aspect ratio tiled across the image. The network doesn't predict boxes from scratch; it predicts offsets from each anchor. Second, IoU, intersection over union — area of overlap divided by area of union — our similarity metric between two boxes. Third, non-max suppression — NMS — the greedy filter that collapses dozens of overlapping predictions down to one box per object.
+
+3
+00:00:29.000 --> 00:00:45.000
+Anchors come from a practical insight: object scales and aspect ratios cluster. If you tile a grid of anchors at a few scales and three or four aspect ratios — typically 1:1, 1:2, 2:1, maybe 1:3 — then most ground-truth boxes have at least one anchor with IoU above 0.5. The network learns small corrections on top. Choosing the anchor set well matters: too few and recall drops; too many and training gets unstable and slow.
+
+4
+00:00:45.000 --> 00:01:01.000
+The early lineage is the R-CNN family. R-CNN itself ran a classifier on 2000 region proposals per image — slow and awkward. Fast R-CNN shared the CNN backbone across all proposals via ROI pooling. Faster R-CNN replaced the external proposer with a Region Proposal Network that shares the backbone too, making the whole thing end-to-end trainable. That's the canonical two-stage design: propose, then classify and refine.
+
+5
+00:01:01.000 --> 00:01:17.000
+One-stage detectors collapse the two stages into one dense prediction head. SSD — Single Shot Detector — runs classification and box regression at every anchor location in parallel. YOLO does the same but divides the image into a grid and assigns each object to the cell containing its center. The speed advantage is huge; the historical accuracy gap has largely closed since RetinaNet and the focal-loss paper.
+
+6
+00:01:17.000 --> 00:01:33.000
+The YOLO evolution is worth knowing because you'll see every generation in the wild. YOLOv1 and v2 established the grid+anchor formulation. YOLOv3 added multi-scale prediction heads. YOLOv4 and v5 pushed hard on training tricks — mosaic augmentation, CIOU loss, cosine LR schedules. YOLOX replaced anchors with anchor-free center prediction. YOLOv7 and v8 refined the head topology. The core idea is stable; the details compound.
+
+7
+00:01:33.000 --> 00:01:49.000
+Feature Pyramid Networks — FPN — solved detection's scale problem. Small objects need high-resolution features; large objects need semantically rich features. FPN builds a top-down pathway with lateral connections so every scale has both. Detection heads run at each level of the pyramid, each responsible for a size range. FPN is now a near-universal ingredient — RetinaNet, Mask R-CNN, YOLOv3 onward, all use it or a variant like PANet or BiFPN.
+
+8
+00:01:49.000 --> 00:02:05.000
+Focal loss deserves its own moment. The dense prediction problem is that 99% of anchors on a typical image are background. Standard cross-entropy is dominated by the easy negatives. Focal loss adds the `(1 - p_t)^γ` modulation factor — easy examples contribute tiny gradients, hard examples dominate. With γ=2 and α=0.25 it let a one-stage detector — RetinaNet — match two-stage accuracy for the first time. This is the same focal loss you saw in segmentation.
+
+9
+00:02:05.000 --> 00:02:21.000
+Non-max suppression: after the network emits hundreds or thousands of candidate boxes, you need to pick one per object. Standard NMS sorts by confidence, takes the top box, removes every other box with IoU greater than a threshold (typically 0.5), repeats. Soft-NMS decays confidence instead of hard-removing overlapping boxes — gentler for crowded scenes. NMS runs per-class; a car and a pedestrian can perfectly overlap and both survive.
+
+10
+00:02:21.000 --> 00:02:37.000
+The metric you report is mean Average Precision — mAP — at a fixed IoU threshold, usually 0.5 (PASCAL VOC style) or averaged across 0.5 to 0.95 in 0.05 steps (COCO style). Per-class AP first, then mean. Watch out for the evaluator details: COCO averages over 10 IoU thresholds and 3 object-size bins; VOC uses a single threshold and 11-point interpolation. Don't compare numbers across protocols — they're not the same metric.
+
+11
+00:02:37.000 --> 00:02:53.000
+Transformer-based detection — DETR, 2020 — reframed the problem entirely. No anchors, no NMS. A transformer decoder emits a fixed set of N object queries, each producing a class and a box directly. Training uses bipartite matching via the Hungarian algorithm to assign each query to at most one ground truth. DETR is slower to train but conceptually clean, and its descendants — Deformable DETR, DINO, Co-DETR — now hold state-of-the-art on COCO.
+
+12
+00:02:53.000 --> 00:03:09.000
+The TensorFlow Object Detection API packages the two-stage and one-stage recipes behind a pipeline.config interface. You point it at a TFRecord dataset, pick a model zoo checkpoint — SSD MobileNet, EfficientDet, CenterNet — and the training loop, evaluation, and export are handled for you. It's the fastest path from raw images to a deployable detector, and it's what the labs in this module build on.
+
+13
+00:03:09.000 --> 00:03:25.000
+Labeling is often the hard part. Boxes must be tight — a loose box is a worse training signal than a missing box. Use a tool like CVAT or Label Studio, enforce a class schema before labeling starts, and double-label at least 10% of images to measure inter-annotator agreement. An IoU of 0.85 between annotators on the same object is a reasonable floor; below that your ceiling mAP is bounded by label noise.
+
+14
+00:03:25.000 --> 00:03:41.000
+Data pipeline notes specific to detection. Augmentation must transform boxes in lockstep with images — horizontal flip swaps left and right boxes too, random crop must clip boxes to the crop window and drop boxes that fall below a minimum area or minimum visible fraction (typically 0.3). Never use augmentations that change aspect ratio silently; always verify by rendering a batch of augmented images with their boxes overlaid.
+
+15
+00:03:41.000 --> 00:03:57.000
+The labs walk you through this stack in order. Start with IoU and NMS from first principles on synthetic boxes. Move to anchor generation and assignment. Train a small SSD MobileNet on a toy dataset to feel the full loop. Then fine-tune EfficientDet from a zoo checkpoint on the pet dataset, and finally evaluate with COCO-style mAP and diagnose failure modes — missed small objects, duplicate boxes, class confusion.
+
+16
+00:03:57.000 --> 00:04:13.000
+Two recurring pitfalls. First, coordinate conventions: some APIs use `(ymin, xmin, ymax, xmax)` normalized to [0,1], others use `(x, y, w, h)` in pixels. A silent mismatch produces boxes that look plausible but are wrong — always unit-test your box-parsing code by rendering annotations before training. Second, NMS on the GPU: the built-in `tf.image.combined_non_max_suppression` is vectorized and hundreds of times faster than a Python loop — use it.
+
+17
+00:04:13.000 --> 00:04:27.000
+That's detection. Anchors plus IoU plus NMS are the building blocks. FPN handles scale; focal loss handles class imbalance; bipartite matching in DETR removes the anchors entirely. Pick the architecture that fits your latency budget — MobileDet or YOLO for edge, EfficientDet for balance, DETR-family for accuracy on plentiful GPUs — and remember that your labels and your augmentations matter at least as much as the backbone. On to the first lab: IoU and NMS from scratch.

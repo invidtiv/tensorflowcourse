@@ -339,6 +339,32 @@
         }
       ],
       "explanation": "FedAvg weights each client's local update by n_k/n (its share of total data) rather than 1/K (uniform). This is statistically motivated: a client with 10,000 samples produces a more reliable gradient estimate than one with 100 samples. Uniform averaging gives equal weight to noisy small-data updates, increasing variance in the aggregated global model. The weighted average approximates the gradient that would result from centralising all data. Option A is backwards — large-dataset clients contribute more, not less. Option C is incorrect; FedAvg was designed to be stable across heterogeneous clients. Option D confuses FedAvg aggregation with differential privacy mechanisms (e.g., adding Gaussian noise), which are a separate add-on layer."
+    },
+    {
+      "id": "m10-q14",
+      "type": "multiple-choice",
+      "difficulty": "medium",
+      "topic": "ML CI/CD Testing",
+      "question": "In a CI/CD pipeline for production ML systems, which type of automated test catches training-serving skew before deployment?",
+      "options": [
+        {
+          "text": "Unit tests that verify individual Python functions in the training script",
+          "correct": false
+        },
+        {
+          "text": "An integration test that feeds the same input through both the training preprocessing path and the serving preprocessing path, then asserts the outputs are numerically identical",
+          "correct": true
+        },
+        {
+          "text": "A load test that measures the serving endpoint's p99 latency under peak traffic",
+          "correct": false
+        },
+        {
+          "text": "A smoke test that checks if the model file can be loaded without crashing",
+          "correct": false
+        }
+      ],
+      "explanation": "Training-serving skew occurs when the feature transformation logic differs between training and inference — e.g., different normalization constants, missing feature engineering steps, or framework version mismatches. The definitive test is an integration test that runs identical raw inputs through both code paths and compares outputs numerically (typically within a small epsilon). Unit tests (option A) verify individual functions but miss cross-path divergence. Load tests (option C) measure performance, not correctness. Smoke tests (option D) verify the model loads but don't validate the preprocessing pipeline. This is why TFX's Transform component saves the transformation graph to ensure the same preprocessing runs in both training and serving."
     }
   ]
 }

@@ -1,0 +1,99 @@
+WEBVTT
+Kind: captions
+Language: en
+
+NOTE
+Module 01 — Introduction to Deep Learning
+Scaffold transcript (slot 36 / cycle 7 — Video Delivery focus run, Apr 14 2026).
+This is an end-to-end render-path exercise transcript for the VideoTranscript
+component — enough cues (~20) to validate parsing, seeking, and the
+tfc:transcript-seek CustomEvent hook. Replace with Whisper output once the
+recorded lecture is available. Timing targets a ~6 minute lecture hook.
+
+1
+00:00:00.000 --> 00:00:08.000
+Welcome to Module 01. In this lecture we'll build intuition for what deep learning actually is, and why it dominated machine learning over the last decade.
+
+2
+00:00:08.000 --> 00:00:18.500
+At its core, a deep neural network is a stack of differentiable functions. The power comes from composition — not from any single clever layer.
+
+3
+00:00:18.500 --> 00:00:30.000
+We'll anchor everything in three ideas: representation learning, the chain rule, and stochastic gradient descent. Keep these in mind — every later module reuses them.
+
+4
+00:00:30.000 --> 00:00:42.000
+Before deep learning, features were hand-crafted. Think SIFT, HOG, MFCCs. A human decided what the model should see. Deep nets replaced that with learned features.
+
+5
+00:00:42.000 --> 00:00:55.000
+The shift happened around 2012 with AlexNet on ImageNet. Not because the math was new — backprop dates to 1986 — but because GPUs plus large labeled datasets crossed a capability threshold.
+
+6
+00:00:55.000 --> 00:01:10.000
+A neuron computes a weighted sum, adds a bias, and applies a non-linearity. Stack enough of these non-linearities and you can approximate any reasonable function. That's the universal approximation theorem.
+
+7
+00:01:10.000 --> 00:01:25.000
+But expressivity is not the hard part. The hard part is optimization and generalization — can we actually find good weights, and will they work on new data.
+
+8
+00:01:25.000 --> 00:01:40.000
+We train by minimizing a loss function. Cross-entropy for classification, mean-squared-error for regression. The loss tells us how wrong we are on the current batch.
+
+9
+00:01:40.000 --> 00:01:55.000
+Backpropagation is just the chain rule applied recursively through the computation graph. TensorFlow and PyTorch both build this graph automatically — you don't derive gradients by hand anymore.
+
+10
+00:01:55.000 --> 00:02:12.000
+Stochastic gradient descent updates weights in the direction that reduces loss, using mini-batches. Too small a batch — noisy gradients. Too large — poor generalization and wasted compute.
+
+11
+00:02:12.000 --> 00:02:30.000
+Learning rate is the single most important hyperparameter. If nothing is training, your learning rate is wrong. If loss explodes to NaN, your learning rate is wrong. Always check it first.
+
+12
+00:02:30.000 --> 00:02:48.000
+Activation functions introduce non-linearity. ReLU is the default for hidden layers — cheap and empirically strong. Sigmoid and tanh are mostly deprecated for deep nets due to vanishing gradients.
+
+13
+00:02:48.000 --> 00:03:05.000
+Initialization matters more than people realize. He initialization for ReLU, Glorot for tanh. Bad init can make a network untrainable even with a perfect architecture.
+
+14
+00:03:05.000 --> 00:03:22.000
+Overfitting is the main failure mode. Your training loss keeps dropping but validation loss stalls or climbs. This is the signal to regularize.
+
+15
+00:03:22.000 --> 00:03:40.000
+The standard regularization toolkit: dropout, weight decay, data augmentation, early stopping, and batch normalization. Mix and match — there's no single best combination.
+
+16
+00:03:40.000 --> 00:04:00.000
+Batch normalization normalizes activations per mini-batch. It stabilizes training and lets you use higher learning rates. Layer norm is the transformer-era replacement for sequence models.
+
+17
+00:04:00.000 --> 00:04:20.000
+TensorFlow 2.x with Keras is our tool for this course. Keras is the high-level API — Sequential, Model, and the fit/evaluate/predict loop. It's expressive enough for 90 percent of real work.
+
+18
+00:04:20.000 --> 00:04:40.000
+When Keras isn't enough, drop down to tf.function, custom training loops with GradientTape, and raw ops. We'll practice both styles because production pipelines mix them.
+
+19
+00:04:40.000 --> 00:05:05.000
+A key mental model: training is an optimization problem on the loss surface. Most of the modern zoo — Adam, SGD with momentum, learning rate schedules, warm-up — are all tricks to navigate that surface faster and more stably.
+
+20
+00:05:05.000 --> 00:05:30.000
+In the lab you'll build a 3-layer MLP on MNIST, reach 97 percent test accuracy in under a minute on CPU, and inspect the gradient flow. That hands-on loop — train, inspect, iterate — is the core rhythm of deep learning.
+
+21
+00:05:30.000 --> 00:05:55.000
+Before the next module: make sure you can state the forward pass, the loss, and one step of backprop on paper for a 2-layer network. If you can do that, the rest of the course will feel like extensions of the same idea.
+
+22
+00:05:55.000 --> 00:06:15.000
+That's the lecture. Open the lab notebook, get MNIST training, and I'll see you in Module 02 where we deepen the neural-network fundamentals and cover gradient descent variants in detail.

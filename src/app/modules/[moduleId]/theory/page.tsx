@@ -10,6 +10,8 @@ import rehypeKatex from "rehype-katex";
 import rehypeSlug from "rehype-slug";
 import rehypeAutolinkHeadings from "rehype-autolink-headings";
 import { mdxComponents } from "@/components/mdx/MDXComponents";
+import VideoEmbed from "@/components/content/VideoEmbed";
+import VideoTranscript from "@/components/content/VideoTranscript";
 
 // Theory pages are content-driven and the MDX compile step is pure, so there
 // is no value in rendering them dynamically on every request. Opt into full
@@ -63,6 +65,31 @@ export default async function TheoryPage({ params }: PageProps) {
           {mod.title}
         </h1>
       </div>
+
+      {/* Video slot — rendered from _meta.json videoId / videoUrl so all modules
+          get a lecture player without needing to manually inline <VideoEmbed> in
+          each theory.mdx. Module 01 used to inline it; this slot replaces that.
+          Falls back to nothing when neither field is set (future modules).      */}
+      {(mod.videoId || mod.videoUrl) && (
+        <div className="mb-8">
+          <VideoEmbed
+            src={mod.videoUrl ?? mod.videoId}
+            type={mod.videoUrl ? "mp4" : "youtube"}
+            title={`Module ${mod.number} — Introduction lecture`}
+            moduleId={moduleId}
+            captions={mod.videoCaptions}
+          />
+          {mod.transcriptUrl && (
+            <div className="mt-2">
+              <VideoTranscript
+                src={mod.transcriptUrl}
+                videoId={mod.videoId}
+                title="Lecture transcript"
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* MDX content — compiled on the server with math + GFM + autolinked
           headings. The mdxComponents map handles <Callout>, <CodeBlock>,

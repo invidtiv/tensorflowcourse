@@ -19,6 +19,7 @@
   "icon": "rocket",
   "color": "#f97316",
   "videoId": "WbARPbJXmg0",
+  "transcriptUrl": "/videos/transcripts/10-production-deployment-en.vtt",
   "videoCaptions": [
     {
       "src": "/videos/captions/10-production-deployment-en.vtt",

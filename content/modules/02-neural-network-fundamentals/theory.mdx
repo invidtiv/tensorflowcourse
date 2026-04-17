@@ -693,6 +693,22 @@ While individual loss functions may be convex, the composition with a neural net
 
 ## 2.7 Backpropagation: The Core Learning Algorithm
 
+### 2.7.0 Interactive: Gradient Descent on a 2D Loss Surface
+
+Before diving into backpropagation, it helps to have intuition for what the
+optimizer is actually doing. The demo below descends a simple convex loss
+`f(x, y) = (x - 2)² + 0.5 (y + 1)² + 0.3 x y`. Move the sliders and observe:
+
+- Very small `lr` → the path is stable but barely moves toward the minimum.
+- Moderate `lr` → smooth approach along the valley of the iso-contours.
+- `lr ≳ 1.0` → the step overshoots, bounces across contours, and diverges
+  (the path turns red and leaves the plot).
+
+This is the same learning-rate sensitivity you will see in real training —
+just extended to thousands of parameters instead of two.
+
+<GradientDescentViz />
+
 ### 2.7.1 Overview
 
 Backpropagation is an efficient algorithm for computing gradients in neural networks using the chain rule of calculus. It consists of:
@@ -767,6 +783,19 @@ for l = L down to 1:
     if l > 1:
         delta[l-1] = W[l]T · delta[l] ⊙ g[l-1]'(z[l-1])
 ```
+
+### 2.7.4b Interactive: Step Through a Full Forward + Backward Pass
+
+The algorithm above becomes much more concrete when you can watch each number flow through a real network. The demo below uses a tiny **2 → 2 → 1** network (sigmoid activations, MSE loss). Step through the five phases with the → button:
+
+1. **Forward** — see activations fill in left-to-right.
+2. **Loss** — watch the error node appear with L = ½(y − ŷ)².
+3. **Backward** — pink gradient annotations appear on every edge and node; edge thickness encodes gradient magnitude.
+4. **Update** — weights shift by η · ∂L/∂w and turn green.
+
+Try setting **target y = 1.0** and stepping through several times — the loss should decrease with each "updated" pass if η is not too large.
+
+<BackpropVisualizer />
 
 ### 2.7.5 Computational Graph Perspective
 

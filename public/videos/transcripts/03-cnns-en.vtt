@@ -1,0 +1,116 @@
+WEBVTT
+Kind: captions
+Language: en
+
+NOTE
+Module 03 — Convolutional Neural Networks
+Scaffold transcript (slot 42 / cycle 8 — Video Delivery focus run, Apr 15 2026).
+Third real .vtt in public/videos/transcripts/ — brings coverage to 3/10
+modules and exercises the VideoTranscript cue index with more siblings.
+Replace with Whisper output once the recorded lecture is available.
+Targets a ~7 minute lecture hook covering convolution math → receptive
+fields → LeNet/ResNet evolution → transfer learning preview.
+
+1
+00:00:00.000 --> 00:00:10.000
+Welcome to Module 03. We're moving from fully-connected networks to convolutional ones — the architecture that made deep learning practical for images.
+
+2
+00:00:10.000 --> 00:00:22.000
+The core question: why not just flatten a 224 by 224 image and feed it into a dense layer? Because a single dense layer on that input has 50,000 weights per neuron, and it throws away the spatial structure of the image.
+
+3
+00:00:22.000 --> 00:00:35.000
+A convolution is a small learnable filter — typically 3 by 3 or 5 by 5 — that slides across the image. Each position computes a weighted sum of the local neighborhood. Same filter, every location. That's weight sharing.
+
+4
+00:00:35.000 --> 00:00:48.000
+Weight sharing buys you two things: translation equivariance — a cat in the top-left looks the same as a cat in the bottom-right — and parameter efficiency. A 3 by 3 filter has 9 weights, regardless of input size.
+
+5
+00:00:48.000 --> 00:01:02.000
+Three hyperparameters define a conv layer: kernel size, stride, and padding. Kernel size sets the receptive field. Stride sets the step size. Padding determines whether the output shrinks or stays the same size as the input.
+
+6
+00:01:02.000 --> 00:01:16.000
+The output shape formula is worth memorizing: output equals floor of input minus kernel plus two times padding, divided by stride, plus one. We'll use this every time we debug a shape mismatch, which is often.
+
+7
+00:01:16.000 --> 00:01:30.000
+Pooling layers — max pool and average pool — reduce spatial dimensions without learnable parameters. Max pool is the classic: take the largest value in each 2 by 2 window. It's translation-robust and cheap.
+
+8
+00:01:30.000 --> 00:01:45.000
+The receptive field grows as you stack layers. After two 3 by 3 convs, each output pixel sees a 5 by 5 region of the input. After three, 7 by 7. Depth trades computation for context.
+
+9
+00:01:45.000 --> 00:02:00.000
+LeNet-5, from 1998, established the template: conv, pool, conv, pool, dense, dense. It ran on 32 by 32 handwritten digits. The ideas were right; the hardware wasn't yet.
+
+10
+00:02:00.000 --> 00:02:16.000
+AlexNet in 2012 was the phase change. Eight layers, ReLU instead of sigmoid, dropout, data augmentation, and two GPUs. It halved the ImageNet error rate overnight. Deep learning's ImageNet moment.
+
+11
+00:02:16.000 --> 00:02:31.000
+VGG, in 2014, went deeper — 16 and 19 layers — with only 3 by 3 convolutions. The insight: two stacked 3 by 3 convs have the same receptive field as one 5 by 5 conv, but with fewer parameters and more non-linearity.
+
+12
+00:02:31.000 --> 00:02:47.000
+ResNet in 2015 broke the depth barrier with residual connections. Instead of learning a direct mapping, each block learns a residual — the delta from identity. Suddenly networks of 50, 101, even 152 layers trained cleanly.
+
+13
+00:02:47.000 --> 00:03:02.000
+The reason residuals work: gradients flow backward through the identity path without being multiplied by layer weights. Vanishing gradients stop being the bottleneck. Optimization becomes well-behaved.
+
+14
+00:03:02.000 --> 00:03:17.000
+Beyond ResNet: Inception uses parallel filter sizes. DenseNet concatenates all previous feature maps. EfficientNet scales depth, width, and resolution together. Each trades parameters for a different inductive bias.
+
+15
+00:03:17.000 --> 00:03:33.000
+Vision Transformers, or ViTs, take a radically different approach. They split the image into patches, treat each patch as a token, and apply a transformer. No convolutions at all. With enough data, they match or beat CNNs.
+
+16
+00:03:33.000 --> 00:03:49.000
+So which architecture should you use? Short answer: start with a pretrained ResNet-50 or EfficientNet-B0 and fine-tune. You almost never want to train a vision model from scratch. Transfer learning dominates in practice.
+
+17
+00:03:49.000 --> 00:04:05.000
+Transfer learning means: take a model pretrained on ImageNet's 1.2 million images, strip the final classifier, and attach a new head for your task. Freeze the backbone at first, then unfreeze gradually.
+
+18
+00:04:05.000 --> 00:04:22.000
+The lab this week builds exactly that pipeline: load a pretrained backbone from Keras Applications, freeze it, attach a GlobalAveragePooling and Dense head, train on CIFAR-10 or a small custom dataset, then fine-tune.
+
+19
+00:04:22.000 --> 00:04:38.000
+Watch two numbers during training: top-1 accuracy and validation loss. If validation loss starts climbing while training loss keeps dropping, you're overfitting — enable augmentation, add dropout, or freeze earlier layers.
+
+20
+00:04:38.000 --> 00:04:55.000
+Data augmentation is essentially free regularization for images. Random flips, crops, rotations, color jitter, and cutout or mixup — all standard. Keras has a preprocessing layer for most of these that runs on the GPU.
+
+21
+00:04:55.000 --> 00:05:12.000
+Feature visualization is how you convince yourself the network learned something real. Early filters respond to edges and colors; middle layers to textures and parts; late layers to objects. We'll visualize all three in the lab.
+
+22
+00:05:12.000 --> 00:05:28.000
+One last thing: batch normalization. It's placed between conv and activation in most modern CNNs. It normalizes activations per mini-batch, which stabilizes training and lets you use higher learning rates. It has quirks — remember to set training equals false at inference.
+
+23
+00:05:28.000 --> 00:05:44.000
+Common failure modes we'll cover: shape mismatches from wrong padding, stagnant loss from a frozen learning rate, exploding activations from missing batchnorm, and silent accuracy drops from a misaligned preprocessing pipeline.
+
+24
+00:05:44.000 --> 00:06:00.000
+By the end of this module you'll have trained a CNN from scratch on a small dataset, fine-tuned a pretrained backbone on a larger one, visualized internal features, and diagnosed at least two shape bugs — the authentic deep learning rite of passage.
+
+25
+00:06:00.000 --> 00:06:15.000
+Next module, we'll layer on advanced training techniques — schedulers, optimizers, regularization, and mixed precision — the toolkit that separates a model that trains from a model that trains well.
+
+26
+00:06:15.000 --> 00:06:30.000
+Housekeeping: all lab notebooks pin TensorFlow 2.18 and Keras 3.7. If you see API mismatches, check the pinned versions in requirements.txt before assuming the tutorial is wrong. Module 03, let's go.

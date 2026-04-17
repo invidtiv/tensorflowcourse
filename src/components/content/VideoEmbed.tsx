@@ -47,6 +47,23 @@ interface VideoEmbedProps {
    *  ```
    */
   captions?: CaptionTrack[];
+  /** Optional chapters/cues VTT file rendered as <track kind="chapters">.
+   *  Modern browsers expose chapter cues to the native controls UI (Chrome,
+   *  Edge) and to assistive tech (cue events). Authors should ship a WebVTT
+   *  file whose cue payloads are short chapter titles, e.g.:
+   *  ```
+   *  WEBVTT
+   *
+   *  00:00.000 --> 02:30.000
+   *  Hook & motivation
+   *
+   *  02:30.000 --> 09:45.000
+   *  Concept walkthrough
+   *  ```
+   *  Per Point 5.2 of the course plan, this surfaces the 30–60s hook → 3–5min
+   *  concept → 5–10min demo structure directly in the player UI.
+   *  YouTube ignores this — chapters there come from the description timestamps. */
+  chapters?: string;
 }
 
 /**
@@ -172,6 +189,7 @@ export default function VideoEmbed({
   onPlay,
   moduleId,
   captions,
+  chapters,
 }: VideoEmbedProps) {
   const [loaded, setLoaded] = useState(false);
   const [iframeReady, setIframeReady] = useState(false);
@@ -180,6 +198,8 @@ export default function VideoEmbed({
   const markVideoWatched = useProgressStore((s) => s.markVideoWatched);
   const updateVideoProgress = useProgressStore((s) => s.updateVideoProgress);
   const markVideoFinished = useProgressStore((s) => s.markVideoFinished);
+  const updateVideoPosition = useProgressStore((s) => s.updateVideoPosition);
+  const getVideoResumeTime = useProgressStore((s) => s.getVideoResumeTime);
 
   // Unified play handler: fires the external onPlay callback (if any) AND
   // marks the video as watched in the progress store (if moduleId is set).
@@ -191,8 +211,11 @@ export default function VideoEmbed({
   }, [onPlay, moduleId, markVideoWatched]);
 
   // Track playback progress for the native <video> branch.
-  // Throttled: only updates the store when the percentage changes by ≥5%.
+  // Throttled: percentage updates fire on ≥5% deltas; position + watched-seconds
+  // fire every ~2 seconds of wall-clock playback via `lastPositionRef`.
   const lastReportedPct = useState(0);
+  const lastPositionRef = useRef<number>(0);
+  const lastPositionTickRef = useRef<number>(0);
   const handleTimeUpdate = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
     if (!moduleId) return;
     const vid = e.currentTarget;
@@ -202,7 +225,47 @@ export default function VideoEmbed({
       lastReportedPct[0] = pct;
       updateVideoProgress(moduleId, pct);
     }
-  }, [moduleId, updateVideoProgress, lastReportedPct]);
+    // Persist resume position + credit forward play to watched-seconds.
+    const now = vid.currentTime;
+    const prev = lastPositionRef.current;
+    const delta = now - prev;
+    // Credit only forward deltas ≤2.5s (natural playback window). Scrubs > 2.5s
+    // or backward jumps reset the anchor without crediting watched-seconds.
+    const credit = delta > 0 && delta <= 2.5 ? delta : 0;
+    lastPositionRef.current = now;
+    // Throttle store writes to once per ~2s to avoid thrashing persistence.
+    if (now - lastPositionTickRef.current >= 2) {
+      lastPositionTickRef.current = now;
+      updateVideoPosition(moduleId, now, credit);
+    }
+    // Broadcast to any paired <VideoTranscript> so it can highlight the active
+    // cue. Fires every timeupdate (~4 Hz on most browsers) — VideoTranscript
+    // debounces internally by only updating state when the cue index changes.
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("tfc:transcript-time", {
+          detail: { videoId: videoId ?? null, time: now },
+        }),
+      );
+    }
+  }, [moduleId, updateVideoProgress, lastReportedPct, updateVideoPosition, videoId]);
+
+  // Resume from the last-known position when the MP4 metadata loads.
+  // No-op for finished videos (getVideoResumeTime returns 0 in that case).
+  const handleLoadedMetadata = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
+    if (!moduleId) return;
+    const resumeAt = getVideoResumeTime(moduleId);
+    const vid = e.currentTarget;
+    if (resumeAt > 1 && vid.duration && resumeAt < vid.duration - 5) {
+      try {
+        vid.currentTime = resumeAt;
+        lastPositionRef.current = resumeAt;
+        lastPositionTickRef.current = resumeAt;
+      } catch {
+        /* seeking can throw on some mobile browsers pre-load; safe to skip */
+      }
+    }
+  }, [moduleId, getVideoResumeTime]);
 
   // Mark video as fully watched when it ends.
   const handleEnded = useCallback(() => {
@@ -219,23 +282,224 @@ export default function VideoEmbed({
   const resolvedType: VideoType = videoId && !src ? "youtube" : type;
   const resolvedSrc = src ?? videoId ?? "";
 
-  // Playback speed state for MP4 player
-  const [playbackRate, setPlaybackRate] = useState(1);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const speeds = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+  // Respect prefers-reduced-motion for accessible animations
+  const [reducedMotion, setReducedMotion] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    setReducedMotion(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setReducedMotion(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
 
-  const handleSpeedChange = useCallback((speed: number) => {
-    setPlaybackRate(speed);
-    if (videoRef.current) {
-      videoRef.current.playbackRate = speed;
+  // Picture-in-Picture state — only valid for the MP4 branch.
+  // `pipSupported`: true if the browser supports the PiP API.
+  // `isPip`: tracks whether *this* VideoEmbed is currently the PiP window.
+  const [pipSupported, setPipSupported] = useState(false);
+  const [isPip, setIsPip] = useState(false);
+  useEffect(() => {
+    setPipSupported(typeof document !== "undefined" && "pictureInPictureEnabled" in document);
+  }, []);
+  useEffect(() => {
+    const onEnterPip = () => setIsPip(true);
+    const onLeavePip = () => setIsPip(false);
+    const vid = videoRef.current;
+    if (!vid) return;
+    vid.addEventListener("enterpictureinpicture", onEnterPip);
+    vid.addEventListener("leavepictureinpicture", onLeavePip);
+    return () => {
+      vid.removeEventListener("enterpictureinpicture", onEnterPip);
+      vid.removeEventListener("leavepictureinpicture", onLeavePip);
+    };
+  });
+
+  const handlePip = useCallback(async () => {
+    const vid = videoRef.current;
+    if (!vid) return;
+    try {
+      if (document.pictureInPictureElement) {
+        await document.exitPictureInPicture();
+      } else {
+        await vid.requestPictureInPicture();
+      }
+    } catch {
+      // PiP may be blocked by browser policy (e.g. no user gesture) — fail silently.
     }
   }, []);
+
+  // Playback speed — sourced from the persisted Zustand preference so the user's
+  // chosen speed survives reloads and propagates to every module's player.
+  const persistedRate = useProgressStore((s) => s.preferences?.videoPlaybackRate ?? 1);
+  const setPersistedRate = useProgressStore((s) => s.setVideoPlaybackRate);
+  const captionsDefault = useProgressStore((s) => s.preferences?.captionsDefault ?? false);
+  const setCaptionsDefault = useProgressStore((s) => s.setCaptionsDefault);
+  const [playbackRate, setPlaybackRate] = useState(persistedRate);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const speeds = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+
+  // Keep local state in sync if another VideoEmbed instance changes the store.
+  useEffect(() => {
+    setPlaybackRate(persistedRate);
+    if (videoRef.current) videoRef.current.playbackRate = persistedRate;
+  }, [persistedRate]);
+
+  // Apply persisted captionsDefault preference on mount (and when captions list changes).
+  // Skips chapters tracks — those are always passive metadata. Respects per-track `default`
+  // flag if any caption track already has it set (authored opt-in wins).
+  useEffect(() => {
+    if (!captionsDefault) return;
+    const vid = videoRef.current;
+    if (!vid || !captions || captions.length === 0) return;
+    const authoredDefault = captions.some((t) => t.default);
+    if (authoredDefault) return; // the <track default> will already auto-show.
+    // Native TextTrackList is populated asynchronously; poll briefly.
+    const apply = () => {
+      const tracks = vid.textTracks;
+      if (tracks.length === 0) return false;
+      let applied = false;
+      for (let i = 0; i < tracks.length; i++) {
+        if (tracks[i].kind !== "chapters" && tracks[i].mode !== "showing") {
+          tracks[i].mode = "showing";
+          applied = true;
+          break; // first caption track only — matches user expectation.
+        }
+      }
+      return applied;
+    };
+    if (!apply()) {
+      const t = setTimeout(apply, 120);
+      return () => clearTimeout(t);
+    }
+  }, [captionsDefault, captions]);
+
+  // Listen for transcript cue clicks (from <VideoTranscript>) and seek the
+  // <video> element. The event contract is documented in VideoTranscript.tsx.
+  // YouTube facades ignore the event — the <iframe> postMessage API could
+  // handle this later (Phase 5b stretch), but keeping the MP4 path for now.
+  useEffect(() => {
+    const onSeek = (e: Event) => {
+      const detail = (e as CustomEvent<{ videoId?: string | null; time: number }>).detail;
+      if (!detail || typeof detail.time !== "number") return;
+      // If both sides declare a videoId, require a match so multiple players
+      // on one page don't all jump when a single transcript cue is clicked.
+      if (detail.videoId && videoId && detail.videoId !== videoId) return;
+      const vid = videoRef.current;
+      if (!vid) return;
+      try {
+        vid.currentTime = Math.max(0, detail.time);
+        void vid.play().catch(() => {
+          // Autoplay blocked — the learner can press play manually.
+        });
+      } catch {
+        /* noop */
+      }
+    };
+    window.addEventListener("tfc:transcript-seek", onSeek as EventListener);
+    return () => window.removeEventListener("tfc:transcript-seek", onSeek as EventListener);
+  }, [videoId]);
+
+  const handleSpeedChange = useCallback(
+    (speed: number) => {
+      setPlaybackRate(speed);
+      if (videoRef.current) {
+        videoRef.current.playbackRate = speed;
+      }
+      setPersistedRate(speed);
+    },
+    [setPersistedRate],
+  );
+
+  // Keyboard shortcuts for MP4 player (only when container is focused).
+  // Space/K = play/pause, ←/→ = seek ±5s, ↑/↓ = volume ±10%, M = mute,
+  // </> = playback speed down/up, F = fullscreen toggle.
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    const vid = videoRef.current;
+    if (!vid) return;
+
+    // Don't intercept when a button inside the container is focused
+    const tag = (e.target as HTMLElement).tagName?.toLowerCase();
+    if (tag === "button" && e.key === " ") return;
+
+    switch (e.key) {
+      case " ":
+      case "k":
+      case "K":
+        e.preventDefault();
+        vid.paused ? vid.play() : vid.pause();
+        break;
+      case "ArrowLeft":
+        e.preventDefault();
+        vid.currentTime = Math.max(0, vid.currentTime - 5);
+        break;
+      case "ArrowRight":
+        e.preventDefault();
+        vid.currentTime = Math.min(vid.duration || Infinity, vid.currentTime + 5);
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        vid.volume = Math.min(1, vid.volume + 0.1);
+        break;
+      case "ArrowDown":
+        e.preventDefault();
+        vid.volume = Math.max(0, vid.volume - 0.1);
+        break;
+      case "m":
+      case "M":
+        e.preventDefault();
+        vid.muted = !vid.muted;
+        break;
+      case "f":
+      case "F":
+        e.preventDefault();
+        if (document.fullscreenElement) {
+          document.exitFullscreen();
+        } else {
+          containerRef.current?.requestFullscreen?.();
+        }
+        break;
+      case "p":
+      case "P":
+        e.preventDefault();
+        void handlePip();
+        break;
+      case "<":
+      case ",": {
+        e.preventDefault();
+        const idx = speeds.indexOf(playbackRate);
+        if (idx > 0) handleSpeedChange(speeds[idx - 1]);
+        break;
+      }
+      case ">":
+      case ".": {
+        e.preventDefault();
+        const idx = speeds.indexOf(playbackRate);
+        if (idx < speeds.length - 1) handleSpeedChange(speeds[idx + 1]);
+        break;
+      }
+    }
+  }, [playbackRate, handleSpeedChange, speeds]);
+
+  // Read video watch progress from the store for the progress indicator.
+  const videoProgress = useProgressStore((s) =>
+    moduleId ? (s.modules[moduleId]?.videoWatchedPercent ?? 0) : 0,
+  );
+  const videoFinished = useProgressStore((s) =>
+    moduleId ? !!(s.modules[moduleId]?.videoFinishedAt) : false,
+  );
 
   if (resolvedType === "mp4") {
     // mp4 start-at uses media fragment (#t=SS)
     const mp4Src = startAt ? `${resolvedSrc}#t=${startAt}` : resolvedSrc;
     return (
-      <div className="my-6 rounded-xl border border-white/[0.06] overflow-hidden">
+      <div
+        ref={containerRef}
+        className="my-6 rounded-xl border border-white/[0.06] overflow-hidden focus-within:ring-1 focus-within:ring-neon-cyan/30"
+        tabIndex={0}
+        onKeyDown={handleKeyDown}
+        role="region"
+        aria-label={`Video player: ${title}`}
+      >
         <div className="relative aspect-video bg-surface-1">
           <video
             ref={videoRef}
@@ -250,6 +514,7 @@ export default function VideoEmbed({
               handlePlay();
             }}
             onTimeUpdate={handleTimeUpdate}
+            onLoadedMetadata={handleLoadedMetadata}
             onEnded={handleEnded}
           >
             <source src={mp4Src} type="video/mp4" />
@@ -263,6 +528,17 @@ export default function VideoEmbed({
                 default={track.default}
               />
             ))}
+            {chapters && (
+              // Chapters track exposes cue metadata to native controls + a11y.
+              // No `default` flag — chapters tracks are always passive metadata.
+              <track
+                key="chapters"
+                src={chapters}
+                kind="chapters"
+                srcLang="en"
+                label="Chapters"
+              />
+            )}
             Your browser does not support the video tag.
           </video>
         </div>
@@ -270,14 +546,41 @@ export default function VideoEmbed({
           {title && (
             <span className="text-sm text-text-secondary truncate">{title}</span>
           )}
+          {pipSupported && (
+            <button
+              onClick={handlePip}
+              className={`px-2 py-0.5 text-xs rounded transition-colors border ${
+                isPip
+                  ? "bg-neon-cyan/20 text-neon-cyan border-neon-cyan/40"
+                  : "text-text-secondary/70 hover:text-text-secondary hover:bg-white/[0.04] border-white/[0.06]"
+              }`}
+              aria-label={isPip ? "Exit picture-in-picture" : "Enter picture-in-picture"}
+              title={isPip ? "Exit picture-in-picture" : "Picture-in-picture"}
+            >
+              PiP
+            </button>
+          )}
           {captions && captions.length > 0 && (
             <button
               onClick={() => {
                 if (!videoRef.current) return;
                 const tracks = videoRef.current.textTracks;
+                // Detect any currently-showing caption/subtitle track (skip chapters — always passive).
+                let anyShowing = false;
                 for (let i = 0; i < tracks.length; i++) {
-                  tracks[i].mode = tracks[i].mode === "showing" ? "hidden" : "showing";
+                  if (tracks[i].kind !== "chapters" && tracks[i].mode === "showing") {
+                    anyShowing = true;
+                    break;
+                  }
                 }
+                const nextMode: TextTrackMode = anyShowing ? "hidden" : "showing";
+                for (let i = 0; i < tracks.length; i++) {
+                  if (tracks[i].kind !== "chapters") {
+                    tracks[i].mode = nextMode;
+                  }
+                }
+                // Persist user intent so captions default across modules.
+                if (setCaptionsDefault) setCaptionsDefault(nextMode === "showing");
               }}
               className="px-2 py-0.5 text-xs rounded transition-colors text-text-secondary/70 hover:text-text-secondary hover:bg-white/[0.04] border border-white/[0.06]"
               aria-label="Toggle captions"
@@ -305,6 +608,27 @@ export default function VideoEmbed({
             ))}
           </div>
         </div>
+        {/* Video progress indicator + keyboard hint */}
+        {moduleId && (
+          <div className="px-4 py-1.5 bg-surface-1/30 border-t border-white/[0.04] flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-24 h-1.5 bg-white/[0.06] rounded-full overflow-hidden shrink-0">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    videoFinished ? "bg-emerald-400" : "bg-neon-cyan/70"
+                  }`}
+                  style={{ width: `${videoFinished ? 100 : videoProgress}%` }}
+                />
+              </div>
+              <span className="text-[11px] text-text-secondary/50 whitespace-nowrap">
+                {videoFinished ? "Watched" : videoProgress > 0 ? `${videoProgress}%` : "Not started"}
+              </span>
+            </div>
+            <span className="text-[10px] text-text-secondary/30 hidden sm:inline" aria-hidden="true">
+              Space: play/pause &middot; ←→: seek &middot; M: mute &middot; F: fullscreen &middot; P: PiP
+            </span>
+          </div>
+        )}
       </div>
     );
   }
@@ -342,7 +666,7 @@ export default function VideoEmbed({
               />
             )}
             <div className="absolute inset-0 bg-bg-primary/40" />
-            <div className="relative w-16 h-16 rounded-full bg-neon-cyan/20 border border-neon-cyan/40 flex items-center justify-center group-hover:bg-neon-cyan/30 group-hover:scale-110 transition-all">
+            <div className={`relative w-16 h-16 rounded-full bg-neon-cyan/20 border border-neon-cyan/40 flex items-center justify-center group-hover:bg-neon-cyan/30 ${reducedMotion ? "" : "group-hover:scale-110 transition-all"}`}>
               <svg className="w-7 h-7 text-neon-cyan ml-1" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M8 5v14l11-7z" />
               </svg>
@@ -352,7 +676,7 @@ export default function VideoEmbed({
           <>
             {!iframeReady && (
               <div className="absolute inset-0 flex items-center justify-center bg-surface-1 z-10">
-                <div className="w-10 h-10 border-3 border-neon-cyan/30 border-t-neon-cyan rounded-full animate-spin" />
+                <div className={`w-10 h-10 border-3 border-neon-cyan/30 border-t-neon-cyan rounded-full ${reducedMotion ? "" : "animate-spin"}`} />
               </div>
             )}
             <iframe
@@ -367,11 +691,26 @@ export default function VideoEmbed({
           </>
         )}
       </div>
-      {title && (
-        <div className="px-4 py-2.5 bg-surface-1/50 border-t border-white/[0.06]">
-          <span className="text-sm text-text-secondary">{title}</span>
-        </div>
-      )}
+      <div className="px-4 py-2.5 bg-surface-1/50 border-t border-white/[0.06] flex items-center justify-between gap-2">
+        {title && (
+          <span className="text-sm text-text-secondary truncate">{title}</span>
+        )}
+        {moduleId && (
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="w-20 h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${
+                  videoFinished ? "bg-emerald-400" : "bg-neon-cyan/70"
+                }`}
+                style={{ width: `${videoFinished ? 100 : videoProgress}%` }}
+              />
+            </div>
+            <span className="text-[11px] text-text-secondary/50 whitespace-nowrap">
+              {videoFinished ? "Watched" : videoProgress > 0 ? `${videoProgress}%` : ""}
+            </span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

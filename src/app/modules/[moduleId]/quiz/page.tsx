@@ -3,6 +3,7 @@ import { getModuleQuiz } from "@/lib/content";
 import Breadcrumb from "@/components/layout/Breadcrumb";
 import Button from "@/components/ui/Button";
 import Quiz from "@/components/quiz/Quiz";
+import QuizWatchGate from "@/components/quiz/QuizWatchGate";
 
 interface PageProps {
   params: Promise<{ moduleId: string }>;
@@ -55,12 +56,20 @@ export default async function QuizPage({ params }: PageProps) {
       </div>
 
       {hasQuestions && quiz ? (
-        <Quiz
+        // Watch-gate is only enforced for modules that actually have a video
+        // wired up. Modules without `videoId`/`videoUrl` bypass the gate so
+        // quiz authoring can outpace video production (Phase 7 reality).
+        <QuizWatchGate
           moduleId={moduleId}
-          questions={quiz.questions}
-          passingScore={quiz.passingScore}
-          accentColor={mod.color}
-        />
+          required={!!(mod.videoId || mod.videoUrl)}
+        >
+          <Quiz
+            moduleId={moduleId}
+            questions={quiz.questions}
+            passingScore={quiz.passingScore}
+            accentColor={mod.color}
+          />
+        </QuizWatchGate>
       ) : (
         <div className="p-12 rounded-xl border border-white/[0.06] bg-surface-1/30 text-center">
           <div className="text-5xl mb-4">🧪</div>
