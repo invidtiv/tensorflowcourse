@@ -511,6 +511,16 @@ Word Analogies:
 - **PCA plot clusters**: 'machine', 'learning', 'deep', 'ai' should cluster visibly in one region; 'dog', 'fox', 'quick', 'lazy' in another. No clear clustering = under-training or embedding_dim too large.
 - **Analogy results**: The toy corpus is too small for reliable king−man+woman=queen style results, but related words should still surface. If the analogy function returns `[]` for all inputs, one or more of the three words is missing from the vocabulary — print `data_gen.word_to_id.keys()` to verify.
 
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Uniform negative sampling biases high-frequency word embeddings | The original Word2Vec samples negatives from a `3/4`-power unigram distribution; uniform sampling treats all words equally, causing frequent words to appear as negatives too often | Build `noise_dist = freq**0.75 / (freq**0.75).sum()` and use `np.random.choice(vocab_size, p=noise_dist)` |
+| Corpus too small for meaningful analogies | Word2Vec requires millions of tokens to learn linear geometry; 10 sentences × 50 repeats (~500 tokens) produces co-occurrence clusters, not full distributional semantics | Load a real corpus (e.g., `wikitext-2`, ~2M tokens) for analogy evaluation; accept that this toy corpus only demonstrates mechanics |
+| Using only `target_embedding` for similarity, ignoring `context_embedding` | The model trains two matrices; averaging `(W_in + W_out) / 2` can improve cosine similarity scores | Use `target_embedding` by default but experiment with the average; clearly label which matrix downstream code uses |
+| Low-frequency words have near-random embeddings | Words with few training pairs receive minimal gradient signal regardless of epochs | Increase `min_count` to exclude very rare words, or treat rare-word embeddings as unreliable and document this to users |
+| `<PAD>` / `<UNK>` tokens at indices 0–1 pollute similarity results | Without the `i > 1` guard, special tokens appear as nearest neighbors to real words | Always skip indices 0 and 1 in `find_similar_words`; use `embeddings[2:]` in PCA and adjust indices as `word_to_id[word] - 2` |
+
 ## ⚠️ Common Pitfalls
 
 1. **Uniform instead of frequency-based negative sampling:** The `generate_batch` method here samples negative words uniformly at random (`random.randint(0, vocab_size - 1)`). The original Word2Vec paper samples from a unigram distribution raised to the `3/4` power, which down-weights high-frequency function words ('the', 'a', 'is') as negatives. On large corpora, uniform sampling means high-frequency words appear so often as negatives that their embeddings get pushed apart from everything else. *Fix*: build a `noise_distribution = word_freq ** 0.75 / (word_freq ** 0.75).sum()` and use `np.random.choice(vocab_size, size=negative_samples, p=noise_distribution, replace=True)`. On this toy corpus the difference is small, but on real datasets it can be the difference between meaningful and meaningless embeddings.
@@ -522,6 +532,13 @@ Word Analogies:
 4. **Low-frequency word embedding instability:** Words with very few training pairs receive almost no gradient signal. In a vocabulary of 47 words where 'quick' appears only 3 times, its embedding can be nearly random after training. *Symptom*: `find_similar_words('quick')` returns words that intuitively have nothing in common with it. *Fix*: increase `min_count` to exclude ultra-rare words, or use `subsampling` to down-weight high-frequency words (freeing gradient budget for rare ones), or simply accept that rare-word embeddings are unreliable and document this to downstream users.
 
 5. **`<PAD>` and `<UNK>` token embeddings leaking into similarity searches:** Indices 0 and 1 are reserved for `<PAD>` and `<UNK>`. The `find_similar_words` function correctly skips `i > 1`, but if you copy this function and forget that check you'll find that 'machine' is "most similar" to `<PAD>` on some runs. In production code, always exclude special tokens from similarity lookups *and* from analogy arithmetic. For PCA plots, note that the code already slices `embeddings[2:]` — but the indices then no longer align with `word_to_id`, causing annotation offsets; compute `idx = data_gen.word_to_id[word] - 2` as the lab does, and never use raw `word_to_id` values as indices into the 2D array.
+
+## Stretch Goals
+
+1. **Frequency-based unigram negative sampling:** Implement the 3/4-power noise distribution. Build `noise_dist = np.array([count ** 0.75 for word, count in data_gen.word_counts.items()])`, normalize it, and pass it to `np.random.choice`. Train both variants for 200 epochs on the toy corpus and compare the top-5 similar words for 'learning'.
+2. **Dynamic context window:** Modify `_generate_pairs` to use `actual_window = random.randint(1, self.window_size)` instead of a fixed window size. Compare the similarity structure before and after; dynamic windows tend to tighten syntactic clusters.
+3. **FastText-style subword extension:** Decompose each word into character n-grams (e.g., 'learning' → `<le`, `lea`, ..., `ng>`). Build a joint vocabulary of words + n-grams; each word's embedding is the mean of its own embedding plus all its n-gram embeddings. Evaluate OOV handling on words held out from training.
+4. **Analogy evaluation on Google analogy dataset:** Download the 19,544-analogy Google dataset and evaluate embeddings using the `3CosAdd` metric. Report accuracy separately for semantic and syntactic categories; expect near-0% on this toy corpus (that motivates scaling to wikitext-2).
 
 ## 🚀 Stretch Goals
 

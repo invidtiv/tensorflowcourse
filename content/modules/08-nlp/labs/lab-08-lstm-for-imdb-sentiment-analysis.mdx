@@ -671,6 +671,16 @@ Test ROC-AUC:  0.9412
   4. Test acc 0.92+ → suspicious: confirm you're evaluating on `x_test, y_test`, not on a re-split of `x_train`.
   5. Loss = NaN within first 100 steps → exploding gradients. Add `clipnorm=1.0` to Adam, or drop LR to 5e-4.
 
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Padding without masking drops accuracy 3–6 pp | `pad_sequences` with `mask_zero=False` on the Embedding lets the LSTM consume hundreds of zero tokens; the final hidden state is biased toward padding | Set `Embedding(..., mask_zero=True)` and use `padding='post'` so the meaningful token is the most recent state seen by the LSTM |
+| `recurrent_dropout > 0` silently disables cuDNN kernel | The cuDNN-optimized LSTM requires `tanh` activation and no recurrent dropout; any recurrent dropout forces the slow generic kernel | Keep `recurrent_dropout=0` inside the LSTM; apply a standard `Dropout` layer after the LSTM output instead |
+| Binary task wired as 2-class softmax | Using `Dense(2, activation='softmax')` + `sparse_categorical_crossentropy` for a binary problem wastes parameters and breaks downstream code expecting a single probability | Use `Dense(1, activation='sigmoid')` with `binary_crossentropy` and labels of shape `(N,)` for binary classification |
+| Test accuracy treated as transferable to other domains | IMDB train/test are drawn from the same distribution; domain shift to Yelp or Amazon typically reduces accuracy by 5–15 pp | Do not claim general "sentiment accuracy" from a single benchmark; fine-tune on target-domain data before deployment |
+| No random seed set between runs | LSTM kernel initialization introduces ±1.5 pp variance across runs, making results appear inconsistent | Set `tf.random.set_seed(42)`, `np.random.seed(42)`, and `os.environ['PYTHONHASHSEED'] = '0'` before the first `import tensorflow` |
+
 ## ⚠️ Common Pitfalls
 
 1. **Padding without masking:** Calling `pad_sequences(..., padding='pre')` and then feeding into `Embedding(..., mask_zero=False)` means the LSTM consumes hundreds of zero tokens before the real input. The final hidden state is biased toward the padding region and accuracy drops 3–6 pp. Always set `mask_zero=True` and use `padding='post'` so the meaningful state is the most recent.
@@ -682,6 +692,13 @@ Test ROC-AUC:  0.9412
 4. **Treating test accuracy as transferable:** IMDB train/test are drawn from the same distribution. A model that hits 87% on IMDB typically loses 5–15 pp when zero-shot evaluated on Yelp or Amazon reviews due to domain shift in vocabulary, length, and tone. Don't claim "sentiment LSTM" performance from a single benchmark.
 
 5. **Forgetting to set seeds:** Test accuracy varies by ±1.5 pp across runs purely from LSTM kernel initialization. For reproducible numbers in the report, set `tf.random.set_seed(42)`, `np.random.seed(42)`, and `os.environ['PYTHONHASHSEED'] = '0'` BEFORE the first `import tensorflow`.
+
+## Stretch Goals
+
+1. **Bidirectional LSTM:** Wrap the layer as `Bidirectional(LSTM(64))`. Test accuracy typically improves to 0.88–0.89 because the model can use future context for polarity-flipping words like "but" or "however". Compare wall-clock and parameter counts vs the unidirectional baseline.
+2. **Pretrained GloVe embeddings (frozen, then fine-tuned):** Load 100-d GloVe vectors for the IMDB vocabulary, initialize the embedding matrix, and freeze it for the first 3 epochs (`embedding.trainable = False`), then unfreeze. Measure how the validation curve changes — pretrained embeddings usually reach the 0.86 band in 1–2 epochs instead of 5.
+3. **Length-bucketed batching:** Group reviews of similar length into the same batch using `tf.data.Dataset.bucket_by_sequence_length`. This drops padding waste by ~40% and shaves per-epoch time by 25–35% with no accuracy change.
+4. **Attention probe:** Replace the final hidden state with a single-head attention pool over the full sequence and visualize the attention weights `alpha` for correctly classified vs misclassified reviews. The attended tokens are usually adjective/negation words and serve as a useful debugging tool.
 
 ## 🚀 Stretch Goals
 

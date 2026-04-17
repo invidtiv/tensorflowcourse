@@ -403,6 +403,16 @@ Final hidden state: (2, 5)
 - **Manual RNN step shapes**: Each `h_t` should be `(2, 5)` matching `(batch_size, units)`. If `matmul` fails here, verify that `W_x` has shape `(input_dim, units)` and `W_h` has shape `(units, units)` — swapping these is a common initialisation error.
 - **Parameter count**: With `vocab=100`, `embed=32`, `rnn=64`, `dense=64`, `out=2`: Embedding = 100×32 = 3,200. RNN = (32+64)×64 + 64 = 6,208. Dense = 64×64 + 64 = 4,160. Output = 64×2 + 2 = 130. Total = 13,698. A mismatch suggests wrong layer sizes or an extra layer.
 
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Vanishing gradients on sequences longer than ~20 tokens | The `tanh` nonlinearity and recurrent weight matrix `W_h` multiply the gradient at every step; if the spectral radius of `W_h` is < 1 the gradient decays exponentially | Initialize `W_h` with the orthogonal initializer (spectral radius = 1); switch to LSTM or GRU for sequences > 50 tokens |
+| Loss spikes to NaN on real-text sequences | Without gradient clipping, occasional large gradients produce catastrophic weight updates in long sequences | Add `clipnorm=1.0` to the Adam optimizer: `tf.keras.optimizers.Adam(learning_rate=0.001, clipnorm=1.0)` |
+| Padding tokens affect the final hidden state | `mask_zero=True` propagates a mask through `SimpleRNN` / `LSTM`, but a custom `Lambda` layer or `Flatten` between the RNN and `Dense` silently drops it | Call `model.compute_mask(input, None)` at each layer to confirm the mask survives; avoid non-mask-aware layers between the RNN and the head |
+| Stateful RNN carries hidden state across unrelated batches | `stateful=True` is designed for splitting a single long document across batches; it corrupts classification tasks where each batch is independent | Use `stateful=False` (the default) for standard classification; if you need `stateful=True`, call `model.reset_states()` at the start of each epoch |
+| `return_sequences=True` causes shape mismatch with `Dense` | With `return_sequences=True` the RNN outputs `(batch, seq_len, units)` and a following `Dense(2)` produces `(batch, seq_len, 2)` instead of `(batch, 2)` | Insert `GlobalAveragePooling1D()` or `Lambda(lambda x: x[:, -1, :])` between the RNN and the classification head |
+
 ## ⚠️ Common Pitfalls
 
 1. **`tanh` saturation and vanishing gradients on longer sequences:** The vanilla RNN cell uses `tanh` as its nonlinearity. At `seq_length=20` with `rnn_units=64`, gradient magnitudes at time step 1 are multiplied by the recurrent weight matrix `W_h` 19 times. If `W_h` has spectral radius > 1, gradients explode; < 1, they vanish. *Symptom*: loss decreases quickly for 2–3 epochs then plateaus; early time steps in a gradient analysis plot show near-zero gradient. *Diagnostic*: initialize `W_h` with `orthogonal` initializer (as this lab does — spectral radius = 1.0) and confirm with `np.linalg.svd(model.layers[1].cell.W_h.numpy())[1].max()`. For sequences > 50 tokens, switch to LSTM or GRU — the gate mechanisms explicitly preserve gradient paths.
@@ -414,6 +424,13 @@ Final hidden state: (2, 5)
 4. **Stateful RNN (`stateful=True`) without resetting state between unrelated batches:** `SimpleRNN` and `LSTM` have an optional `stateful=True` flag that carries the hidden state from one batch to the next — useful for processing a single long document split across batches, but destructive when batches are *different* sequences. *Symptom*: validation accuracy drops erratically epoch-to-epoch; the model appears to "remember" the previous batch. *Fix*: call `model.reset_states()` at the start of each epoch (in a `Callback`), or just leave `stateful=False` (the default) for standard classification tasks.
 
 5. **`return_sequences=True` shape mismatch with a following `Dense`:** If you change `return_sequences=False` to `True` to get per-step outputs, the RNN now outputs `(batch, seq_len, units)`. A subsequent `Dense(2)` layer *will* still compile (Keras broadcasts Dense over the time dimension), but it then produces `(batch, seq_len, 2)` instead of `(batch, 2)`. Calling `model.compile(loss='sparse_categorical_crossentropy')` with integer labels of shape `(batch,)` will then fail at training time with a shape mismatch error. *Fix*: after `return_sequences=True`, add `tf.keras.layers.GlobalAveragePooling1D()` (mean across time) or `tf.keras.layers.Lambda(lambda x: x[:, -1, :])` (last step only) before the classification head.
+
+## Stretch Goals
+
+1. **Bidirectional RNN:** Wrap the `SimpleRNN` layer with `tf.keras.layers.Bidirectional`. A bidirectional RNN concatenates the forward and backward final hidden states, doubling the feature dimension to `(batch, 128)`. Verify the output shape and compare accuracy on the synthetic task vs the unidirectional baseline.
+2. **Gradient norm tracking per time step:** Build a custom training step with `tf.GradientTape` and track `||∂L/∂h_t||` for `t = 0 … T-1` on a 50-step sequence. Plot the norms; the expected shape for vanilla RNN is exponential decay toward `t=0`. Repeat with a small LSTM and confirm a flatter curve.
+3. **Gradient clipping ablation:** Train two identical models on IMDB (truncated to 256 tokens): one with `clipnorm=1.0` in Adam and one without. Log the gradient global norm per step and plot the time-series. The unclipped model should show spikes above 10× the mean norm.
+4. **BPTT truncation length vs accuracy trade-off:** Re-implement the training loop with truncated BPTT (chunks of length `k ∈ {4, 8, 16, 32, T}`). For each `k`, measure final test accuracy and average step duration. Accuracy should degrade gracefully down to `k=8` while step time drops linearly with `k`.
 
 ## 🚀 Stretch Goals
 

@@ -480,6 +480,16 @@ Key observations:
 - **RMSE ≈ 0.54** on the scaled target corresponds to roughly $54k median absolute error — competitive with the sklearn baseline (≈ $52k for GradientBoosting on this dataset).
 - `model.keras` file should be **~150–250 KB** for the 3-hidden-layer MLP. A file >1 MB means you saved the optimizer state unnecessarily.
 
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Scaler fitted on full dataset before train/test split | Splitting after `fit_transform` leaks test-set statistics (mean, std) into training, inflating evaluation metrics | Always call `scaler.fit(X_train)` after splitting, then `scaler.transform(X_test)` separately |
+| Target `y` not scaled alongside features | MSE/MAE loss is dominated by the raw target scale, making the learning rate effectively wrong for the feature scale | Scale `y` with a separate scaler, or normalize targets to zero-mean unit-variance before fitting |
+| `validation_split=0.2` with a sorted DataFrame | Keras takes the *last* 20% as validation without shuffling, biasing evaluation when data is sorted by target | Pass an explicit `validation_data=(X_val, y_val)` tuple, or shuffle the full DataFrame before calling `fit` |
+| EarlyStopping without `restore_best_weights=True` | Training stops at the patience limit but retains the last (not best) weights | Set `EarlyStopping(restore_best_weights=True)` so the model reverts to its lowest-val-loss checkpoint automatically |
+| TensorBoard `histogram_freq=1` on large models | Logging weight histograms every epoch writes gigabytes of data and slows training | Set `histogram_freq=10` or omit the parameter entirely; use `scalars` only during exploratory runs |
+
 <Callout type="warning" title="Common Pitfalls">
 
 1. **Fitting the scaler on the full dataset before splitting.** This leaks test-set statistics into training. Always `scaler.fit(X_train)` **after** the train/test split, then `transform` both.
@@ -491,6 +501,13 @@ Key observations:
 7. **Passing raw pandas DataFrames to `model.fit`** without converting to `np.array` or `tf.data.Dataset` — works in eager mode but fails silently under `@tf.function`/`jit_compile=True`.
 
 </Callout>
+
+## Stretch Goals
+
+1. **Replace the MLP with a wide-and-deep model** (Functional API): a linear branch on one-hot categorical features + a deep branch on numerical features, concatenated before the head. Compare test MSE.
+2. **Add `tf.data.Dataset` with `.cache().shuffle(10000).batch(32).prefetch(tf.data.AUTOTUNE)`** and benchmark epoch time vs the plain NumPy path. Typical speedup: 1.4–2× on CPU, 3–5× on GPU.
+3. **Swap `EarlyStopping` for `ReduceLROnPlateau` + `EarlyStopping`** (both callbacks simultaneously) and observe the characteristic step-down pattern in the validation loss curve.
+4. **Export the model as a TFLite `.tflite` artifact** using `tf.lite.TFLiteConverter.from_keras_model` and measure the size reduction. Forward-references lab-06/07 of module 10.
 
 <Callout type="tip" title="Stretch Goals">
 

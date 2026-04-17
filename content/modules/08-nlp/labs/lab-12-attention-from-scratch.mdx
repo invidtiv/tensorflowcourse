@@ -432,6 +432,16 @@ Self-attention weights shape: (1, 5, 5)
 - **Self-attention output shape equals input shape**: `(batch, seq_len, d_model)` in → `(batch, seq_len, d_model)` out. If output is `(batch, seq_len, d_k)` you forgot the output projection `W_o` (not strictly required for single-head, but required before stacking layers).
 - **Gradient norm**: `tf.linalg.global_norm(tape.gradient(loss, layer.trainable_variables))` should be in `[0.1, 10]` for the first few steps. > 100 → missing residual + LayerNorm (see Pitfall 3). < 1e-4 → softmax has saturated from unscaled scores.
 
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Forgetting the `1/√d_k` scale factor causes attention to collapse | At `d_k=64`, unscaled dot-product scores have stddev ≈ 8; softmax concentrates > 99% mass on the argmax and kills gradients through all other keys | Divide scores by `tf.math.sqrt(tf.cast(d_k, tf.float32))` before the softmax — never after |
+| Mask polarity confusion causes padding tokens to be attended | This lab uses `scores += mask * -1e9` where `mask=1` means blocked; PyTorch and some Keras helpers use the opposite convention | Unit-test your mask by printing `attention_weights[0]` on a toy sequence; prefer a large finite penalty (`-1e9`) over `-inf` to avoid NaN in fully-masked rows |
+| Stacking attention layers without residual + LayerNorm causes gradient collapse | Without `x = LayerNorm(x + Attention(x))` the signal magnitude drifts after 2–3 layers, causing gradients to vanish or explode | Wrap every sublayer as `x = x + Dropout(Sublayer(LayerNorm(x)))` (pre-norm) or `x = LayerNorm(x + Dropout(Sublayer(x)))` (post-norm) |
+| Using Keras `Attention` layer without `use_scale=True` | The built-in `tf.keras.layers.Attention` does not scale by `1/√d_k` by default in older TF 2.x | Set `use_scale=True`, or use `tf.keras.layers.MultiHeadAttention(num_heads=1, key_dim=d_k)` which scales correctly |
+| Quadratic memory OOM at long sequences | The attention-weights tensor is `(batch, seq_len, seq_len)`; at batch=32, seq_len=2048 this is ~0.5 GB per layer in fp32 | Enable `mixed_float16` to halve memory; for seq_len > 4096 use chunked or local-window attention |
+
 ## ⚠️ Common Pitfalls
 
 1. **Forgetting the `1/√d_k` scale factor:** Without scaling, at `d_k=64` the pre-softmax scores have stddev ≈ 8, which pushes softmax into a near-one-hot regime. Attention weights then concentrate on a single key, all other V vectors get ~0 gradient, and training stalls. *Symptom*: loss drops for ~50 steps then freezes, and `attention_weights` histograms show bimodal mass at 0 and 1. *Fix*: divide scores by `tf.math.sqrt(tf.cast(d_k, tf.float32))` BEFORE the softmax — never after.
@@ -443,6 +453,13 @@ Self-attention weights shape: (1, 5, 5)
 4. **Using `tf.keras.layers.Attention` thinking it's scaled dot-product:** The Keras built-in `Attention` layer does **not** scale by `1/√d_k` by default (the `use_scale` flag defaults to `False` in older TF 2.x). For transformer-equivalent behavior, either build it from scratch as in this lab or use `tf.keras.layers.MultiHeadAttention(num_heads=1, key_dim=d_k)`, which does scale correctly.
 
 5. **Quadratic memory blowup at long sequences:** The attention-weights tensor is `(batch, seq_len, seq_len)`. At `batch=32, seq_len=2048` that's ~0.5 GB in fp32 per layer. *Symptom*: OOM on a T4 (16 GB) with `seq_len > 1024` even for tiny `d_model`. *Fix*: use `tf.keras.mixed_precision.set_global_policy('mixed_float16')` to halve the memory, then reach for `FlashAttention` / chunked attention / local windows for `seq_len > 4096`.
+
+## Stretch Goals
+
+1. **Causal (auto-regressive) mask:** Build a lower-triangular mask `tf.linalg.band_part(tf.ones((L, L)), -1, 0)`, invert to match this lab's polarity, and apply inside `ScaledDotProductAttention`. Verify by printing `attention_weights[0]` — the upper triangle must be exactly 0. This single change turns the block into a GPT-style decoder layer.
+2. **Scaled vs unscaled ablation:** Run `ScaledDotProductAttention` and a copy without the `/sqrt(d_k)` line on a toy copy task, varying `d_k ∈ {8, 32, 128, 512}`. Plot train loss vs step for both; the gap should widen with `d_k`, and at `d_k=512` the unscaled variant should fail to learn at all.
+3. **KV-cache toy:** Implement incremental decoding by caching K and V across steps: `K_cache = tf.concat([K_cache, new_k], axis=1)`. Measure the speedup for generating a 128-token sequence vs naive full-recompute. Expected: ~L/2× speedup at position L.
+4. **Attention-weight entropy as a training signal:** Track `H(alpha) = -sum(alpha * log(alpha))` across training. Healthy training shows entropy starting near `log(L)` (uniform), then dropping to 2–4 nats as the model commits to patterns. Entropy collapsing to 0 early indicates mode collapse; entropy never dropping indicates the attention is acting as an expensive identity.
 
 ## 🚀 Stretch Goals
 

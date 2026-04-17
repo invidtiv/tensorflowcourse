@@ -245,6 +245,17 @@ assert val_momentum < val_vanilla * 10, \
 print("All validations passed!")
 ```
 
+## Expected Output
+
+After running the full script with the defaults (`lr=0.001`, `n_iter=5000`, `x_init=[-1, 2]`), you should see:
+
+- **Vanilla GD final position**: approximately `[0.60, 0.36]` with `f(x) ≈ 0.16`. It gets *into* the Rosenbrock valley but crawls along it extremely slowly — 5000 iterations is nowhere near enough to reach `(1, 1)`.
+- **Momentum GD final position**: approximately `[0.98, 0.96]` with `f(x) ≈ 4e-4` — a **~400× lower** loss in the same iteration budget.
+- **Trajectory plot**: the vanilla path hugs the curved valley floor in tiny steps; the momentum path overshoots the walls once or twice before settling in, then accelerates down the valley.
+- **Validation assert** (`val_momentum < val_vanilla * 10`) should pass. If it fails with a NaN or inf, your learning rate is too high — halve it.
+
+If your vanilla-GD loss is **NaN within the first 50 steps**, check that `x.copy()` is being appended to `history` (not the mutable `x` reference) and that `lr ≤ 0.002`. If momentum never beats vanilla, verify that the velocity `v` is being reused across iterations rather than reset inside the loop.
+
 <Callout type="note" title="Expected Output">
 
 After running the full script with the defaults (`lr=0.001`, `n_iter=5000`, `x_init=[-1, 2]`), you should see:
@@ -257,6 +268,16 @@ After running the full script with the defaults (`lr=0.001`, `n_iter=5000`, `x_i
 If your vanilla-GD loss is **NaN within the first 50 steps**, check that `x.copy()` is being appended to `history` (not the mutable `x` reference) and that `lr ≤ 0.002`. If momentum never beats vanilla, verify that the velocity `v` is being reused across iterations rather than reset inside the loop.
 
 </Callout>
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Loss explodes to NaN within 50 iterations | Learning rate too large for the ill-conditioned Rosenbrock valley; the narrow curvature forces tiny stable steps | Set `lr ≤ 0.002`; if NaN persists, halve again until convergence is stable |
+| History array shows same point repeated | `x` is appended directly (mutable reference) instead of a copy | Replace `history.append(x)` with `history.append(x.copy())` in every loop |
+| Momentum never outperforms vanilla | Velocity `v` is reset to zero at the start of each iteration instead of being carried across steps | Initialize `v = np.zeros_like(x)` before the loop and only update it inside, never reinitialize it |
+| β = 0.99 causes oscillation past the minimum | Very high momentum accumulates too much velocity in the steep-walled valley | Start with β = 0.9; increase toward 0.99 only after verifying stability at lower values |
+| Validation assert fails with `val_momentum > val_vanilla` | Both methods converged equally (or vanilla got lucky) at the given iteration count | Increase `n_iterations` to 10 000 and confirm momentum shows clear advantage; verify `lr` is the same for both |
 
 <Callout type="warning" title="Common Pitfalls">
 

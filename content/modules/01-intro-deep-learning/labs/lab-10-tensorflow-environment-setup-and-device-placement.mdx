@@ -235,6 +235,16 @@ Matmul 128x128 on /CPU:0 → 0.00018 s
 Matmul 128x128 on /GPU:0 → 0.00071 s   (GPU *slower* — launch overhead dominates)
 ```
 
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| `RuntimeError: Physical devices cannot be modified after being initialized` when setting memory growth | Any tensor creation (including importing Keras layers) initializes the CUDA runtime before memory growth is configured | Place all `tf.config.experimental.set_memory_growth(...)` calls at the very top of the script, before any other TF or Keras imports |
+| `GPUs visible: []` despite NVIDIA GPU present | CUDA / cuDNN version mismatch — TF 2.16 expects CUDA 12.3 + cuDNN 8.9; an older CUDA stack is silently ignored | Run `nvidia-smi` and `python -c "import tensorflow as tf; print(tf.sysconfig.get_build_info())"` to compare required vs installed versions; reinstall with `pip install tensorflow[and-cuda]` |
+| First GPU benchmark iteration is 10–100× slower than subsequent ones | The first op triggers XLA kernel compilation and CUDA graph caching | Always run one throwaway warmup iteration before starting the timer; average over at least 5 timed iterations |
+| `time.time()` shows 0 ms for short GPU ops on Windows | `time.time()` has ~16 ms granularity on Windows due to the default timer resolution | Use `time.perf_counter()` which has sub-microsecond resolution on all platforms |
+| Stale graphs fill GPU memory across notebook cells | TF accumulates graph state in the Python process between cells without releasing it | Call `tf.keras.backend.clear_session()` between experiments, or restart the kernel; alternatively, run each experiment in a subprocess |
+
 <Callout type="warning" title="Common Pitfalls">
 
 1. **`tf.config.set_logical_device_configuration` called after TF has already allocated** — raises `RuntimeError: Physical devices cannot be modified after being initialized`. Always set memory growth *before* any tensor is created.
@@ -246,6 +256,13 @@ Matmul 128x128 on /GPU:0 → 0.00071 s   (GPU *slower* — launch overhead domin
 7. **Pinning ops to `/GPU:0` that aren't GPU-supported** (e.g., `tf.strings` ops) — raises `InvalidArgumentError: Cannot assign a device`. Use `tf.config.set_soft_device_placement(True)` for automatic fallback during debugging.
 
 </Callout>
+
+## Stretch Goals
+
+1. **Mixed precision benchmark.** Set `tf.keras.mixed_precision.set_global_policy('mixed_float16')` and re-run the matmul benchmark. On Ampere+ GPUs you should see an additional 1.5–2× speedup.
+2. **Install with `conda` vs `pip` — which resolves CUDA faster?** `conda install -c conda-forge tensorflow` bundles its own CUDA stack. Compare install time and `tf.sysconfig.get_build_info()` output.
+3. **Multi-GPU placement.** If you have 2+ GPUs, wrap a model in `tf.distribute.MirroredStrategy().scope()` and verify the variable lives on both devices via `var.device`.
+4. **Compare TF 2.16 against TF 2.13 on the same hardware** — Keras 3 (TF 2.16 default) has a different graph compilation path; benchmark the gap.
 
 <Callout type="tip" title="Stretch Goals">
 

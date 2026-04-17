@@ -233,6 +233,16 @@ assert abs(w_keras_val.flatten()[0] - 3.0) < 0.25, (
 print("✅ All validation checks passed.")
 ```
 
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| `tape.gradient(loss, [w, b])` returns `[None, None]` | `w` and `b` were created with `tf.constant` instead of `tf.Variable`; GradientTape only tracks `tf.Variable` by default | Replace `tf.constant(0.0)` with `tf.Variable(0.0)` for every trainable parameter |
+| Loss stays flat at its initial value after many epochs | The `assign_sub` step is missing or the learning rate is so small that updates are below float32 precision | Print `grads[0].numpy()` to confirm non-zero gradients; if `None`, see row above; if near zero, raise `lr` to 0.1 |
+| `y_pred` has shape `(200, 200)` instead of `(200,)` | `X` was accidentally reshaped to `(200, 1)`, and `w * X` broadcasts to a 2-D result | Ensure `X` has shape `(200,)` or explicitly write `y_pred = (w * X + b).numpy()` and check the shape before computing loss |
+| Keras `w` differs from manual `w` by more than 0.5 | Both runs must share the same data seed, learning rate, and epoch count; Keras shuffles internally by default | Add `shuffle=False` to `model.fit(X, y, ..., shuffle=False)` for an exact match, or accept small differences from shuffling |
+| `input_shape` deprecation warning in TF 2.16+ | Keras 3 deprecated the `input_shape` constructor argument to `Dense` | Use `model.build((None, 1))` after constructing the Sequential model, or add an explicit `tf.keras.layers.Input(shape=(1,))` first |
+
 <Callout type="warning" title="Common Pitfalls">
 
 1. **`tape.gradient` returns `None`** — You used `tf.constant` instead of
