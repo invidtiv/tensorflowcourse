@@ -377,3 +377,45 @@ Signals to confirm:
 </Callout>
 
 ---
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|---------------|-----|
+| Calling `Model(inputs, outputs)` before all layers are connected | Incomplete DAG raises `ValueError: Graph disconnected` at model construction time | Trace every layer from an `Input(...)` node to an output tensor; the final tensor passed as `outputs` must be reachable from `inputs` |
+| Reusing the same `Input` instance across two separate models | Both models share internal graph state, causing `AttributeError` on `model.save()` and unpredictable prediction behavior | Create a fresh `tf.keras.Input(shape=...)` for each model; `Input` objects are cheap to construct |
+| Passing a Python list of outputs with a single string loss | Keras applies the loss only to the first output head and silently ignores the rest, giving misleadingly low total loss | Pass a matching list of loss functions `['sparse_categorical_crossentropy', 'mse']` or a dict keyed by output layer name |
+| Forgetting that weight-shared layers share biases too | Independent-bias branches initialized with the same weights produce identical activations, defeating the purpose of branching | Use `layers.Dense(units, use_bias=False)` for the shared part and add a separate `layers.Bias()` or `layers.Dense(units)` per branch |
+| Mixing `tf.keras` and standalone `keras` imports in the same file | Both provide a class named `Dense` but they are different Python objects; layers from one cannot be composed with layers from the other | Standardize on one import style per project; the course uses `from tensorflow import keras` throughout |
+
+```python
+# Functional API structural assertions
+import tensorflow as tf
+
+# Build the multi-input model from the lab
+image_input = tf.keras.Input(shape=(784,), name='image_input')
+meta_input  = tf.keras.Input(shape=(10,),  name='meta_input')
+x_img  = tf.keras.layers.Dense(128, activation='relu', name='dense_img_1')(image_input)
+x_meta = tf.keras.layers.Dense(32,  activation='relu', name='dense_meta_1')(meta_input)
+merged = tf.keras.layers.Concatenate()([x_img, x_meta])
+x      = tf.keras.layers.Dense(64, activation='relu', name='dense_combined_1')(merged)
+output = tf.keras.layers.Dense(10, activation='softmax', name='output')(x)
+model  = tf.keras.Model(inputs=[image_input, meta_input], outputs=output,
+                        name='multi_input_classifier')
+
+assert len(model.inputs) == 2, "Model must have exactly 2 input nodes"
+assert model.count_params() == 111786, f"Expected 111 786 params, got {model.count_params()}"
+assert model.output_shape == (None, 10), f"Expected output shape (None, 10), got {model.output_shape}"
+layer_names = [l.name for l in model.layers]
+assert 'dense_img_1'      in layer_names, "dense_img_1 layer missing"
+assert 'dense_meta_1'     in layer_names, "dense_meta_1 layer missing"
+assert 'dense_combined_1' in layer_names, "dense_combined_1 layer missing"
+print("✅ All Functional API structural assertions passed!")
+```
+
+## Stretch Goals
+
+1. **Rebuild a tiny ResNet-8 block** using the Functional API — one residual connection per block (`Conv2D → BN → ReLU → Conv2D → BN → Add → ReLU`). Train on CIFAR-10 and compare against a Sequential baseline of equal parameter count; the residual version should reach higher accuracy within the same number of epochs.
+2. **Two-tower retrieval model** — build query and document towers that share an embedding layer, then compute cosine similarity at the top. Verify the shared embedding's weight count appears only once in `model.summary()` and that both towers produce identical outputs for identical inputs.
+3. **Multi-head output with per-head loss weights** — return three outputs (classification logits, regression value, auxiliary logits) and pass `loss_weights={'cls': 1.0, 'reg': 0.5, 'aux': 0.1}` to `compile()`. Confirm the reported `total_loss` matches the manually computed weighted sum.
+4. **Round-trip serialization proof** — use `keras.Model.from_config(func_model.get_config())` to reconstruct a Functional model from its JSON config, then assert `reconstructed.count_params() == original.count_params()`. Attempt the same with a subclassed model and document why it raises `NotImplementedError`.

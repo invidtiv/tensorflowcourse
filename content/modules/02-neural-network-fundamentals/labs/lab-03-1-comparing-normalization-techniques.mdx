@@ -392,3 +392,42 @@ Qualitative signals to confirm on your run:
 </Callout>
 
 ---
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|---------------|-----|
+| Fitting scaler on full dataset before train/test split | Leaks test-set mean/variance into training, producing optimistically low validation loss | Call `scaler.fit(X_train)` only, then `scaler.transform(X_train)` and `scaler.transform(X_test)` separately |
+| Using `MinMaxScaler` with heavy-tailed outliers | A single outlier at 10× the typical range compresses 99% of values into a narrow band near 0 | Clip or remove outliers first, or use `RobustScaler` which is IQR-based and ignores tail extremes |
+| Confusing row-normalization (`Normalizer`) with column scaling | `Normalizer` rescales each sample to unit norm — it does not remove inter-feature scale differences and is not a training pre-processor | Use `StandardScaler` or `MinMaxScaler` for column-wise normalization; reserve `Normalizer` only for cosine-similarity use cases |
+| Forgetting to inverse-transform scaled targets | Predictions remain in scaled units, so reported MAE is ~100× smaller than true error in original units | Apply `scaler_y.inverse_transform(y_pred)` before computing any evaluation metric |
+| Re-fitting the scaler inside the training loop | Each epoch uses a different normalization, making the optimization landscape non-stationary and preventing convergence | Fit the scaler once before training; inside the loop only call `.transform()` (or better, pre-transform the entire dataset) |
+
+```python
+# Validation assertions for normalization comparison
+import numpy as np
+
+# After running the comparison notebook, collect results into a dict:
+# results = {'StandardScaler': {'val_loss': 0.0287, 'test_mae': 0.1204, 'time': 3.11}, ...}
+
+assert results['No Normalization']['val_loss'] > 0.5, \
+    "No-normalization model should diverge (val_loss > 0.5)"
+assert results['StandardScaler']['val_loss'] < 0.10, \
+    "StandardScaler model should converge well (val_loss < 0.10)"
+assert results['StandardScaler']['val_loss'] < results['No Normalization']['val_loss'] * 0.2, \
+    "StandardScaler should reduce val_loss by at least 5× vs no normalization"
+assert results['RobustScaler']['val_loss'] < 0.10, \
+    "RobustScaler model should converge (val_loss < 0.10)"
+assert results['MinMaxScaler']['test_mae'] < results['No Normalization']['test_mae'], \
+    "Any column scaling should reduce test MAE versus no normalization"
+assert results['StandardScaler']['time'] < results['No Normalization']['time'] * 1.2, \
+    "Scaled training should not be significantly slower than unscaled"
+print("✅ All normalization comparison assertions passed!")
+```
+
+## Stretch Goals
+
+1. **Add contaminated outliers** — inject 5% of training samples with feature values drawn from `N(0, 100)` and re-run all five methods. `RobustScaler` should pull ahead of `StandardScaler` by a clear margin while `MinMaxScaler` nearly collapses. Report the change in test MAE for each method.
+2. **Mixed-type feature columns** — rebuild the dataset with 5 numeric and 5 one-hot categorical columns. Use `ColumnTransformer` to scale only the numeric columns. Measure how test MAE changes versus naïvely passing all columns through `StandardScaler`.
+3. **`tf.keras.layers.Normalization` adaptation** — replace `StandardScaler` with a Keras `Normalization` layer (`.adapt(X_train)`) baked inside the model. Save the model with `model.save()`, reload it, and verify the mean/variance survive the round-trip without re-adapting.
+4. **Quantile transformation benchmark** — add `QuantileTransformer(output_distribution='normal')` as a sixth method. It is slower to fit but maps any distribution to an approximate normal; report whether it beats `StandardScaler` on test MAE for the default dataset and for a log-normal variant of the same data.

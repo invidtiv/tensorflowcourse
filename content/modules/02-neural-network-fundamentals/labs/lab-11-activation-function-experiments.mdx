@@ -520,6 +520,48 @@ What to verify on your run:
 
 ---
 
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|---------------|-----|
+| Sigmoid numerical overflow for large `\|x\|` | `exp(-x)` overflows to `inf` for large positive `x`, returning `NaN` from `1 / (1 + inf)` | Use NumPy's built-in `scipy.special.expit` or clip inputs: `np.clip(x, -500, 500)` before computing the sigmoid |
+| Dead ReLU neurons from large negative biases or bad init | Pre-activations go permanently negative; ReLU outputs 0 and gradient is 0, so the neuron never recovers | Use He initialization (`kernel_initializer='he_normal'`) and monitor the fraction of zero activations; switch to LeakyReLU if >10% neurons die |
+| Comparing activations without controlling initialization | He init benefits ReLU while Xavier benefits tanh/sigmoid; mixing them conflates activation choice with init choice | Fix all other hyperparameters (init strategy, lr, batch size) and change only the activation function between runs |
+| Forgetting to match initialization to activation | Xavier init assumes symmetric saturating activations; applying it to ReLU produces activations that shrink with depth | Use `he_normal`/`he_uniform` for ReLU family; `glorot_normal`/`glorot_uniform` for sigmoid/tanh/softmax |
+| Applying softmax in a hidden layer | Softmax forces all hidden activations to sum to 1, preventing independent feature learning and causing severe gradient issues | Use softmax only in the output layer for multi-class classification; use ReLU/GELU/Swish in hidden layers |
+
+```python
+# Activation function validation assertions
+import numpy as np
+
+def sigmoid(x):
+    return 1 / (1 + np.exp(-np.clip(x, -500, 500)))
+
+def sigmoid_derivative(x):
+    s = sigmoid(x)
+    return s * (1 - s)
+
+x_test = np.array([-2.0, -1.0, 0.0, 1.0, 2.0])
+
+# Sigmoid identity: derivative = σ(x) * (1 - σ(x))
+sig_vals  = sigmoid(x_test)
+sig_deriv = sigmoid_derivative(x_test)
+expected  = sig_vals * (1 - sig_vals)
+assert np.allclose(sig_deriv, expected, atol=1e-9), \
+    "Sigmoid derivative identity failed: σ'(x) must equal σ(x)·(1-σ(x))"
+
+# ReLU: non-negative outputs, zero for negative inputs
+relu = np.maximum(0, x_test)
+assert np.all(relu >= 0), "ReLU must be non-negative"
+assert relu[x_test < 0].sum() == 0, "ReLU must be exactly 0 for negative inputs"
+
+# Sigmoid range check
+assert np.all((sig_vals > 0) & (sig_vals < 1)), "Sigmoid output must be in (0, 1)"
+assert np.isclose(sigmoid(0), 0.5, atol=1e-9), "sigmoid(0) must equal 0.5"
+
+print("✅ All activation function validation checks passed!")
+```
+
 ## Stretch Goals
 
 1. **Implement GELU from scratch:** The Gaussian Error Linear Unit (GELU) used in Transformers is defined as `x · Φ(x)` where Φ is the standard Gaussian CDF. Implement both the exact version (using `scipy.special.erf`) and the fast approximation (`0.5x(1 + tanh(√(2/π)(x + 0.044715x³)))`). Compare them on [-5, 5] and verify the approximation error is < 0.01.

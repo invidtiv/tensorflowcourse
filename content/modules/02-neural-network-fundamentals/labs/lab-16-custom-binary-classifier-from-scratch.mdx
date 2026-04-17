@@ -275,7 +275,7 @@ print("✅ All validation checks passed!")
 
 ---
 
-## 🎯 Expected Output
+## Expected Output
 
 ### Console invariants (final training run, 800 samples, 200 epochs, lr=0.01)
 
@@ -327,7 +327,7 @@ Testing model validation checks...
 
 ---
 
-## ⚠️ Common Pitfalls
+## Common Pitfalls
 
 | # | Pitfall | What happens | Fix |
 |---|---------|-------------|-----|
@@ -339,7 +339,7 @@ Testing model validation checks...
 
 ---
 
-## 🚀 Stretch Goals
+## Stretch Goals
 
 1. **Add L2 regularization manually.** In the custom training loop, compute `l2_penalty = 0.001 * sum(tf.reduce_sum(tf.square(w)) for w in model.trainable_variables)` and add it to the loss. Compare decision boundary smoothness with and without regularization — the regularized boundary should be less jagged, especially near data-sparse regions.
 
