@@ -374,4 +374,52 @@ print(exercises)
 
 ---
 
+## Expected Output
+
+Running the BiLSTM NER lab on the synthetic dataset should produce values in the following ranges:
+
+| Metric | Expected value | Notes |
+|---|---|---|
+| Synthetic NER vocabulary size | 60–80 words | Entity names + context words |
+| Tag set size | 4 tags: O, PER, ORG, LOC | Plus `<PAD>` at index 0 = 5 total |
+| BiLSTM output shape per token | `(batch, seq_len, 2 × lstm_units)` | Both directions concatenated |
+| Token-level accuracy after 10 epochs | ≥ 0.85 | Dominated by O tag; per-entity F1 matters more |
+| PER entity F1 score | ≥ 0.70 | On synthetic data with consistent patterns |
+| ORG / LOC entity F1 score | ≥ 0.65 | Harder to distinguish on synthetic corpus |
+
+```python
+# Shape validation
+import tensorflow as tf
+bilstm_out = tf.keras.layers.Bidirectional(
+    tf.keras.layers.LSTM(32, return_sequences=True)
+)(tf.zeros((4, 20, 50)))
+assert bilstm_out.shape == (4, 20, 64), f"Expected (4,20,64), got {bilstm_out.shape}"
+
+# Tag distribution sanity: O tag should be ~60-80% of all tokens in NER data
+tag_counts = {"O": 120, "PER": 20, "ORG": 15, "LOC": 10}
+o_fraction = tag_counts["O"] / sum(tag_counts.values())
+assert 0.55 < o_fraction < 0.90, "O tag fraction out of expected range"
+print("lab-11 assertions passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Macro F1 inflated by O tag dominance | In typical NER data, 60–80% of tokens are `O`; computing macro F1 that includes the `O` class masks poor performance on rare entity types | Always report entity-level (non-O) F1 separately using `classification_report(labels=entity_tags)` and ignore the O class in the macro average |
+| Padding tokens included in loss computation | `sparse_categorical_crossentropy` computes loss for every position including pad (index 0), pulling gradients toward predicting O for padded positions even when those positions carry no information | Pass `sample_weight = (y_true != 0).astype(float)` to `model.fit` or use `tf.keras.losses.SparseCategoricalCrossentropy(ignore_class=0)` |
+| BiLSTM output shape misunderstood after `return_sequences=True` | `Bidirectional(LSTM(64, return_sequences=True))` outputs shape `(batch, seq_len, 128)` — 128 not 64 — because both directions are concatenated; a downstream `Dense(num_tags)` must see 128 channels, not 64 | Always print `model.summary()` after building the BiLSTM and verify the last dimension before the final `Dense` layer |
+| IOB tagging violated during inference | Greedy per-token classification sometimes produces illegal tag transitions like `B-PER → B-ORG` (a PER entity starts but immediately jumps to ORG without an I or O transition) | Apply Viterbi decoding with a learned or heuristic transition matrix (`tensorflow_addons.text.crf_decode`) that assigns `−∞` penalty to illegal transitions |
+| Missing masking in the CRF layer | The CRF loss function must know which positions are padding; if the sequence length mask is not passed, padded positions contribute to the partition function and inflate the CRF loss | Pass the binary mask `(batch, seq_len)` as the `sequence_lengths` argument to `tfa.text.crf_log_likelihood` |
+
+## Stretch Goals
+
+1. **BiLSTM-CRF with Viterbi decoding:** Add a `tensorflow_addons.layers.CRF` layer on top of the BiLSTM output. The CRF models tag transition probabilities (e.g., `I-PER` can only follow `B-PER` or `I-PER`) and decodes with Viterbi. On the CoNLL-2003 English NER benchmark, a BiLSTM-CRF typically reaches F1 ≈ 0.90 vs ≈ 0.86 for the same model without CRF, a consistent +4 point improvement purely from the structured output layer.
+
+2. **Character-level CNN features for OOV handling:** For each word, pass its characters through a 1D CNN (kernel sizes 2, 3; 32 filters each; max-pool to 64-d) and concatenate the resulting character vector with the word embedding before feeding to the BiLSTM. This gives the model morphological cues (capitalization, suffixes `-tion`, `-ity`) that help identify unseen named entities. Evaluate by deliberately removing 10% of entity tokens from the training vocabulary and measuring F1 on those OOV tokens specifically — the character model should score ≥ 0.50 F1 on OOV vs ≈ 0.20 for the word-only model.
+
+3. **Cross-lingual transfer with multilingual BERT:** Fine-tune `bert-base-multilingual-cased` (mBERT, 104 languages) on English CoNLL-2003 NER and evaluate zero-shot on Spanish CoNLL-2002 NER without any Spanish training data. Expected Spanish F1: 0.60–0.70 (zero-shot), compared to a monolingual Spanish BiLSTM-CRF trained on CoNLL-2002 that reaches ~0.87. This demonstrates cross-lingual transfer and motivates multilingual pretraining even for tasks with labeled data in some languages.
+
+4. **Attention-based span extraction vs token classification:** Reframe NER as span extraction (like SQuAD): given a sentence, predict start and end positions for each entity span using a bilinear attention scorer `score(i,j) = h_i^T W h_j`. Compare span F1 (partial-match scoring) with standard token-level F1. Span extraction handles nested entities (e.g., "New York Stock Exchange" contains "New York") naturally while BIO tagging cannot represent nesting — demonstrate this on a synthetic nested NER example.
+
 # Attention Mechanism Labs

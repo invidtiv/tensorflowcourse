@@ -529,4 +529,59 @@ tf.keras.mixed_precision.set_global_policy(policy)
 
 ---
 
+## Expected Output
+
+Running the pretrained Word2Vec loading and fine-tuning sections should produce values in the following ranges:
+
+| Metric | Expected value | Notes |
+|---|---|---|
+| Google News Word2Vec vocabulary size | 3 000 000 | word2vec-google-news-300 via gensim |
+| Embedding dimension | 300 | Fixed for Google News model |
+| IMDB vocab coverage | 70–80% | Lower than GloVe 100d due to case sensitivity |
+| Frozen Word2Vec val accuracy at epoch 3 | 0.84–0.87 | Comparable to frozen GloVe 100d |
+| Fine-tuned Word2Vec val accuracy at epoch 5 | 0.87–0.90 | Matches or slightly exceeds fine-tuned GloVe |
+| Word2Vec similarity for ('king' - 'man' + 'woman') | 'queen' in top-3 | Classic analogy; verify with `model.most_similar` |
+
+```python
+# Validation assertions (run after loading the gensim model)
+import numpy as np
+
+# Simulate Word2Vec embedding lookup
+embed_dim = 300
+fake_w2v = {"machine": np.random.randn(embed_dim),
+            "learning": np.random.randn(embed_dim),
+            "deep": np.random.randn(embed_dim)}
+
+vocab_size = 10000
+embedding_matrix = np.zeros((vocab_size, embed_dim))
+hits = sum(1 for w in fake_w2v if w in fake_w2v)
+assert hits == 3, "Lookup mismatch"
+
+# Check matrix shape
+assert embedding_matrix.shape == (vocab_size, embed_dim), "Wrong shape"
+print("lab-16 Word2Vec assertions passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| `gensim` model download fails or is too slow | The Google News Word2Vec model is ~1.6 GB; `gensim.downloader.load` fetches it at runtime, which times out on slow connections | Cache the model locally with `api.load('word2vec-google-news-300', return_path=True)` and reload from disk with `gensim.models.KeyedVectors.load_word2vec_format` |
+| Case mismatch between tokenizer and Word2Vec vocabulary | Google News Word2Vec is case-sensitive ('Apple' != 'apple') but the tokenizer may lowercase all tokens, causing 'Apple' (company name) to miss the Word2Vec entry | Try both `word` and `word.capitalize()` and `word.upper()` lookups; fall back to lowercase entry if none found, then to zero/random initialization |
+| Word2Vec and GloVe embedding dimensions differ | Word2Vec-Google-News uses 300-d; GloVe comes in 50/100/200/300-d; mixing them in a comparison without standardizing dimensions makes the comparison unfair | Always use the same dimension (100-d for both, via GloVe-100 and Word2Vec truncated to 100-d via PCA or trained at 100-d) when comparing embedding sources |
+| `embedding.trainable = True` from epoch 1 corrupts Word2Vec geometry | Allowing gradient flow through 300-d Word2Vec embeddings before the classifier head has converged causes rapid drift away from the pretrained space | Freeze the embedding layer for 2 warm-up epochs, then set `embedding.trainable = True` with a reduced learning rate (10× smaller than the rest of the model) to preserve semantic structure while allowing task adaptation |
+| Analogy arithmetic fails for domain-specific words | The Word2Vec analogy `king - man + woman = queen` works on the Google News corpus but fails for technical domains (e.g., `LSTM - memory + gating = ?` returns unrelated words) because the general-domain model lacks domain-specific co-occurrence | For domain-specific analogy tasks, fine-tune a Word2Vec model on domain text (e.g., arXiv ML abstracts) rather than relying on Google News; use `gensim.models.Word2Vec` with `min_count=5` and `vector_size=100` |
+
+## Stretch Goals
+
+1. **Word2Vec vs GloVe vs fastText head-to-head benchmark:** Load all three pretrained embeddings (Word2Vec 300d, GloVe 100d, fastText English 300d) and evaluate on four tasks: (a) WordSim-353 similarity, (b) Google analogy dataset, (c) IMDB sentiment accuracy, (d) CoNLL NER F1. Use a standardized 2-layer BiLSTM classifier for (c) and (d). Produce a 4×3 table of scores and rank the embeddings by task. Expected: fastText wins on NER (due to morphological subword features); Word2Vec wins on analogies; GloVe wins on similarity; all three are within 2% on sentiment.
+
+2. **Domain adaptation via continued training:** Start with the pretrained Word2Vec Google News vectors and continue training on a domain corpus (e.g., 50k arXiv ML abstracts). Use `gensim.models.Word2Vec` with `model.build_vocab(new_sentences, update=True)` followed by `model.train(new_sentences)`. Track the cosine similarity between the original and updated vectors for 20 general words ('learning', 'model', 'network') and 20 domain-specific words ('backpropagation', 'overfitting', 'softmax'). Domain words should shift significantly (similarity < 0.80) while general words should remain stable (similarity > 0.90).
+
+3. **Efficient Word2Vec serving with FAISS approximate nearest-neighbor:** The Word2Vec `most_similar` operation requires an O(V) brute-force scan over all 3M vectors. Build a FAISS `IndexFlatIP` (inner product, equivalent to cosine after L2 normalization) over the full Google News vocabulary. Compare lookup time for `most_similar` vs FAISS for 1000 query words: brute-force should take 50–200ms per query; FAISS should be < 1ms. Verify that the top-5 FAISS results match brute-force for 99%+ of queries (FAISS exact index, not approximate, for this comparison).
+
+4. **Retrofitting Word2Vec with semantic constraints from WordNet:** Apply the Faruqui et al. retrofitting algorithm (as in lab-15 stretch goal 3) to the Word2Vec 300d vectors, using WordNet synonym edges as constraints. Compare the change in WordSim-353 and SimLex-999 Spearman correlation before and after retrofitting. Also check whether the analogy accuracy changes — retrofitting typically improves SimLex (which captures true semantic similarity) but can slightly hurt analogy accuracy (which captures relational structure) because synonyms in WordNet are not always in the same analogical relationship.
+
+---
+
 *End of Module 8: Natural Language Processing Labs*

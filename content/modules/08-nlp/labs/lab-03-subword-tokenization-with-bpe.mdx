@@ -386,3 +386,47 @@ print(exercises)
 
 
 ---
+
+## Expected Output
+
+Running all five parts of this lab should produce values in the following ranges:
+
+| Metric | Expected value | Notes |
+|---|---|---|
+| Initial unique words in BPE corpus | 10 | One unique base form per adjective family |
+| BPE vocabulary size after 50 merges | 40–55 | Initial chars + merge count; varies by corpus |
+| First 3 merges | Character pairs from `e`, `r`, `s`, `t` | High-freq suffix chars dominate early merges |
+| `BytePairEncoder.encode("lowest")` tokens | `['low', 'est</w>']` or `['l', 'o', 'w', 'est</w>']` | Depends on number of merges completed |
+| `UnicodeScriptTokenizer` tokens for "Machine learning" | `[b'Machine', b'learning']` | Script boundary splits on whitespace |
+| Subword pipeline vocabulary size | ≤ 100 | Capped by `target_vocab_size=100` |
+
+```python
+# Quick validation
+bpe_check = BytePairEncoder(vocab_size=30)
+bpe_check.train(["low lower lowest", "new newer newest"])
+tokens = bpe_check.encode("lower")
+assert isinstance(tokens, list) and len(tokens) >= 2, "encode must return a list"
+decoded = bpe_check.decode(tokens)
+assert "lower" in decoded.replace(" ", ""), f"decode roundtrip failed: {decoded}"
+print("lab-03 BPE assertions passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| BPE merges applied in wrong order during inference | Merges must be applied in the exact order they were learned during training; applying them in a different order produces different subword segmentations | Store `self.merges` as an ordered list and iterate it sequentially in `encode`; never use a set or dict for merge storage |
+| `</w>` end-of-word marker leaks into decoded output | `decode` replaces `</w>` with a space but misses cases where it is fused into a longer merged token (e.g., `est</w>` becomes `est` without a trailing space) | After the replacement loop, strip extra whitespace and ensure the final `strip()` call removes only leading/trailing spaces, not internal ones |
+| Vocabulary size target exceeded | `num_merges = vocab_size - len(initial_chars)` can be negative if `vocab_size` is smaller than the initial character vocabulary | Add a guard: `num_merges = max(0, vocab_size - len(initial_chars))` and warn if the requested vocab_size is too small |
+| OOV subword token for unseen characters | If the test text contains characters (e.g., accented letters, digits) absent from the training corpus, the character is not in `self.vocab` | Add a Unicode normalization step (`unicodedata.normalize('NFKD', text)`) before training and a fallback `<UNK>` character for truly unseen bytes |
+| SentencePiece vs BPE segmentation mismatch | SentencePiece treats the entire text as a byte stream and includes whitespace as a special character (`▁`), so its segmentation of the same word differs from standard BPE | When comparing tokenizers, always decode back to text and compare the surface string, not the token sequences, since boundary conventions differ |
+
+## Stretch Goals
+
+1. **Vocabulary size sweep and OOV rate curve:** Train five BPE models with `vocab_size ∈ {100, 500, 1000, 8000, 32000}` on the English Wikipedia dump (first 5M tokens from `datasets.load_dataset('wikipedia', '20220301.en')`). For each, measure the OOV rate (fraction of test tokens mapped to `<UNK>`) on a 100k-token held-out split. Plot vocab size vs OOV rate; expect a rapid drop from ~30% OOV at vocab=100 to <0.5% at vocab=32k. Annotate the "knee" of the curve, which is the typical sweet-spot for multilingual models (~8k–16k).
+
+2. **BPE merge with subword regularization sampling:** Implement the stochastic segmentation extension from Kudo (2018). During training, instead of always choosing the single best merge, sample from all valid merges with probability proportional to `exp(freq / temperature)`. Set `temperature=1.0` (uniform), `0.5` (concentrated), and `0.1` (near-greedy). Train a bigram language model on each segmentation and measure perplexity on 5k held-out tokens. Stochastic segmentation typically reduces perplexity by 3–8% for low-resource languages.
+
+3. **CBOW+negative sampling speed comparison across tokenizations:** Run the Word2Vec CBOW model from lab-06 on the same Wikipedia corpus tokenized three ways: (a) word-level, (b) BPE vocab=8k, (c) BPE vocab=32k. Measure tokens-per-second throughput during training and the analogy task accuracy (Google analogy dataset). The BPE-8k model should be 20–40% faster to train than word-level (smaller embedding table lookups) while matching or exceeding analogy accuracy due to better OOV coverage.
+
+4. **Domain-specific BPE for medical text:** Download the MIMIC-III clinical note subset (n=1000 de-identified notes) and train a BPE tokenizer with `vocab_size=4000`. Compare the resulting merges with a general-English BPE of the same size: count the fraction of merges unique to each domain. Evaluate both tokenizers on a clinical NER task (i2b2 2010 dataset) — the domain-specific tokenizer should segment rare medical terms (drug names, abbreviations) more faithfully, reducing the OOV rate by at least 15 percentage points vs the general tokenizer.

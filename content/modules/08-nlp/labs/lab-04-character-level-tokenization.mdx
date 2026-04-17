@@ -420,4 +420,53 @@ print(exercises)
 
 ---
 
+## Expected Output
+
+Running the full character-level tokenization lab should produce values in the following ranges:
+
+| Metric | Expected value | Notes |
+|---|---|---|
+| ASCII character vocabulary size | 96–100 | Printable ASCII plus padding and special tokens |
+| Unicode character vocabulary size | 128–200 | Varies with corpus; includes accented chars |
+| Sequence length for "Hello, world!" | 13 | One index per character including space and comma |
+| Padded/truncated sequence shape | `(batch, maxlen)` | `maxlen` set per task; typically 200–500 for sentences |
+| Character-level model accuracy on synthetic task | ≥ 0.70 after 10 epochs | On a toy classification task; real NER needs more data |
+| OOV rate on multilingual test text | 0% for ASCII; ~2–5% for emoji | Zero OOV for printable ASCII; byte-fallback handles rest |
+
+```python
+# Validation assertions
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+
+char_tok = CharacterTokenizer()
+char_tok.fit(["Hello, world! This is NLP."])
+encoded = char_tok.encode("Hello, world!")
+assert len(encoded) == 13, f"Expected 13 chars, got {len(encoded)}"
+decoded = char_tok.decode(encoded)
+assert decoded == "Hello, world!", f"Roundtrip failed: {decoded}"
+
+padded = pad_sequences([encoded], maxlen=20, padding="post")
+assert padded.shape == (1, 20), f"Expected (1,20), got {padded.shape}"
+print("lab-04 assertions passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Vocabulary built on training set only but test text has unseen characters | Fitting the `CharacterTokenizer` on training data misses Unicode characters that appear only in test data (e.g., accented letters, emoji) | Add a `byte_fallback=True` option: for unknown characters, encode each UTF-8 byte as a separate token using a 256-entry byte vocabulary |
+| Sequence length explosion for long documents | Character-level encoding inflates a 500-word document to ~2500 characters, making attention quadratic in cost | Apply `maxlen` truncation from the left (`truncating='pre'`) to preserve sentence endings, or use a hierarchical encoder (characters → words → sentences) |
+| `Dense` output dimension mismatch after character embedding | The character embedding `(batch, seq, embed_dim)` is fed directly to a `Dense(num_classes)` which applies over the last axis only — producing `(batch, seq, num_classes)` instead of `(batch, num_classes)` | Add a `GlobalAveragePooling1D()` or `LSTM(..., return_sequences=False)` before the final `Dense` to collapse the time dimension |
+| Unicode normalization differences between train and test | `"é"` can be encoded as a single precomposed character (U+00E9) or as `e + combining accent` (U+0065 + U+0301); these are different tokens if normalization is not applied | Apply `unicodedata.normalize('NFC', text)` to all text before tokenization to collapse equivalent Unicode representations |
+| Confusion matrix distorted by padding tokens | When computing per-class accuracy for NER, padding positions (index 0) are included in the macro average, artificially inflating the `O` class precision | Mask padding positions using `sample_weight = (y_true != 0).astype(float)` when calling `model.evaluate` or computing metrics manually |
+
+## Stretch Goals
+
+1. **Byte-level BPE (GPT-2 style):** Replace the character vocabulary with a 256-entry byte vocabulary and run BPE merges on byte sequences. This is the exact approach used by GPT-2 and ensures zero OOV tokens for any UTF-8 text. Implement `ByteLevelBPETokenizer` with `vocab_size=1000` and train on a multilingual corpus (English + Chinese + Arabic). Verify that the tokenizer correctly handles all three scripts without language-specific preprocessing, and compare segmentation length (tokens/word) across languages.
+
+2. **Hierarchical character-to-word encoder:** Build a two-level encoder: first a 1D CNN or small LSTM reads character embeddings within each word (kernel sizes 2, 3, 4; max-pool to a fixed-size word vector), then a second LSTM reads the resulting word vectors for classification. This is the ELMo predecessor architecture (Kim et al., 2015, "Character-Aware Neural Language Models"). Evaluate on the CoNLL 2003 NER dataset and compare F1 against a word-level baseline — character models typically gain +1–3 F1 on rare proper nouns.
+
+3. **Character-level language model with nucleus sampling:** Train a character-level LSTM LM on a text corpus (e.g., the complete works of Shakespeare, ~5M characters) and implement nucleus sampling (`top_p` sampling): at each step, keep only the top tokens whose cumulative probability exceeds `p`, renormalize, and sample. Compare generated text quality for `p ∈ {0.5, 0.9, 0.95, 1.0}` (greedy, restricted, permissive, uniform). Measure character-level perplexity on a 50k-character test split; a well-trained 2-layer LSTM should reach perplexity < 3.5 on Shakespeare.
+
+4. **Contextual character embeddings via ELMo comparison:** After training the character CNN encoder, extract its output word vectors for the 500 most common words and compare them with GloVe 100-d vectors using cosine similarity. Compute the Spearman correlation between the two similarity matrices on the WordSim-353 benchmark. Character-based vectors should correlate moderately (ρ ≈ 0.5–0.65) with GloVe; lower correlation indicates that character structure alone does not capture full distributional semantics, motivating the combination approach used in ELMo.
+
 # Word Embeddings Labs

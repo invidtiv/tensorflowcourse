@@ -382,3 +382,51 @@ for text in advanced_texts:
 
 
 ---
+
+## Expected Output
+
+Running all five parts of this lab should produce values in the following ranges:
+
+| Metric | Expected value | Notes |
+|---|---|---|
+| `CustomWordTokenizer` vocabulary size | 38–45 | Depends on `num_words=50` cap and corpus size |
+| OOV token index | 1 | Reserved by design; index 0 is implicit pad |
+| `TextVectorization` vocabulary size | 42–50 | Includes `[UNK]` and `''` (pad) at indices 0–1 |
+| Padded sequence length | 5 | Fixed by `maxlen=5` in `pad_sequences` |
+| Pre-padding vs post-padding | Both produce same token content | Only the 0-pad positions differ |
+| `AdvancedTokenizer` contraction expansion | `"don't"` → `["do", "not"]` | `n't` expanded before stripping punctuation |
+
+```python
+# Quick validation — run after the full lab
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+
+tok = CustomWordTokenizer(num_words=50)
+tok.fit_on_texts(sample_texts)
+assert tok.word_index[tok.oov_token] == 1, "OOV must be index 1"
+assert len(tok.word_index) <= 51, "Vocab must respect num_words cap (+1 for OOV)"
+
+seqs = tok.texts_to_sequences(["the quick brown fox"])
+padded = pad_sequences(seqs, maxlen=10, padding="post")
+assert padded.shape == (1, 10), f"Expected (1,10), got {padded.shape}"
+print("lab-02 assertions passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Vocabulary grows beyond `num_words` | `most_common(self.num_words)` is called but `num_words=None` is the default, so slicing returns the full vocabulary | Always supply an explicit `num_words` value; guard with `if self.num_words else sorted_words` before slicing |
+| Index 0 silently used as a real word | The loop starts at `idx=2` but if an upstream caller uses `word_index.get(word, 0)` for unknown words AND a real word also maps to index 0, the pad token collides with that word | Reserve index 0 exclusively for padding by starting the sorted-word enumeration at `idx=2` and never assigning 0 to any real word |
+| `sequences_to_texts` returns `<OOV>` for pad zeros | `index_word` does not contain a mapping for index 0, so the `else` branch appends `self.oov_token` for every padding zero when decoding | Add `self.index_word[0] = '<PAD>'` during `fit_on_texts`, or skip zeros explicitly in `sequences_to_texts` |
+| `TextVectorization` vocabulary includes empty-string pad token | The layer reserves index 0 for `''` (empty) and index 1 for `[UNK]`; calling `get_vocabulary()[0]` returns `''` not a real word | When mapping output indices to words, offset by 2: `vocab[idx]` where `idx >= 2` maps to real tokens |
+| Post-padding truncation discards end of sequence | `pad_sequences(..., truncating='post')` removes tokens from the *end*, losing the sentence terminator or key final tokens | Use `truncating='pre'` to drop leading context instead, or increase `maxlen` to avoid truncation on typical sentences |
+
+## Stretch Goals
+
+1. **N-gram tokenization with TF-IDF weighting:** Extend `CustomWordTokenizer` to support bigrams and trigrams by adding a `ngram_range=(1, 2)` parameter. After fitting, compute TF-IDF weights for each n-gram across the corpus and store them. Replace the integer-sequence output with a dense TF-IDF vector (sparse bag-of-n-grams). Compare classification accuracy on the IMDB dataset (using `tf.keras.datasets.imdb`) with unigram integer sequences vs TF-IDF bigram vectors fed into a simple `Dense` classifier.
+
+2. **Stop-word removal and stemming integration:** Add `remove_stopwords=True` and `stem=True` flags to `CustomWordTokenizer`. For stop words, use a frozen set of the 150 most frequent English words. For stemming, implement the Porter stemmer algorithm (the 5-step suffix-stripping cascade) without external libraries. Measure vocabulary reduction: a typical 10k-word news corpus should shrink by 30–40% with both options enabled. Track whether downstream sentiment accuracy on IMDB improves or degrades — stop-word removal sometimes hurts sentiment models because words like "not" are incorrectly removed.
+
+3. **Byte-level BPE fallback for OOV:** When a token is not found in `word_index`, rather than mapping it to `<OOV>`, fall back to encoding it character-by-character using a secondary byte-level vocabulary (256 ASCII byte values). Implement a two-level lookup: first try the word vocabulary, then decompose into bytes. This mirrors the GPT-2 tokenizer design and eliminates the `<OOV>` token entirely. Evaluate on a multilingual corpus (English + French + Spanish) and confirm that OOV rate drops to 0%.
+
+4. **Dynamic vocabulary with online learning:** Modify `fit_on_texts` to support incremental fitting: calling it multiple times should merge new words into the existing vocabulary, evicting the least-frequent words when `len(vocab) > num_words`. Implement a `LRU + frequency` eviction policy where a word is retained if `frequency * recency_score > threshold`. Test this on a streaming corpus by calling `fit_on_texts` in 10 mini-batches and comparing the final vocabulary composition with a single-pass fit.

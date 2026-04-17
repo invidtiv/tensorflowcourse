@@ -424,4 +424,107 @@ print(exercises)
 
 ---
 
+## Expected Output
+
+After running the full lab, your console and saved files should look like:
+
+```
+ATTENTION VISUALIZATION
+==================================================
+
+Self-Attention Heatmap
+  Input tokens: ['The', 'cat', 'sat', 'on', 'the', 'mat']
+  Attention shape: (6, 6)
+  Heatmap saved → attention_heatmap.png
+
+Multi-Head Attention Patterns (8 heads)
+  Head 0: diagonal-dominant (local context)
+  Head 1: first-token bias (global aggregator)
+  Head 2: syntactic (noun → verb links visible)
+  ...
+  Grid saved → multi_head_attention.png
+
+Attention Rollout (6-layer encoder)
+  Layer 0 effective attention shape: (6, 6)
+  Layer 5 effective attention shape: (6, 6)
+  Rollout combines residual identity at each layer.
+  Rollout map saved → attention_rollout.png
+
+Attention Analysis:
+  Token 'cat' most attends to: 'sat' (0.38), 'The' (0.21), 'mat' (0.17)
+  Token 'sat' most attends to: 'cat' (0.41), 'on' (0.22)
+```
+
+Attention weight rows must sum to 1.0 before residual addition. The rollout map should show smoother, more diffuse patterns than raw single-layer attention — this is expected because the residual identity at each layer spreads attention across all tokens.
+
+```python
+# Validation assertions
+import numpy as np
+
+# Attention weights must be non-negative and row-sum to 1
+attn = np.array([[0.38, 0.21, 0.17, 0.12, 0.07, 0.05],
+                 [0.10, 0.41, 0.22, 0.15, 0.08, 0.04],
+                 [0.12, 0.18, 0.35, 0.20, 0.10, 0.05],
+                 [0.08, 0.15, 0.20, 0.40, 0.12, 0.05],
+                 [0.05, 0.10, 0.15, 0.25, 0.38, 0.07],
+                 [0.04, 0.08, 0.12, 0.18, 0.22, 0.36]])
+assert np.allclose(attn.sum(axis=1), 1.0, atol=1e-5), "Rows must sum to 1.0"
+assert (attn >= 0).all(), "Attention weights must be non-negative"
+
+# Rollout should be more uniform than raw attention
+raw_max = attn.max()
+rollout = 0.5 * np.eye(6) + 0.5 * attn  # single-layer rollout
+rollout_max = rollout.max()
+assert rollout_max < raw_max, "Rollout should be more diffuse than raw attention"
+print("lab-14 assertions passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Axes swapped on the attention heatmap | `imshow` renders rows as y-axis (query) and columns as x-axis (key); if `input_words` and `output_words` labels are swapped, the heatmap appears transposed and shows wrong token interactions | Consistently use rows = query tokens, columns = key tokens; label y-axis with query sequence and x-axis with key sequence |
+| Visualizing raw logits instead of softmax weights | Extracting attention scores before `softmax` gives unbounded values; negative logits appear as dark but still have semantic meaning in the unnormalized space | Always extract weights after `tf.nn.softmax`; verify that `weights.numpy().sum(axis=-1)` is close to 1.0 for every row |
+| Rollout formula omits the residual identity | The rollout formula must add `0.5 * I` at each layer before normalizing; omitting the identity causes cumulative matrix products to converge toward zero | Implement `A_eff = 0.5 * np.eye(L) + 0.5 * A_layer` at each layer and normalize rows before multiplying across layers |
+| Averaging attention heads after rollout instead of per layer | Head averaging must be done per layer (`A_layer = mean_over_heads(A_layer_h)`) before multiplying across layers; doing it after produces a different, less meaningful quantity | Average the `H` head matrices at each layer first, then chain the layer rollout matrices |
+| `plt.show()` blocking on headless servers | On containers or CI environments `plt.show()` waits indefinitely for a display | Set `import matplotlib; matplotlib.use('Agg')` at the top and replace every `plt.show()` with `plt.savefig(path); plt.close()` |
+
+<Callout type="warning" title="Common Pitfalls">
+
+1. **Mixing up input vs output axes on the heatmap** — `imshow` renders rows as y-axis and columns as x-axis. For seq2seq attention the convention is rows = output sequence (query) and columns = input sequence (key). Swapping `input_words` and `output_words` produces a transposed heatmap that appears to show the wrong token interactions.
+
+2. **Visualising raw logits instead of softmax weights** — Always extract attention weights *after* the softmax step, not the `matmul_qk / sqrt(dk)` logits. Raw logits are unbounded and visually misleading (negative values are suppressed to dark colours but carry meaning in the unnormalised space).
+
+3. **Attention rollout ignoring the residual identity** — The rollout formula adds the identity matrix at each layer before normalising: `A_effective = 0.5 * I + 0.5 * A_layer`. Omitting the identity causes the rollout to collapse to near-zero for most tokens after several layers, since pure matrix multiplication of sub-stochastic matrices converges to zero.
+
+4. **Averaging heads before rollout instead of after** — Head averaging should happen at each individual layer (`A_layer = mean(heads)`) before the rollout multiplication. Averaging across layers after all rollout multiplications produces a different (and generally less meaningful) quantity.
+
+5. **`matplotlib` blocking execution on headless servers** — If running inside a container or CI environment, `plt.show()` blocks indefinitely. Always use `plt.savefig(path)` followed by `plt.close()` instead of `plt.show()`, and set the `Agg` backend at the top: `import matplotlib; matplotlib.use('Agg')`.
+
+</Callout>
+
+<Callout type="tip" title="Stretch Goals">
+
+1. **Plotly interactive heatmap** — Replace the `matplotlib` heatmap with a `plotly.express.imshow` call. Add hover text showing the exact attention weight for each (query, key) pair. Learners can then explore which token pairs dominate without reading raw numbers.
+
+2. **Attention rollout for a real BERT checkpoint** — Load `bert-base-uncased` via `transformers` (HuggingFace) and apply the rollout algorithm to its 12 layers. Compare the resulting saliency map against the `[CLS]` token's pooled attention, which is a common but less principled alternative.
+
+3. **Head redundancy clustering** — Compute the pairwise cosine similarity between the 8 heads' attention matrices over a test batch. Cluster similar heads using `scipy.cluster.hierarchy`. Heads in the same cluster are candidates for pruning (cross-reference with the ablation study in lab-13 stretch goal 2).
+
+4. **Export to the course web UI** — Serialise a single attention weight matrix to JSON and wire it into the course's `<InteractiveDemo>` component (Phase 6) as a static attention visualiser. Even with synthetic weights, this validates the end-to-end pipeline from Python output to the course frontend.
+
+</Callout>
+
+## Stretch Goals
+
+1. **Plotly interactive attention heatmap:** Replace the `matplotlib` heatmap with `plotly.express.imshow`. Add hover annotations showing the exact attention weight for each `(query_token, key_token)` pair so learners can explore alignment without reading raw numbers. Export the figure to a standalone HTML file (`fig.write_html("attention_interactive.html")`) and verify it renders correctly in a browser without a Python server — this validates the offline-delivery requirement of the course.
+
+2. **Attention rollout on a real BERT checkpoint:** Load `bert-base-uncased` via `transformers.TFAutoModel.from_pretrained` and extract all 12 × 12 attention weight matrices for the sentence "The cat sat on the mat." Apply the rollout algorithm across all 12 layers (with the `0.5*I` residual) and compare the resulting token saliency against the raw `[CLS]`-row pooled attention. The rollout should show that "cat" and "sat" receive higher saliency than "the" and "on" — the raw `[CLS]` attention often gives high weight to punctuation and function words, which rollout corrects.
+
+3. **Head redundancy clustering with dendrogram:** For a trained 8-head model, compute the `8×8` pairwise cosine similarity matrix between flattened attention maps (averaged over the test batch). Apply hierarchical clustering with Ward linkage (`scipy.cluster.hierarchy.linkage`) and plot a dendrogram. Identify clusters of redundant heads and confirm they match the ablation importance results from lab-13 stretch goal 2. Heads in the same cluster should both be low-importance and have high mutual similarity (> 0.85).
+
+4. **Gradient-weighted attention saliency (GradCAM for NLP):** Compute `GradCAM`-style attention saliency: `saliency_i = mean_heads(|grad(loss, attn_weights_h)|_i)` — the gradient of the scalar loss with respect to each attention weight. This is more informative than the attention weights themselves because it identifies which attended tokens actually influenced the prediction. Compare with plain attention rollout on 20 IMDB test reviews: for reviews the model misclassifies, do the two methods highlight different tokens? Document one case where GradCAM saliency correctly identifies the sentiment-bearing word that plain rollout missed.
+
+---
+
 # Pretrained Embeddings Labs

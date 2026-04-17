@@ -258,3 +258,46 @@ print(exercises)
 
 
 ---
+
+## Expected Output
+
+Running the GRU classification and comparison sections should produce values in the following ranges:
+
+| Metric | Expected value | Notes |
+|---|---|---|
+| GRU custom cell output shape | `(batch, gru_units)` | E.g., `(32, 64)` for default settings |
+| GRU parameter count vs LSTM (same units) | ~75% of LSTM params | GRU has 3 gate weight matrices; LSTM has 4 |
+| GRU best val accuracy (3 epochs, IMDB subset) | 0.80–0.86 | IMDB binary sentiment; `max_tokens=10000`, `seq_len=200` |
+| LSTM best val accuracy (same conditions) | 0.81–0.87 | Slightly higher or equal to GRU on most runs |
+| GRU training time vs LSTM | 80–90% of LSTM time | GRU is ~10–20% faster due to fewer gate ops |
+| Update gate mean value at convergence | 0.4–0.7 | Gate values near 0 or 1 indicate information flow |
+
+```python
+# Quick validation
+gru_cell = GRUCell(units=32, input_dim=16)
+x_t = tf.zeros((4, 16))
+h_prev = tf.zeros((4, 32))
+h_new = gru_cell(x_t, h_prev)
+assert h_new.shape == (4, 32), f"Expected (4,32), got {h_new.shape}"
+print("lab-09 GRU cell assertion passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Reset gate applied to full concatenation instead of previous hidden state only | The candidate activation uses `r_t * h_{t-1}` (reset gate applied only to the previous hidden state before concatenation with input), not `r_t * [h_{t-1}; x_t]` | Compute `h_candidate = tanh(W * concat([r_t * h_prev, x_t]) + b)` — reset the hidden state before concatenating with the current input |
+| Update gate polarity flipped | Using `h_t = z_t * h_{t-1} + (1-z_t) * h_candidate` instead of the correct `(1-z_t) * h_{t-1} + z_t * h_candidate` swaps the interpolation: when `z_t→1` the model should favour the new candidate but this mistake makes it favour the old hidden state | Use `h_t = (1 - z_t) * h_prev + z_t * h_candidate` so `z_t→1` adopts the candidate and `z_t→0` retains the previous state |
+| GRU `reset_after=True` vs `reset_after=False` mismatch with cuDNN | TensorFlow's built-in `GRU` layer defaults to `reset_after=True` (recurrent dropout is applied after the matrix multiplication) for cuDNN compatibility; the custom cell typically implements `reset_after=False` — the two variants are mathematically different | Use `tf.keras.layers.GRU(..., reset_after=True)` to match cuDNN behaviour when comparing your custom cell to the built-in; document which convention you use |
+| Stateless comparison between GRU and LSTM inflated by random seed | If GRU and LSTM are initialized with different random seeds, a lucky seed can make GRU look faster to converge than it actually is | Fix `tf.random.set_seed(42)` and `np.random.seed(42)` before constructing each model; re-run with 3 different seeds and report mean ± std |
+| Layer normalization applied per gate instead of per time step | Adding `LayerNormalization` inside the GRU cell should normalize each gate's pre-activation independently — but if you normalize after all gates are combined the normalization scale is wrong | Apply a separate `LayerNormalization` to each gate's linear pre-activation (`z_pre`, `r_pre`, `h_pre`) before the `sigmoid`/`tanh`, as in the Layer Normalization paper (Ba et al., 2016) |
+
+## Stretch Goals
+
+1. **Minimal Gated Unit (MGU) implementation:** The MGU (Zhou et al., 2016) uses a single gate `f_t = sigmoid(W_f [h_{t-1}; x_t])` that simultaneously controls both the forget and input signals: `h_t = (1-f_t)*h_{t-1} + f_t*tanh(W_h[f_t*h_{t-1}; x_t])`. Implement this cell and compare parameter count (roughly half of GRU), training speed, and IMDB val accuracy vs full GRU. The MGU typically reaches 98–99% of GRU accuracy with 50% of the parameters.
+
+2. **Stacked bidirectional GRU with attention pooling:** Replace the single GRU layer with two stacked `Bidirectional(GRU(64, return_sequences=True))` layers followed by a single-head attention pool (softmax over time, weighted sum). Expected val accuracy on IMDB: 0.89–0.91 after 5 epochs. Profile whether the attention pooling adds more than `GlobalAveragePooling1D` — it should improve accuracy by 0.5–1.5% while adding ~2000 parameters.
+
+3. **GRU vs Transformer on short and long sequences:** Create two versions of the IMDB dataset: truncated to 64 tokens and truncated to 512 tokens. Train a 2-layer GRU and a 2-layer Transformer encoder (from lab-13) on both. Measure accuracy and tokens-per-second. Expected finding: GRU is faster on short sequences; Transformer is faster on long sequences (due to parallelism) but the crossover point varies by hardware.
+
+4. **Layer normalization ablation for training stability:** Train the same GRU classifier four ways: (a) no normalization, (b) batch normalization on the input, (c) layer normalization on each gate's pre-activation (as in LN-GRU), (d) layer normalization on the GRU output only. Plot loss curves for all four across 20 epochs on IMDB. Measure epoch-to-epoch variance in validation accuracy — LN-GRU should show the lowest variance (most stable training) and fastest convergence below 0.40 loss.

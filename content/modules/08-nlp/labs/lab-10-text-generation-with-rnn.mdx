@@ -390,3 +390,49 @@ print(exercises)
 ```
 
 ---
+
+## Expected Output
+
+Running the character-level text generation lab should produce values in the following ranges:
+
+| Metric | Expected value | Notes |
+|---|---|---|
+| Unique characters in vocabulary | 55–75 | Depends on punctuation and whitespace in the training text |
+| Training corpus size (characters) | 1 000–3 000 | For the sample text; replace with Shakespeare for real LM |
+| Model perplexity after 50 epochs (sample text) | 3–8 | Lower = more confident; random init perplexity = vocab_size |
+| Greedy-decoded text coherence | Repetitive but in-domain words | Greedy tends to loop; use sampling for diversity |
+| Temperature 0.5 generation | More conservative, less varied | High-probability characters dominate |
+| Temperature 1.5 generation | More novel but noisier | Low-probability characters get boosted |
+
+```python
+# Validation assertions — run after model training
+assert len(char_to_idx) >= 30, "Character vocabulary too small"
+assert model.input_shape == (None, seq_length, len(char_to_idx)), "Wrong input shape"
+
+# Check that temperature scaling changes output distribution
+logits = tf.constant([[0.1, 0.5, 2.0, 0.3]])
+probs_cold = tf.nn.softmax(logits / 0.5).numpy()
+probs_hot  = tf.nn.softmax(logits / 1.5).numpy()
+assert probs_cold[0].max() > probs_hot[0].max(), "Colder temp should concentrate distribution"
+print("lab-10 assertions passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| BPTT truncation mismatch between training sequence length and generation seed length | The model is trained on fixed-length windows of `seq_length` characters, but generation feeds a seed of arbitrary length — a longer seed causes shape errors with stateless LSTM | Always truncate or pad the generation seed to exactly `seq_length` before the first forward pass, or use a stateful LSTM that accepts one character at a time |
+| Vanishing gradient through long character sequences | Backpropagating through 100+ character steps in a vanilla LSTM still suffers gradient attenuation for very early positions, causing the model to rely on only the last ~20 characters of context | Clip gradients with `clipnorm=1.0`, use an orthogonal initializer for recurrent weights, or reduce `seq_length` to 50–80 characters and rely on the statefulness trick |
+| Temperature division by zero or near-zero | Passing `temperature=0` to the softmax scaling produces `logits / 0` — `inf` or `nan` in the distribution | Guard with `temperature = max(temperature, 1e-6)` and implement greedy decoding as a special case (`np.argmax`) rather than passing `temperature→0` |
+| Repetition loops in greedy and near-greedy generation | The model memorizes the most frequent n-gram continuation and gets stuck in "the the the" loops | Use nucleus sampling (`top_p=0.9`) or add a repetition penalty: divide already-generated token logits by a `penalty > 1.0` factor before sampling |
+| Perplexity computed on training sequence instead of held-out text | Reporting perplexity on the same sequence used for training gives an overly optimistic score — a severely overfit model can reach perplexity < 1.5 on training data but generate nonsense | Always compute perplexity on a separate 20% held-out slice of the corpus; expect perplexity 5–15 on the toy corpus and 2.5–4.0 on Shakespeare after proper training |
+
+## Stretch Goals
+
+1. **Beam search decoding with length normalization:** Implement beam search with `beam_width=5`. At each step, keep the top-5 partial sequences by log-probability. After generating `max_length` characters, apply length normalization: divide total log-probability by `length^alpha` with `alpha=0.7` (the value used in Google's NMT system). Compare greedy, beam (no normalization), and beam (normalized) on three seeds. Length normalization should prevent beams from preferring short completions and produce more complete sentences.
+
+2. **Transformer-XL segment-level recurrence for long-range generation:** Replace the LSTM with a 2-layer Transformer decoder augmented with Transformer-XL's segment-level memory (Dai et al., 2019). The memory caches the hidden states from the previous segment and allows the current segment to attend to them, giving the model an effective context of `num_layers × segment_length` without quadratic self-attention cost. Train on the full Shakespeare corpus (~5M characters) and compare perplexity at context lengths 50, 200, and 500 characters.
+
+3. **Controllable generation with CTRL-style condition tokens:** Prepend a control token to each training sequence indicating the genre of the text (e.g., `[FORMAL]`, `[CASUAL]`, `[POETIC]`). During training, the model learns to condition its outputs on the control token. At generation time, choose the desired genre by prepending the corresponding control token to the seed. Evaluate coherence by asking 5 people to classify 20 generated samples (10 per genre) without knowing the condition — inter-rater agreement should be > 70% if the conditioning is effective.
+
+4. **BLEU score evaluation for generation quality:** Implement a BLEU-2 and BLEU-3 evaluation (bigram and trigram precision with brevity penalty) comparing generated text against held-out reference text from the same corpus. Generate 50 continuations from random seeds (length=100 characters each) and compute the corpus-level BLEU score. Baseline (greedy decoding, temperature=1.0): expect BLEU-2 ≈ 0.15–0.25 on the toy corpus. Compare top-k (`k=10`) and nucleus (`p=0.9`) sampling — nucleus should score 5–10% higher on BLEU-3 due to less repetition.

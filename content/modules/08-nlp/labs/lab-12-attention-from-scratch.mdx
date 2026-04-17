@@ -398,4 +398,62 @@ Implement hierarchical attention:
 print(exercises)
 ```
 
+## Expected Output
+
+```
+============================================================
+ATTENTION MECHANISM FROM SCRATCH
+============================================================
+
+Query shape: (1, 4, 8)
+Key shape:   (1, 6, 8)
+Value shape: (1, 6, 8)
+Output shape: (1, 4, 8)
+Attention weights shape: (1, 4, 6)
+
+Softmax row-sum check:    tf.reduce_sum(weights, axis=-1) ≈ [[1.0, 1.0, 1.0, 1.0]]
+                          (each query row sums to 1.0 ± 1e-6)
+
+Pre-softmax score magnitude (d_k=8, scaled):
+  mean |scores| ≈ 0.9   (without /sqrt(d_k): ≈ 2.5, softmax saturates)
+
+============================================================
+SELF-ATTENTION
+============================================================
+Input shape:  (1, 5, 16)
+Output shape: (1, 5, 16)
+Self-attention weights shape: (1, 5, 5)
+```
+
+**Reference numbers to validate against:**
+
+- **Softmax row-sum invariant**: `tf.reduce_sum(attention_weights, axis=-1)` must equal 1.0 for every query position. If any row sums to 0 → a whole row was masked (check mask polarity: this code uses `scores += mask * -1e9`, so `mask=1` means *blocked*, `mask=0` means *visible* — the opposite convention from PyTorch's `masked_fill`). If rows sum to `NaN` → `-inf + -inf` in a fully-masked row; replace `-1e9` with a large finite value and ensure at least one position is unmasked.
+- **Scaling sanity check**: at `d_k=64`, raw dot-product scores have stddev ≈ √64 = 8; softmax over scores with stddev 8 concentrates > 99% mass on the argmax and kills gradients through all other keys. With `/sqrt(d_k)` the stddev is ≈ 1 and attention stays smooth. If loss plateaus immediately and only one token gets attended, you forgot the scale.
+- **Self-attention output shape equals input shape**: `(batch, seq_len, d_model)` in → `(batch, seq_len, d_model)` out. If output is `(batch, seq_len, d_k)` you forgot the output projection `W_o` (not strictly required for single-head, but required before stacking layers).
+- **Gradient norm**: `tf.linalg.global_norm(tape.gradient(loss, layer.trainable_variables))` should be in `[0.1, 10]` for the first few steps. > 100 → missing residual + LayerNorm (see Pitfall 3). < 1e-4 → softmax has saturated from unscaled scores.
+
+## ⚠️ Common Pitfalls
+
+1. **Forgetting the `1/√d_k` scale factor:** Without scaling, at `d_k=64` the pre-softmax scores have stddev ≈ 8, which pushes softmax into a near-one-hot regime. Attention weights then concentrate on a single key, all other V vectors get ~0 gradient, and training stalls. *Symptom*: loss drops for ~50 steps then freezes, and `attention_weights` histograms show bimodal mass at 0 and 1. *Fix*: divide scores by `tf.math.sqrt(tf.cast(d_k, tf.float32))` BEFORE the softmax — never after.
+
+2. **Mask polarity confusion:** This lab uses `scores += (mask * -1e9)`, so `mask=1` means *blocked* and `mask=0` means *visible*. PyTorch's `masked_fill(mask, -inf)` and Keras' `Attention(use_causal_mask=True)` use the opposite convention in different places. *Symptom*: the model ignores the actual tokens and attends to padding, or a causal mask leaks future positions. *Fix*: always unit-test your mask by printing `attention_weights[0]` on a toy sequence where you know which positions should be zero. Also prefer a large finite penalty (`-1e9`) over `-inf` to avoid `NaN` in fully-masked rows.
+
+3. **Stacking attention without residual + LayerNorm:** Naive stacking of self-attention layers without the transformer's `x = LayerNorm(x + Attention(x))` wrapper causes the signal magnitude to drift (either vanish or explode) after 2–3 layers. *Symptom*: gradient norm collapses to < 1e-5 or blows up to > 1e3, and training loss is flat. *Fix*: wrap every sublayer as `x = x + Dropout(Sublayer(LayerNorm(x)))` (pre-norm, more stable) or `x = LayerNorm(x + Dropout(Sublayer(x)))` (post-norm, as in the original paper). This lab demonstrates a *single* attention block, so it works without norm — but do not copy-paste it into a multi-layer model.
+
+4. **Using `tf.keras.layers.Attention` thinking it's scaled dot-product:** The Keras built-in `Attention` layer does **not** scale by `1/√d_k` by default (the `use_scale` flag defaults to `False` in older TF 2.x). For transformer-equivalent behavior, either build it from scratch as in this lab or use `tf.keras.layers.MultiHeadAttention(num_heads=1, key_dim=d_k)`, which does scale correctly.
+
+5. **Quadratic memory blowup at long sequences:** The attention-weights tensor is `(batch, seq_len, seq_len)`. At `batch=32, seq_len=2048` that's ~0.5 GB in fp32 per layer. *Symptom*: OOM on a T4 (16 GB) with `seq_len > 1024` even for tiny `d_model`. *Fix*: use `tf.keras.mixed_precision.set_global_policy('mixed_float16')` to halve the memory, then reach for `FlashAttention` / chunked attention / local windows for `seq_len > 4096`.
+
+## 🚀 Stretch Goals
+
+1. **Causal (auto-regressive) mask:** Build a lower-triangular mask `tf.linalg.band_part(tf.ones((L, L)), -1, 0)` (positions `j > i` set to 0), invert to match this lab's polarity, and apply inside `ScaledDotProductAttention`. Verify by printing `attention_weights` for a length-5 sequence: the upper triangle must be exactly 0. This single change turns the block into a GPT-style decoder layer.
+
+2. **Scaled vs unscaled ablation:** Run `ScaledDotProductAttention` and a copy with the `/sqrt(d_k)` line removed on a toy copy task (input = random tokens, target = same tokens shifted by 1). Plot train loss vs step for both, varying `d_k ∈ {8, 32, 128, 512}`. Expected finding: the gap widens with `d_k`, and at `d_k=512` the unscaled variant fails to learn at all.
+
+3. **KV-cache toy:** Implement incremental decoding. Instead of recomputing K and V for the full prefix at each step, cache them: `K_cache = tf.concat([K_cache, new_k], axis=1)`. Measure the speedup for generating a 128-token sequence vs the naive recompute-everything-each-step loop. Expected: ~`L/2` × speedup at position `L` (O(L²) → O(L) per step).
+
+4. **Additive (Bahdanau) vs dot-product comparison:** Implement `score = v^T tanh(W_q Q + W_k K)` (broadcast over positions) and compare on a small machine-translation task (e.g., tatoeba en-es pairs). Dot-product is faster per step but needs the `1/√d_k` scale; additive is slower (extra `Dense` + `tanh`) but can be more stable at very high `d_k`.
+
+5. **Attention-weight entropy as a training signal:** Track `H(alpha) = -sum(alpha * log(alpha))` across training. Healthy transformer training shows entropy starting high (~log(L), nearly uniform), dropping to moderate values (~2–4 nats) as the model commits to specific patterns. If entropy collapses to 0 in < 100 steps the model has mode-collapsed onto one token; if it never drops the attention is just an expensive identity — rescale initialization or add warmup.
+
 ---

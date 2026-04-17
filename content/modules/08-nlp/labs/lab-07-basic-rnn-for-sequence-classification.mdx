@@ -350,5 +350,79 @@ Visualize gradient flow:
 print(exercises)
 ```
 
+## Expected Output
+
+```
+============================================================
+RNN FOR SEQUENCE CLASSIFICATION
+============================================================
+Training data shape: (1000, 20)
+Test data shape:     (200, 20)
+
+Model Architecture:
+_________________________________________________________________
+ Layer (type)             Output Shape          Param #
+=================================================================
+ embedding (Embedding)    (None, None, 32)      3,200
+ simple_rnn (SimpleRNN)   (None, 64)            6,208
+ dense (Dense)            (None, 64)            4,160
+ dropout (Dropout)        (None, 64)            0
+ dense_1 (Dense)          (None, 2)             130
+=================================================================
+Total params: 13,698
+Trainable params: 13,698
+Non-trainable params: 0
+_________________________________________________________________
+
+Training...
+Epoch 1/10 — loss: 0.6891 — accuracy: 0.5225 — val_loss: 0.6712 — val_accuracy: 0.5500
+Epoch 2/10 — loss: 0.6413 — accuracy: 0.6413 — val_loss: 0.6201 — val_accuracy: 0.6350
+Epoch 3/10 — loss: 0.5812 — accuracy: 0.7213 — val_loss: 0.5634 — val_accuracy: 0.7100
+Epoch 5/10 — loss: 0.4923 — accuracy: 0.8050 — val_loss: 0.4876 — val_accuracy: 0.8000
+Epoch 10/10 — loss: 0.3841 — accuracy: 0.8825 — val_loss: 0.4213 — val_accuracy: 0.8450
+
+Test accuracy: 0.8550
+
+============================================================
+RNN INTERNALS
+============================================================
+Processing sequence of shape: (2, 5, 10)
+Initial hidden state: (2, 5)
+  Step 1: h_t shape = (2, 5)
+  Step 2: h_t shape = (2, 5)
+  Step 3: h_t shape = (2, 5)
+  Step 4: h_t shape = (2, 5)
+  Step 5: h_t shape = (2, 5)
+Final hidden state: (2, 5)
+```
+
+**Reference numbers to validate against:**
+
+- **Test accuracy target ≥ 0.82**: This is a nearly linearly-separable synthetic task (class 0 uses word indices 0–49, class 1 uses 50–99). A working RNN should reach > 82% after 10 epochs. If accuracy is stuck at 0.50 (chance), check that the label generation and vocab split are consistent — `vocab_size // 2 = 50` is the boundary for both data generation *and* the embedding layer.
+- **Hidden state shape = `(batch_size, rnn_units)`**: The final hidden state from `SimpleRNN(..., return_sequences=False)` is 2D. If you see shape `(batch, seq_len, units)` the `return_sequences` flag is `True` and the downstream `Dense` will receive a 3D tensor — this will either error or silently apply the Dense to every time step and produce a `(batch, seq_len, 2)` output.
+- **Manual RNN step shapes**: Each `h_t` should be `(2, 5)` matching `(batch_size, units)`. If `matmul` fails here, verify that `W_x` has shape `(input_dim, units)` and `W_h` has shape `(units, units)` — swapping these is a common initialisation error.
+- **Parameter count**: With `vocab=100`, `embed=32`, `rnn=64`, `dense=64`, `out=2`: Embedding = 100×32 = 3,200. RNN = (32+64)×64 + 64 = 6,208. Dense = 64×64 + 64 = 4,160. Output = 64×2 + 2 = 130. Total = 13,698. A mismatch suggests wrong layer sizes or an extra layer.
+
+## ⚠️ Common Pitfalls
+
+1. **`tanh` saturation and vanishing gradients on longer sequences:** The vanilla RNN cell uses `tanh` as its nonlinearity. At `seq_length=20` with `rnn_units=64`, gradient magnitudes at time step 1 are multiplied by the recurrent weight matrix `W_h` 19 times. If `W_h` has spectral radius > 1, gradients explode; < 1, they vanish. *Symptom*: loss decreases quickly for 2–3 epochs then plateaus; early time steps in a gradient analysis plot show near-zero gradient. *Diagnostic*: initialize `W_h` with `orthogonal` initializer (as this lab does — spectral radius = 1.0) and confirm with `np.linalg.svd(model.layers[1].cell.W_h.numpy())[1].max()`. For sequences > 50 tokens, switch to LSTM or GRU — the gate mechanisms explicitly preserve gradient paths.
+
+2. **Missing gradient clipping on long or real-text sequences:** This lab trains on synthetic data with `seq_length=20`, which is forgiving. On IMDB (`seq_length=256`) or document classification (`seq_length=512`), vanilla RNN without gradient clipping will occasionally produce loss spikes (`NaN` or `inf`) within the first 5 epochs. *Fix*: always add `clipnorm=1.0` to the Adam optimizer: `tf.keras.optimizers.Adam(learning_rate=0.001, clipnorm=1.0)`. Gradient clipping has almost no downside and prevents catastrophic weight updates.
+
+3. **`mask_zero=True` on Embedding but masking unaware in downstream layers:** Setting `mask_zero=True` on the `Embedding` layer tells Keras to propagate a boolean padding mask downstream. `SimpleRNN` and `LSTM` are mask-aware and will correctly skip zero-padded positions. However, if you insert a custom `Lambda` layer or use `tf.keras.layers.Flatten` between the RNN and the `Dense`, the mask can be silently dropped without error. *Symptom*: padding tokens contribute to the final hidden state, slightly degrading accuracy in a way that is hard to attribute. *Diagnostic*: call `model.compute_mask(input, mask=None)` at each layer; the mask should be `None` only after a layer that intentionally consumes it (like a final RNN step with `return_sequences=False`).
+
+4. **Stateful RNN (`stateful=True`) without resetting state between unrelated batches:** `SimpleRNN` and `LSTM` have an optional `stateful=True` flag that carries the hidden state from one batch to the next — useful for processing a single long document split across batches, but destructive when batches are *different* sequences. *Symptom*: validation accuracy drops erratically epoch-to-epoch; the model appears to "remember" the previous batch. *Fix*: call `model.reset_states()` at the start of each epoch (in a `Callback`), or just leave `stateful=False` (the default) for standard classification tasks.
+
+5. **`return_sequences=True` shape mismatch with a following `Dense`:** If you change `return_sequences=False` to `True` to get per-step outputs, the RNN now outputs `(batch, seq_len, units)`. A subsequent `Dense(2)` layer *will* still compile (Keras broadcasts Dense over the time dimension), but it then produces `(batch, seq_len, 2)` instead of `(batch, 2)`. Calling `model.compile(loss='sparse_categorical_crossentropy')` with integer labels of shape `(batch,)` will then fail at training time with a shape mismatch error. *Fix*: after `return_sequences=True`, add `tf.keras.layers.GlobalAveragePooling1D()` (mean across time) or `tf.keras.layers.Lambda(lambda x: x[:, -1, :])` (last step only) before the classification head.
+
+## 🚀 Stretch Goals
+
+1. **Bidirectional RNN:** Wrap the `SimpleRNN` layer with `tf.keras.layers.Bidirectional`. A bidirectional RNN processes the sequence in both directions and concatenates the two final hidden states, doubling the feature dimension. On the synthetic task the improvement will be small (the task is direction-agnostic), but on real NLP tasks — sentiment, NER, POS tagging — bidirectional encoding typically adds 3–6% accuracy over unidirectional. Verify the output shape: `Bidirectional(SimpleRNN(64))` produces `(batch, 128)`, not `(batch, 64)`.
+
+2. **Gradient norm tracking per time step:** Build a custom training step using `tf.GradientTape`. After computing the loss, call `tape.gradient(loss, model.trainable_variables)` and separately track the gradient norm contribution from `W_h` across unrolled steps using the chain rule manually. Plot `||∂L/∂h_t||` for `t = 0 … T-1` on a 50-step sequence. The expected shape for a vanilla RNN is exponential decay toward `t=0` (vanishing gradients). Repeat with a small LSTM — the gradient curve should be much flatter.
+
+3. **Gradient clipping ablation:** Train two identical models on IMDB sequences (truncated/padded to 256 tokens): one with `clipnorm=1.0` in Adam, one without. Log the gradient global norm (via a `tf.keras.callbacks.LambdaCallback` or manual training loop) per step. Plot the gradient norm time-series. The unclipped model should show several spikes above 10× the mean norm; the clipped model should stay smooth. If both are smooth on the 256-token IMDB, extend to 512 tokens to force the instability to appear.
+
+4. **BPTT truncation length vs accuracy trade-off:** Re-implement the RNN training loop using truncated backpropagation through time (TBPTT). Split each sequence of length `T` into chunks of length `k ∈ {4, 8, 16, 32, T}` and only backpropagate through `k` steps. For each `k`, measure final test accuracy and average training step duration. Expected finding: accuracy degrades gracefully down to `k=8` (still within 2% of full BPTT on the synthetic task) but step time drops linearly with `k`, making TBPTT the standard choice for sequences longer than 200 tokens.
 
 ---

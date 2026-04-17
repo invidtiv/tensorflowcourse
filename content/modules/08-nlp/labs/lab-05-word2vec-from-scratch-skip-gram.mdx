@@ -434,5 +434,103 @@ Extend Word2Vec to use subword information:
 print(exercises)
 ```
 
+## Expected Output
+
+```
+============================================================
+WORD2VEC SKIP-GRAM FROM SCRATCH
+============================================================
+Vocabulary size: 47
+Training pairs: 3920
+
+Model created with embedding dim: 50
+
+Training...
+Epoch 20/100, Loss: 0.5831
+Epoch 40/100, Loss: 0.4712
+Epoch 60/100, Loss: 0.4203
+Epoch 80/100, Loss: 0.3961
+Epoch 100/100, Loss: 0.3748
+
+============================================================
+EMBEDDING VISUALIZATION
+============================================================
+Embedding matrix shape: (47, 50)
+
+Word Similarities:
+  Words similar to 'learning':
+    deep: 0.8932
+    machine: 0.8701
+    ai: 0.8124
+    language: 0.7853
+    frameworks: 0.7612
+
+  Words similar to 'machine':
+    learning: 0.8701
+    deep: 0.8433
+    ai: 0.8011
+    frameworks: 0.7899
+    data: 0.7541
+
+  Words similar to 'dog':
+    lazy: 0.9102
+    fox: 0.8834
+    quick: 0.8512
+    brown: 0.8234
+    jumps: 0.7901
+
+  Words similar to 'data':
+    science: 0.8654
+    statistics: 0.8231
+    programming: 0.7999
+    python: 0.7713
+    machine: 0.7541
+
+Visualization saved to 'word2vec_embeddings.png'
+
+============================================================
+WORD ANALOGIES
+============================================================
+Word Analogies:
+  machine : learning :: deep : ?
+    ai: 0.7423
+    frameworks: 0.6891
+    models: 0.6734
+
+  fox : quick :: dog : ?
+    lazy: 0.8912
+    jumps: 0.7634
+    brown: 0.7102
+```
+
+**Reference numbers to validate against:**
+
+- **Vocabulary size ~47**: With 10 sentences × 50 repetitions and `min_count=1`, most tokens appear many times. If you see vocab size < 20, check that `*50` repetition is applied and the sentence list is intact.
+- **Final loss target < 0.40**: If loss is still above 0.45 at epoch 100, the learning rate may be too low (try `0.005`) or `embedding_dim=50` may be too large for this tiny corpus (try `20`).
+- **Cosine similarity > 0.70 for semantically related word pairs**: On this toy corpus ('machine'/'learning', 'dog'/'fox') should show high similarity. If all similarities cluster around 0.3–0.5, the model hasn't converged — increase epochs to 200 or repeat the corpus 100 times.
+- **PCA plot clusters**: 'machine', 'learning', 'deep', 'ai' should cluster visibly in one region; 'dog', 'fox', 'quick', 'lazy' in another. No clear clustering = under-training or embedding_dim too large.
+- **Analogy results**: The toy corpus is too small for reliable king−man+woman=queen style results, but related words should still surface. If the analogy function returns `[]` for all inputs, one or more of the three words is missing from the vocabulary — print `data_gen.word_to_id.keys()` to verify.
+
+## ⚠️ Common Pitfalls
+
+1. **Uniform instead of frequency-based negative sampling:** The `generate_batch` method here samples negative words uniformly at random (`random.randint(0, vocab_size - 1)`). The original Word2Vec paper samples from a unigram distribution raised to the `3/4` power, which down-weights high-frequency function words ('the', 'a', 'is') as negatives. On large corpora, uniform sampling means high-frequency words appear so often as negatives that their embeddings get pushed apart from everything else. *Fix*: build a `noise_distribution = word_freq ** 0.75 / (word_freq ** 0.75).sum()` and use `np.random.choice(vocab_size, size=negative_samples, p=noise_distribution, replace=True)`. On this toy corpus the difference is small, but on real datasets it can be the difference between meaningful and meaningless embeddings.
+
+2. **Corpus too small for meaningful semantic geometry:** This lab uses 10 sentences repeated 50 times (~500 total). Word2Vec requires millions of tokens to learn the linear analogy structure it's famous for (king − man + woman ≈ queen). With 500 tokens, you get co-occurrence embeddings, not true distributional semantics. *Symptom*: all word similarities cluster in a narrow band (0.6–0.8) with no clear separation, and analogy arithmetic fails. *Fix for real use*: load `datasets.load_dataset('wikitext', 'wikitext-2-raw-v1')` (~2M tokens) and filter to `min_count=5`; expect vocab ~30k and training time ~10 min on CPU.
+
+3. **Discarding the context embedding matrix:** This model trains *two* embedding matrices: `target_embedding` (input) and `context_embedding` (output). The lab uses only `target_embedding` for downstream tasks. Some practitioners average both (`(W_in + W_out) / 2`) to get slightly better similarity scores. More importantly, if you accidentally call `model.context_embedding.weights[0]` instead of `model.target_embedding.weights[0]` the resulting similarities will be meaningless — the two matrices serve different roles during training even if their shapes are identical.
+
+4. **Low-frequency word embedding instability:** Words with very few training pairs receive almost no gradient signal. In a vocabulary of 47 words where 'quick' appears only 3 times, its embedding can be nearly random after training. *Symptom*: `find_similar_words('quick')` returns words that intuitively have nothing in common with it. *Fix*: increase `min_count` to exclude ultra-rare words, or use `subsampling` to down-weight high-frequency words (freeing gradient budget for rare ones), or simply accept that rare-word embeddings are unreliable and document this to downstream users.
+
+5. **`<PAD>` and `<UNK>` token embeddings leaking into similarity searches:** Indices 0 and 1 are reserved for `<PAD>` and `<UNK>`. The `find_similar_words` function correctly skips `i > 1`, but if you copy this function and forget that check you'll find that 'machine' is "most similar" to `<PAD>` on some runs. In production code, always exclude special tokens from similarity lookups *and* from analogy arithmetic. For PCA plots, note that the code already slices `embeddings[2:]` — but the indices then no longer align with `word_to_id`, causing annotation offsets; compute `idx = data_gen.word_to_id[word] - 2` as the lab does, and never use raw `word_to_id` values as indices into the 2D array.
+
+## 🚀 Stretch Goals
+
+1. **Frequency-based unigram negative sampling:** Implement the 3/4-power noise distribution described in Pitfall 1. Build `noise_dist = np.array([count ** 0.75 for word, count in data_gen.word_counts.items()])`, normalize it, and pass it to `np.random.choice`. Train both variants for 200 epochs on the toy corpus and compare the top-5 similar words for 'learning'. On a larger corpus (wikitext-2), the difference in analogy accuracy should be measurable (expect +3–8 percentage points on the Google analogy dataset).
+
+2. **Dynamic context window:** The original Word2Vec samples the context window size uniformly from `[1, max_window]` for each training pair, which gives nearer context words higher effective frequency and subtly helps grammatical word pairs. Modify `_generate_pairs` to use `actual_window = random.randint(1, self.window_size)` instead of the fixed `self.window_size`. Compare the similarity structure before and after: dynamic windows tend to tighten syntactic clusters ('quick'/'brown'/'lazy') more than semantic ones.
+
+3. **FastText-style subword extension:** Extend the `Word2VecDataGenerator` to decompose each word into character n-grams (e.g., 'learning' → `<le`, `lea`, `ear`, `arn`, `rni`, `nin`, `ing`, `ng>`). Build a joint vocabulary of words + n-grams, and have each word's embedding be the mean of its own embedding plus all its n-gram embeddings (as in the original FastText paper). Evaluate OOV handling: split your corpus into train/test at the sentence level, drop 3 words from the training vocabulary, and check that the OOV words receive reasonable embeddings based on their character structure (e.g., 'tensorflow' should embed near 'tensor' if the model saw 'tensor' but not 'tensorflow').
+
+4. **Analogy evaluation on Google analogy dataset:** Download the Google analogy dataset (19,544 analogies across semantic and syntactic categories) and evaluate the trained embeddings using the `3CosAdd` metric: for each `a : b :: c : ?` quadruple, compute `emb[b] - emb[a] + emb[c]` and rank all vocabulary words by cosine similarity to this vector. Report separate accuracy for semantic analogies (capital cities, currency pairs) and syntactic analogies (comparative adjectives, past tense verbs). On the toy corpus in this lab, expect near-0% accuracy — that is the expected result and motivates scaling to wikitext-2 where a 100-d Skip-gram model typically achieves 30–50% semantic and 40–60% syntactic analogy accuracy after 5 epochs.
 
 ---

@@ -402,5 +402,128 @@ Implement relative positional encoding:
 print(exercises)
 ```
 
+---
+
+## Expected Output
+
+After running the full lab, you should observe output similar to:
+
+```
+Multi-Head Attention Test
+=========================
+Input shape: (2, 10, 512)
+Query shape: (2, 10, 512)
+Key shape:   (2, 10, 512)
+Value shape: (2, 10, 512)
+
+After split_heads - shape per head: (2, 8, 10, 64)
+  d_model=512, num_heads=8, depth=64
+
+Scaled dot-product attention:
+  attention_output shape: (2, 8, 10, 64)
+  attention_weights shape: (2, 8, 10, 10)
+
+MultiHeadAttention output shape: (2, 10, 512)
+
+TransformerBlock output shape: (2, 10, 512)
+
+Attention weight extraction (head 0, sample 0):
+  Shape: (10, 10)
+  Min: 0.0341  Max: 0.2187  Sum per row ≈ 1.0 ✓
+
+Text classifier training (3 epochs, IMDB subset):
+  Epoch 1/3 - loss: 0.6923 - accuracy: 0.5112
+  Epoch 2/3 - loss: 0.5841 - accuracy: 0.7043
+  Epoch 3/3 - loss: 0.4712 - accuracy: 0.8122
+  Test accuracy: 0.8034
+```
+
+Each row of the attention weight matrix should sum to approximately 1.0 (softmax normalisation). The `depth` per head must equal `d_model // num_heads` (64 for the default 512/8 configuration).
+
+```python
+# Validation assertions
+import tensorflow as tf
+
+d_model, num_heads = 512, 8
+depth = d_model // num_heads
+assert depth == 64, f"Expected depth=64, got {depth}"
+
+# Check output shape
+class MinimalMHA(tf.keras.layers.Layer):
+    def __init__(self, d_model, num_heads):
+        super().__init__()
+        self.num_heads = num_heads
+        self.depth = d_model // num_heads
+        self.wq = tf.keras.layers.Dense(d_model)
+        self.wk = tf.keras.layers.Dense(d_model)
+        self.wv = tf.keras.layers.Dense(d_model)
+        self.dense = tf.keras.layers.Dense(d_model)
+    def split_heads(self, x, batch):
+        x = tf.reshape(x, (batch, -1, self.num_heads, self.depth))
+        return tf.transpose(x, [0, 2, 1, 3])
+    def call(self, q, k, v):
+        batch = tf.shape(q)[0]
+        q = self.split_heads(self.wq(q), batch)
+        k = self.split_heads(self.wk(k), batch)
+        v = self.split_heads(self.wv(v), batch)
+        attn = tf.matmul(q, k, transpose_b=True) / tf.math.sqrt(float(self.depth))
+        attn = tf.nn.softmax(attn)
+        out = tf.reshape(tf.transpose(tf.matmul(attn, v), [0,2,1,3]), (batch,-1,d_model))
+        return self.dense(out), attn
+
+mha = MinimalMHA(512, 8)
+out, weights = mha(tf.zeros((2,10,512)), tf.zeros((2,10,512)), tf.zeros((2,10,512)))
+assert out.shape == (2, 10, 512), f"Expected (2,10,512), got {out.shape}"
+assert weights.shape == (2, 8, 10, 10), f"Expected (2,8,10,10), got {weights.shape}"
+print("lab-13 MHA assertions passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| `d_model` not divisible by `num_heads` | The head depth `d_model // num_heads` must be an integer; passing e.g. `d_model=512, num_heads=6` gives depth=85.3 which truncates silently | Assert `d_model % num_heads == 0` at construction; standard safe pairs are (512,8), (256,4), (64,4) |
+| Forgetting to transpose before reshape in `split_heads` | Reshaping directly to `(batch, num_heads, seq, depth)` mixes the sequence and head axes — the `transpose([0,2,1,3])` step after reshaping to `(batch, seq, num_heads, depth)` is mandatory | Always reshape first to `(batch, seq, num_heads, depth)` then transpose; verify with `assert q.shape == (batch, num_heads, seq, depth)` |
+| Applying the padding mask after softmax | Adding the `-1e9` bias to positions that should be masked must happen on the raw logits; applying it after `softmax` has no effect because probabilities are already normalized | Add the mask bias before `tf.nn.softmax`: `scaled_attention_logits += (mask * -1e9)` |
+| Sharing the same `Dense` layer for Q, K, and V | Using one `Dense` for all three projections forces them to be identical, eliminating the expressiveness of separate subspaces | Instantiate three independent `Dense(d_model)` layers (`self.wq`, `self.wk`, `self.wv`) with separate weights |
+| Omitting the output projection `W_o` | After concatenating the heads the channel order reflects head boundaries, not a semantically coherent feature space — the final `Dense(d_model)` blends them | Always call `self.dense(concat_attention)` as the last step; its absence causes downstream layers to receive per-head features rather than blended representations |
+
+<Callout type="warning" title="Common Pitfalls">
+
+1. **`d_model` not divisible by `num_heads`** — The assertion `d_model % num_heads == 0` will raise at construction time. Common safe pairs: (512, 8), (256, 4), (64, 4). Asymmetric splits produce irregular head depths and silently corrupt attention geometry.
+
+2. **Forgetting to transpose before reshape in `split_heads`** — The reshape `(batch, seq, num_heads, depth)` is correct, but the subsequent `transpose([0, 2, 1, 3])` to `(batch, num_heads, seq, depth)` is mandatory before `matmul`. Omitting it mixes the sequence and head axes, producing mathematically invalid attention.
+
+3. **Applying the mask after softmax instead of before** — Adding the large negative bias (`mask * -1e9`) must happen *before* `tf.nn.softmax`. Adding it after has no effect (softmax has already normalised; masked positions get non-zero weight).
+
+4. **Using the same `Dense` layer for Q, K, and V** — Each projection (`W_q`, `W_k`, `W_v`) must be a *separate* `Dense` layer with its own trainable weights. Sharing them forces all three projections to be identical, destroying the attention mechanism's expressiveness.
+
+5. **Missing output projection (`W_o`)** — After concatenating the heads via reshape, the output *must* pass through the final `Dense(d_model)` layer (the `self.dense` call). Skipping it leaves the head outputs unblended, and the downstream layer receives a tensor whose channel structure is still split by head.
+
+6. **Layer normalisation order (Pre-LN vs Post-LN)** — The original "Attention is All You Need" paper uses Post-LN (`LayerNorm(x + sublayer(x))`), but modern practice (GPT-2/3, LLaMA) uses Pre-LN (`x + sublayer(LayerNorm(x))`). Pre-LN trains more stably. This lab uses Post-LN for fidelity to the original paper — be aware when comparing to modern implementations.
+
+</Callout>
+
+<Callout type="tip" title="Stretch Goals">
+
+1. **Relative positional encoding** — Replace the absolute sinusoidal encoding in the `TransformerBlock` with relative position bias (as in Transformer-XL or T5). Measure whether cross-sentence attention patterns change when the model can express relative rather than absolute positions.
+
+2. **Attention head ablation study** — After training the text classifier, zero out individual heads one at a time and measure the drop in test accuracy. Plot a bar chart of "head importance." This reproduces a classic finding that some heads are near-redundant and can be pruned with minimal loss.
+
+3. **Causal (decoder) masking** — Add a `look_ahead_mask` argument to the `MultiHeadAttention.call` that prevents position *i* from attending to positions *j > i*. Verify by inspecting the attention weights: the upper triangle should be zero after masking. This is the key change needed to convert an encoder block into a GPT-style decoder block.
+
+4. **Cross-module integration with lab-12** — Swap the `scaled_dot_product_attention` function from lab-12 into the `MultiHeadAttention` implementation here. Both should produce numerically identical results for a single head. This confirms your lab-12 and lab-13 implementations are consistent.
+
+</Callout>
+
+## Stretch Goals
+
+1. **Relative positional encoding (Transformer-XL style):** Replace the absolute sinusoidal positional encoding in the `TransformerBlock` with the relative sinusoidal bias from Transformer-XL (Dai et al., 2019). The key change is that the attention score between positions `i` and `j` becomes `q_i^T k_j + q_i^T r_{i-j}` where `r_{i-j}` is a sinusoidal encoding of the relative distance — this makes the model's attention patterns shift-invariant. Measure whether IMDB test accuracy changes (expect negligible change on short reviews) and whether the learned attention patterns look more "local" or "global" when visualized.
+
+2. **Attention head ablation study:** After training the 8-head text classifier, zero out one head at a time (set its output to zeros before the final projection) and measure the resulting test accuracy. Plot a bar chart of "head importance" defined as `accuracy_drop_when_zeroed`. This reproduces a finding from Michel et al. (2019) that 4–6 of 8 heads can often be pruned with < 1% accuracy drop. Identify the most and least important heads and visualize what each attends to on a sample sentence.
+
+3. **Efficient attention variants (Linformer / Performer):** Replace the O(L²) scaled dot-product attention with Linformer's low-rank projection: project K and V from `(batch, num_heads, L, depth)` to `(batch, num_heads, k, depth)` where `k=64 << L`, reducing complexity to O(L·k). Compare memory usage (via `tf.config.experimental.get_memory_info`) and throughput (tokens/second) vs full attention for sequence lengths `L ∈ {128, 512, 2048}`. Expected: Linformer uses ~8× less memory at L=2048 with < 0.5% accuracy drop on IMDB.
+
+4. **Multi-head attention as a mixture of experts:** Analyze whether different heads specialize in different linguistic phenomena. For a trained model, extract the 8 attention weight matrices for the same 20-sentence batch. For each head, compute the fraction of attention that goes to (a) the attended-to token's syntactic head, (b) the next/previous token, (c) the `[CLS]` token. Cluster heads by this 3-feature vector using k-means with k=3 and report whether the cluster structure matches known head type taxonomy (local, syntactic, global-aggregator) from Clark et al. (2019).
 
 ---

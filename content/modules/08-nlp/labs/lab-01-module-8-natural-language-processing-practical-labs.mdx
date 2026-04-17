@@ -6,7 +6,19 @@ difficulty: "medium"
 estimatedTime: "45-60 minutes"
 source: "lab-01-complete.md"
 ---
-# Module 8: Natural Language Processing - Practical Labs
+# Module 8: Natural Language Processing — Practical Labs
+
+## Introduction
+
+Natural language processing (NLP) has undergone three major paradigm shifts: the **symbolic era** (hand-crafted grammars, rule-based parsers, WordNet ontologies), the **statistical era** (n-gram language models, HMM/CRF taggers, TF-IDF retrieval), and the current **neural era** (distributed word embeddings, recurrent sequence models, attention-based Transformers).
+
+This module walks you through each layer of that evolution, starting from raw text and building up to multi-head self-attention:
+
+1. **Tokenization** (Labs 2–4) — how raw Unicode is split into discrete units: whitespace-delimited words, BPE subword pieces, or individual characters.
+2. **Word embeddings** (Labs 5–6) — dense vector representations learned from co-occurrence via Skip-gram and CBOW Word2Vec.
+3. **Recurrent architectures** (Labs 7–11) — sequential processing with vanilla RNN, LSTM, GRU, and bidirectional variants applied to classification, generation, and NER.
+4. **Attention mechanisms** (Labs 12–14) — scaled dot-product attention, multi-head attention, and visualization of learned alignment patterns.
+5. **Pretrained embeddings** (Labs 15–16) — loading GloVe and Word2Vec vectors and fine-tuning them on downstream tasks.
 
 ## Table of Contents
 1. [Tokenization Labs (3)](#tokenization-labs)
@@ -17,4 +29,137 @@ source: "lab-01-complete.md"
 
 ---
 
-# Tokenization Labs
+## Lab Scaffold
+
+The code skeleton below shows the canonical structure shared by every lab in this module. Copy it as a starting point before adding task-specific layers.
+
+```python
+"""
+Module 8 NLP — universal lab scaffold.
+Paste this at the top of any new experiment and fill in the TODO sections.
+"""
+
+import tensorflow as tf
+import numpy as np
+from collections import Counter
+
+# -----------------------------------------------------------
+# 1. Tokenizer (replace with task-specific tokenizer)
+# -----------------------------------------------------------
+class SimpleTokenizer:
+    """Word-level tokenizer with OOV handling."""
+
+    def __init__(self, vocab_size=10_000, oov="<OOV>"):
+        self.vocab_size = vocab_size
+        self.oov = oov
+        self.word2id = {}
+        self.id2word = {}
+
+    def fit(self, texts):
+        counts = Counter(w for t in texts for w in t.lower().split())
+        vocab = [self.oov] + [w for w, _ in counts.most_common(self.vocab_size - 1)]
+        self.word2id = {w: i for i, w in enumerate(vocab)}
+        self.id2word = {i: w for w, i in self.word2id.items()}
+
+    def encode(self, text, maxlen=64, pad=True):
+        ids = [self.word2id.get(w, 0) for w in text.lower().split()]
+        if pad:
+            ids = ids[:maxlen] + [0] * max(0, maxlen - len(ids))
+        return ids
+
+
+# -----------------------------------------------------------
+# 2. Embedding layer
+# -----------------------------------------------------------
+VOCAB_SIZE  = 10_000
+EMBED_DIM   = 64
+SEQ_LEN     = 64
+
+embedding_layer = tf.keras.layers.Embedding(
+    input_dim=VOCAB_SIZE,
+    output_dim=EMBED_DIM,
+    mask_zero=True,
+    name="word_embedding",
+)
+
+# -----------------------------------------------------------
+# 3. Simple RNN baseline
+# -----------------------------------------------------------
+def build_rnn_classifier(vocab_size=VOCAB_SIZE, embed_dim=EMBED_DIM,
+                          rnn_units=64, num_classes=2):
+    """Minimal RNN text classifier — replace RNN cell per lab."""
+    inputs = tf.keras.Input(shape=(None,), dtype=tf.int32, name="token_ids")
+    x = tf.keras.layers.Embedding(vocab_size, embed_dim, mask_zero=True)(inputs)
+    x = tf.keras.layers.SimpleRNN(rnn_units)(x)           # TODO: swap for LSTM / GRU / BiLSTM
+    outputs = tf.keras.layers.Dense(num_classes, activation="softmax")(x)
+    return tf.keras.Model(inputs, outputs, name="rnn_classifier")
+
+
+model = build_rnn_classifier()
+model.summary()
+
+# -----------------------------------------------------------
+# 4. Training loop skeleton
+# -----------------------------------------------------------
+# TODO: replace with real dataset
+X_dummy = np.random.randint(1, VOCAB_SIZE, (200, SEQ_LEN))
+y_dummy = np.random.randint(0, 2, (200,))
+
+model.compile(
+    optimizer=tf.keras.optimizers.Adam(1e-3, clipnorm=1.0),
+    loss="sparse_categorical_crossentropy",
+    metrics=["accuracy"],
+)
+
+history = model.fit(
+    X_dummy, y_dummy,
+    epochs=3,
+    batch_size=32,
+    validation_split=0.2,
+    verbose=1,
+)
+```
+
+---
+
+## Expected Output
+
+Running the scaffold above should produce output similar to the table below. The exact numbers vary by random seed, but the shapes and order-of-magnitude values should match.
+
+| Metric | Expected value | Notes |
+|---|---|---|
+| Vocabulary size (SimpleTokenizer) | 10 000 | Capped by `vocab_size` arg |
+| Embedding layer output shape | `(batch, 64, 64)` | `(batch, seq_len, embed_dim)` |
+| RNN final state shape | `(batch, 64)` | After `return_sequences=False` |
+| Total trainable parameters | ~650 000 | Dominated by embedding table 10k×64 |
+| Epoch 3 training accuracy | ≥ 0.55 | Random labels; just verifies forward pass |
+| Epoch 3 validation accuracy | ≥ 0.45 | Sanity range on random data |
+
+```python
+# Validation assertions — run after the scaffold
+assert embedding_layer.input_dim == VOCAB_SIZE, "Wrong vocab size"
+assert embedding_layer.output_dim == EMBED_DIM, "Wrong embedding dim"
+model_out = model(tf.zeros((4, SEQ_LEN), dtype=tf.int32))
+assert model_out.shape == (4, 2), f"Expected (4,2) got {model_out.shape}"
+print("All scaffold assertions passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| `mask_zero=True` silently ignored by custom layers | Keras propagates the padding mask only to built-in mask-aware layers; custom `Lambda` or `Dense` layers drop it | Insert a `tf.keras.layers.Masking(mask_value=0)` before any custom layer, or call `layer.supports_masking = True` explicitly |
+| Embedding `input_dim` off-by-one | Token IDs are 1-indexed (0 = pad) but `input_dim` is set to `vocab_size` rather than `vocab_size + 1` | Set `input_dim = vocab_size + 1` when using 0-based padding and 1-indexed tokens |
+| Tokenizer fitted on test set | Calling `fit()` on the combined train+test corpus leaks vocabulary frequency information | Fit only on the training split; map test tokens with the training vocabulary and mark unseen words as `<OOV>` |
+| `model.summary()` shows 0 parameters for Embedding | The layer was not built yet because no input shape was provided | Call `model.build(input_shape=(None, SEQ_LEN))` or pass a concrete `Input` tensor in the functional API |
+| Loss does not decrease past chance on real data | Gradient clipping is missing and occasional large updates corrupt the embedding table | Always pass `clipnorm=1.0` to the optimizer when training recurrent models on text |
+
+## Stretch Goals
+
+1. **NLP pipeline comparison across all five labs:** Wire labs 2–4 (tokenizers), 5–6 (embeddings), and 7–9 (RNN/LSTM/GRU) into a single benchmark script. For each tokenizer × embedding × recurrent cell combination, report test accuracy on the IMDB binary sentiment task after 5 epochs. You should observe that subword tokenization + GloVe + BiLSTM outperforms word-level + random init + vanilla RNN by roughly 8–12 percentage points, validating the progression in this module.
+
+2. **ELMo/BERT contextual embeddings comparison:** After completing labs 5–6 (static Word2Vec/GloVe), repeat the IMDB experiment using `tensorflow_hub` to load `https://tfhub.dev/google/elmo/3` (ELMo) and `https://tfhub.dev/tensorflow/bert_en_uncased_L-12_H-768_A-12/3` (BERT). Compare the three paradigms — static embeddings, ELMo (context-sensitive but recurrent), BERT (bidirectional Transformer) — on accuracy, inference latency, and model parameter count.
+
+3. **Transformer-XL relative positional encoding:** Implement the relative sinusoidal bias from the Transformer-XL paper (Dai et al., 2019) as a drop-in replacement for the absolute positional encoding used in labs 12–13. Train a 2-layer encoder on the text generation task from lab 10 (character-level) and measure perplexity on a held-out split. The relative encoding should outperform absolute encoding when the test sequences are longer than those seen during training.
+
+4. **BPE subword regularization (lab 3 extension):** Implement the subword regularization technique from Kudo (2018): during training, instead of always choosing the single Viterbi-optimal segmentation of a word, sample from the marginal distribution of all valid segmentations (with temperature `alpha`). This acts as data augmentation. Evaluate on a low-resource translation task (e.g., tatoeba en→fr, 50k sentence pairs) comparing deterministic BPE vs stochastic segmentation at `alpha ∈ {0.1, 0.5, 1.0}`. Expected BLEU improvement: +0.5–2.0 points.

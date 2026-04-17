@@ -352,4 +352,48 @@ print(exercises)
 
 ---
 
+## Expected Output
+
+Running all parts of the CBOW lab should produce values in the following ranges:
+
+| Metric | Expected value | Notes |
+|---|---|---|
+| CBOW vocabulary size | 45–55 | Same corpus as Skip-gram lab; `min_count=1` |
+| CBOW training pairs per epoch | ~2 000–4 000 | Window size 2 on each side; depends on corpus |
+| Epoch 100 training loss | < 0.50 | CBOW trains faster than Skip-gram on small corpora |
+| Cosine similarity for 'machine' / 'learning' | ≥ 0.72 | Reliable on repeated toy corpus (×50) |
+| CBOW vs Skip-gram analogy accuracy (toy) | Both near 0% | Too few tokens; expected on 500-token corpus |
+| Embedding matrix shape | `(vocab_size, embedding_dim)` | E.g., `(50, 50)` for defaults |
+
+```python
+# Validation assertions
+cbow_gen = CBOWDataGenerator(window_size=2, min_count=1)
+cbow_gen.build_vocab(sample_corpus)
+assert len(cbow_gen.word_to_id) >= 10, "Vocabulary too small"
+
+ctx_ids, tgt_ids = zip(*cbow_gen.generate_pairs(sample_corpus))
+assert all(len(c) == 2 * 2 for c in ctx_ids), "Context width should be 2*window_size"
+print("lab-06 assertions passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| CBOW context mean includes the target word | If the target word index is not excluded from the context window when building pairs, the model trivially learns to copy the target — achieving low loss without learning semantic structure | Explicitly exclude position `i` when collecting context words: `[tokens[i+j] for j in range(-win, win+1) if j != 0 and 0 <= i+j < len(tokens)]` |
+| Averaging context embeddings loses word-order information | CBOW averages all context embeddings before predicting the target, so the order of context words is irrelevant — this is why CBOW trains faster than Skip-gram but produces slightly worse embeddings for syntactic tasks | Accept this limitation for CBOW; switch to Skip-gram or a position-aware model (e.g., with positional IDs) when syntactic structure matters |
+| Negative sampling candidates include the target word | Sampling random negative words without excluding the true target can produce a pair `(context, target)` as both a positive and negative example in the same batch, sending conflicting gradient signals | Filter target word from the negative-sample pool: `neg_ids = [random.choice(all_words) for _ in range(k) if random_word != target_id]` |
+| CBOW loss higher than Skip-gram on same data | CBOW uses one-to-many aggregation (predict one word from many context), while Skip-gram uses many-to-one (predict each context word separately); CBOW gets fewer gradient updates per word position on small corpora | Increase CBOW epochs by `2 × window_size` relative to Skip-gram to match total gradient updates, or use sub-sampling (`t=1e-4`) to spend more updates on meaningful pairs |
+| `embedding_dim` too large for tiny vocabulary | A 300-d embedding for a 50-word vocabulary is heavily over-parameterized: each word receives < 10 gradient updates per epoch, resulting in random-looking embeddings | Set `embedding_dim ≤ sqrt(vocab_size) × 5`; for vocab=50, use `embedding_dim=16–32`; save large dimensions (128–300) for corpora with ≥ 50k unique tokens |
+
+## Stretch Goals
+
+1. **CBOW vs Skip-gram speed and quality comparison on wikitext-2:** Train both CBOW and Skip-gram models (embedding_dim=100, window=5, negative_samples=5, 5 epochs) on the wikitext-2 corpus (~2M tokens). Record tokens-per-second during training and final analogy accuracy on the Google analogy benchmark. CBOW is typically 3–5× faster per epoch but scores 5–10% lower on semantic analogies; Skip-gram dominates on syntactic analogies. Produce a 2×2 table: model × analogy type.
+
+2. **Subsampling of frequent words:** Implement the sub-sampling trick from the original Word2Vec paper: each word `w` in the training stream is discarded with probability `P(w) = 1 - sqrt(t / freq(w))` where `t=1e-4`. Apply this to both CBOW and Skip-gram generators. Measure the change in training speed (should be +20–30% on wikitext-2 since high-frequency words dominate the corpus) and the improvement in similarity for mid-frequency content words.
+
+3. **Position-aware CBOW with distance weighting:** Modify the context mean so that words closer to the target receive higher weight: `weight_j = 1 / |j|` where `j` is the offset from the target. This gives the model a weak notion of word order. Compare the standard CBOW (uniform mean) with the weighted variant on the POS-tagging analogy subtask of the Google analogy dataset (e.g., "fast → faster :: slow → slower"). The weighted model should show modest improvement (+2–4%) on syntactic analogies.
+
+4. **Contextual word embeddings ELMo/BERT comparison:** After training CBOW to convergence on wikitext-2, extract CBOW static embeddings for 200 words. Extract ELMo and BERT contextual embeddings for the same words in 10 different sentence contexts each. For each word, compute the within-word variance of the contextual embeddings (high variance = the model captures different senses). Show that CBOW has zero within-word variance (static), ELMo has moderate variance, and BERT has the highest variance, demonstrating the progressive capture of polysemy across these three embedding paradigms.
+
 # RNN/LSTM/GRU Labs
