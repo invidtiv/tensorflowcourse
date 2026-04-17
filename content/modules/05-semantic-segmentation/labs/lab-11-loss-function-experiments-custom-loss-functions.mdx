@@ -492,4 +492,61 @@ Next: Lab 5.11 will cover post-processing techniques.
 """)
 ```
 
+## Expected Output
+
+After implementing and testing custom loss functions on a small synthetic segmentation dataset (100 samples, 128×128, 2 classes):
+
+| Loss Function | GradientTape gradient norm | Val Dice after 10 epochs | Notes |
+|---------------|---------------------------|--------------------------|-------|
+| Dice (smoothed) | 0.5–2.0 | 0.70–0.82 | Baseline custom loss |
+| Boundary-aware (edge-weighted BCE) | 1.0–4.0 | 0.72–0.84 | Larger gradients near boundaries |
+| Multi-scale Dice (3 scales) | 1.5–5.0 | 0.74–0.86 | Best boundary quality |
+| Combined (Dice + edge + BCE) | 2.0–6.0 | 0.75–0.87 | Most stable convergence |
+
+```python
+# === Validation Assertions ===
+import tensorflow as tf
+import numpy as np
+
+# Verify custom loss produces finite scalar gradients
+def dice_loss(y_true, y_pred, smooth=1.0):
+    y_pred = tf.cast(y_pred, tf.float32)
+    y_true = tf.cast(y_true, tf.float32)
+    intersection = tf.reduce_sum(y_true * y_pred, axis=[1,2,3])
+    union = tf.reduce_sum(y_true, axis=[1,2,3]) + tf.reduce_sum(y_pred, axis=[1,2,3])
+    return 1.0 - tf.reduce_mean((2.0 * intersection + smooth) / (union + smooth))
+
+y_true = tf.random.uniform((2, 128, 128, 1), 0, 2, dtype=tf.int32)
+y_true = tf.cast(y_true, tf.float32)
+y_pred = tf.random.uniform((2, 128, 128, 1))
+
+with tf.GradientTape() as tape:
+    tape.watch(y_pred)
+    loss = dice_loss(y_true, y_pred)
+grads = tape.gradient(loss, y_pred)
+
+assert tf.reduce_all(tf.math.is_finite(loss)), "Loss is NaN or Inf"
+assert tf.reduce_all(tf.math.is_finite(grads)), "Gradients contain NaN or Inf"
+assert loss.shape == (), f"Loss must be scalar, got shape {loss.shape}"
+print(f"Dice loss: {loss.numpy():.4f}, gradient norm: {tf.norm(grads).numpy():.4f}")
+print("✓ Custom loss gradient check passed!")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|----------------|-----|
+| **Custom loss not returning a scalar** | Returning a per-pixel or per-sample loss tensor (e.g., shape `(B,H,W)`) causes Keras to call `tf.reduce_mean` automatically, which sometimes works but silently ignores sample weights and custom reduction strategies. | Always explicitly `tf.reduce_mean` the per-sample losses inside the loss function and return a scalar tensor of shape `()`; use `GradientTape` to confirm the output shape before training. |
+| **Non-differentiable operations in the loss** | Using `tf.math.argmax`, `tf.round`, or `np` operations inside the loss function creates graph nodes with zero or undefined gradients; the optimizer receives zero-gradient updates and training stalls with constant loss. | Replace hard threshold operations with soft approximations: use softmax probabilities directly instead of argmax; use `sigmoid` instead of step functions; validate with `tf.GradientTape` that gradients are non-zero. |
+| **Boundary mask computed from predicted output instead of ground truth** | Computing the edge weight map from the model's own prediction creates a circular dependency — the loss changes shape as the prediction improves, destabilizing training (loss may initially decrease then oscillate). | Always compute boundary/edge masks from the ground-truth label map only; cache them as part of data preprocessing if possible to avoid recomputing per step. |
+| **Multi-scale loss weights not balanced relative to scale resolution** | Assigning equal weight `[1, 1, 1]` to losses at 128×128, 64×64, and 32×32 means the coarse-scale loss dominates total gradient magnitude simply because it uses lower-resolution features with larger spatial averages. | Normalize multi-scale weights so their sum is 1 (`[0.5, 0.3, 0.2]` for fine-to-coarse); or normalize each scale's loss by the number of pixels at that scale before combining. |
+| **Gradient explosion when combining multiple loss terms** | Summing three loss terms (Dice + boundary + BCE) without checking their relative magnitudes can produce total gradient norms 10–100× larger than any single loss, causing `NaN` weights after 1–3 steps. | Log gradient norms for each loss component separately using `GradientTape`; apply `tf.keras.optimizers.Adam(clipnorm=1.0)` as a safety net; normalize each loss term to similar magnitude before combining. |
+
+## Stretch Goals
+
+1. **Implement clDice loss for tubular structure segmentation.** clDice (Shit et al. 2021) computes Dice on the morphological skeleton (centerline) of predictions vs ground truth, preserving tubular connectivity. Implement the soft skeleton using iterative erosion in TensorFlow and compare vessel-detection F1 vs standard Dice.
+2. **Build a learned loss function using a small discriminator network.** Train a 3-layer CNN to distinguish high-quality from low-quality segmentation masks, then use its binary cross-entropy output as an auxiliary loss signal alongside Dice. This adversarial loss encourages the segmentor to produce perceptually realistic boundaries.
+3. **Auto-tune loss combination weights with Bayesian optimization.** Use `optuna` or `scikit-optimize` to search over the weight space `(w_dice, w_boundary, w_bce)` in `[0, 1]^3` (constrained to sum ≤ 2), running 5-epoch trials for each configuration and selecting the combination that maximizes validation Dice. Compare to hand-tuned weights.
+4. **Export custom loss for use in ONNX/TFLite inference.** A common deployment issue is that custom training losses are not needed at inference, but mistakenly referenced by the saved model. Practice exporting the segmentation model without the loss function using `model.save(include_optimizer=False)` and verify the exported model runs loss-free in TFLite.
+
 ---

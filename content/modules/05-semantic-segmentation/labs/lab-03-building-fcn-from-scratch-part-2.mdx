@@ -469,4 +469,70 @@ Next: Lab 5.3 will implement U-Net architecture.
 """)
 ```
 
+## Expected Output
+
+After building all three FCN variants (FCN-32s, FCN-16s, FCN-8s) on random data with `input_shape=(224, 224, 3)` and `num_classes=21`:
+
+| Model | Output Shape | Skip Connections | Approx. Params |
+|-------|-------------|-----------------|----------------|
+| FCN-32s | (None, 224, 224, 21) | 0 | ~134 M |
+| FCN-16s | (None, 224, 224, 21) | 1 (pool4) | ~134 M |
+| FCN-8s | (None, 224, 224, 21) | 2 (pool3 + pool4) | ~134 M |
+| mIoU FCN-32s (VOC val) | — | — | ~59.4% |
+| mIoU FCN-8s (VOC val) | — | — | ~62.7% |
+
+```python
+# === Validation Assertions ===
+import tensorflow as tf
+import numpy as np
+
+# Build a lightweight proxy (no VGG weights) to check output shapes
+def proxy_fcn(variant, input_shape=(224, 224, 3), num_classes=21):
+    inp = tf.keras.Input(shape=input_shape)
+    x = tf.keras.layers.Conv2D(64, 3, padding='same', activation='relu')(inp)
+    pool3 = tf.keras.layers.MaxPool2D(2)(x)
+    pool4 = tf.keras.layers.MaxPool2D(2)(pool3)
+    x = tf.keras.layers.MaxPool2D(8)(pool4)
+    x = tf.keras.layers.Conv2D(num_classes, 1)(x)
+    if variant == 'fcn32s':
+        out = tf.keras.layers.Conv2DTranspose(num_classes, 64, strides=32, padding='same')(x)
+    elif variant == 'fcn16s':
+        skip4 = tf.keras.layers.Conv2D(num_classes, 1)(pool4)
+        x2 = tf.keras.layers.Conv2DTranspose(num_classes, 4, strides=2, padding='same')(x)
+        out = tf.keras.layers.Conv2DTranspose(num_classes, 32, strides=16, padding='same')(x2 + skip4)
+    else:  # fcn8s
+        skip3 = tf.keras.layers.Conv2D(num_classes, 1)(pool3)
+        skip4 = tf.keras.layers.Conv2D(num_classes, 1)(pool4)
+        x2 = tf.keras.layers.Conv2DTranspose(num_classes, 4, strides=2, padding='same')(x)
+        x3 = tf.keras.layers.Conv2DTranspose(num_classes, 4, strides=2, padding='same')(x2 + skip4)
+        out = tf.keras.layers.Conv2DTranspose(num_classes, 16, strides=8, padding='same')(x3 + skip3)
+    out = tf.keras.layers.Softmax()(out)
+    return tf.keras.Model(inp, out)
+
+for variant in ['fcn32s', 'fcn16s', 'fcn8s']:
+    model = proxy_fcn(variant)
+    dummy = tf.zeros((1, 224, 224, 3))
+    out = model(dummy)
+    assert out.shape == (1, 224, 224, 21), f"{variant} output {out.shape} != (1,224,224,21)"
+
+print("✓ All FCN variant shape assertions passed!")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|----------------|-----|
+| **Skip-connection spatial size mismatch before element-wise add** | Pool4's 1×1 conv output and the 2×-upsampled prediction tensor must be the same spatial size; if the input is not a multiple of 32, they differ by 1–2 pixels and `tf.add` raises a shape error. | Pad inputs to the nearest multiple of 32 (`tf.pad` with `mode='REFLECT'`) before the forward pass; crop the output back to the original size afterward. |
+| **Forgetting to 1×1-convolve pool3/pool4 before fusion** | Adding raw pool3/pool4 feature maps (512 channels) to the prediction tensor (21 channels) requires a channel projection first; skipping it produces a channel-count mismatch or silently broadcasts incorrectly in some frameworks. | Always apply `Conv2D(num_classes, 1, name='score_pool4')` to each skip feature map before adding it to the upsampled prediction. |
+| **Using the wrong upsample factor at each fusion step** | FCN-16s needs a 2× upsample before fusing pool4 and a 16× final upsample. Using 4× + 8× by mistake produces correct-looking output shapes but wrong spatial alignment, causing blurry, mis-registered boundaries. | Trace the downsampling path explicitly: pool4 = 14×14, prediction at 7×7; first upsample by 2× → 14×14 to match pool4; then by 16× → 224×224. |
+| **Training FCN-16s/FCN-8s from random weights** | Skip connections amplify gradients — at initialization with random weights, the residual additions create gradient explosions that NaN-out the loss on the very first backward pass. | Initialize from a pretrained FCN-32s checkpoint before fine-tuning with skip connections; freeze the encoder for the first 2 epochs until the new decoder layers stabilize. |
+| **Evaluating all three FCN variants on the same small validation set without per-class breakdown** | FCN-8s may improve mean mIoU by only 1–2 points over FCN-32s globally, but per-class inspection often reveals large jumps on boundary-heavy classes (e.g., bicycle: +8%) hidden by background-dominated averaging. | Always report per-class IoU alongside mIoU; use `tf.keras.metrics.MeanIoU` with `num_classes=21` and log all 21 class scores separately. |
+
+## Stretch Goals
+
+1. **Implement FCN-4s by adding a pool2 skip connection.** Extend the FCN-8s architecture to fuse the pool2 feature map (28×28 for a 224×224 input) using a 1×1 conv projection and a 4× final upsample. Measure whether the extra skip connection provides a statistically significant mIoU gain over FCN-8s on PASCAL VOC (expected: < 0.3%, diminishing returns).
+2. **Compare skip-connection fusion strategies.** The original FCN uses element-wise addition. Replace the addition with concatenation followed by a 1×1 conv to combine the channels, and compare training stability (gradient norms) and final mIoU. Concatenation typically adds ~2 M parameters but can be more flexible.
+3. **Add CRF post-processing to FCN-8s predictions.** Apply DenseCRF (pydensecrf) to refine the coarse FCN-8s output and measure the improvement in boundary accuracy using the F-measure at boundary (`F_b`). Compare wall-clock overhead (CRF adds ~200 ms per image on CPU).
+4. **Export to ONNX and measure inference latency.** Convert FCN-32s and FCN-8s to ONNX using `tf2onnx`, run on an ONNX Runtime CPU session, and record throughput (images/sec) at 224×224 and 512×512. Identify whether the skip-connection overhead in FCN-8s meaningfully increases latency versus FCN-32s.
+
 ---

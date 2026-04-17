@@ -417,4 +417,63 @@ Next: Lab 5.8 will compare different loss functions for segmentation.
 """)
 ```
 
+## Expected Output
+
+After building DeepLabV3+ with MobileNetV2 backbone on `input_shape=(512, 512, 3)` and `num_classes=21`:
+
+| Component | Output Shape | Notes |
+|-----------|-------------|-------|
+| Encoder (ASPP output) | (None, 64, 64, 256) | After OS=8 backbone + ASPP |
+| Low-level features (1×1 proj) | (None, 128, 128, 48) | From early backbone stage |
+| Decoder output | (None, 128, 128, 256) | After 4× upsample + concat + convs |
+| Final logits | (None, 512, 512, 21) | After 4× bilinear upsample |
+| MobileNetV2 params | ~2.2 M | Backbone only |
+
+```python
+# === Validation Assertions ===
+import tensorflow as tf
+import numpy as np
+
+# Verify final output shape with a proxy DeepLabV3+ model
+inp = tf.keras.Input(shape=(512, 512, 3))
+# Simulate encoder producing 64×64 features
+enc = tf.keras.layers.Conv2D(256, 1, padding='same')(
+    tf.keras.layers.MaxPool2D(8)(inp)
+)
+# Simulate low-level 128×128 features
+ll = tf.keras.layers.Conv2D(48, 1, padding='same')(
+    tf.keras.layers.MaxPool2D(4)(inp)
+)
+# Decoder: upsample encoder to 128×128, concat, process
+dec = tf.keras.layers.UpSampling2D(2, interpolation='bilinear')(enc)
+dec = tf.keras.layers.Concatenate()([dec, ll])
+dec = tf.keras.layers.Conv2D(256, 3, padding='same', activation='relu')(dec)
+# Final upsample
+out = tf.keras.layers.UpSampling2D(4, interpolation='bilinear')(dec)
+out = tf.keras.layers.Conv2D(21, 1)(out)
+model = tf.keras.Model(inp, out)
+
+result = model(tf.zeros((1, 512, 512, 3)))
+assert result.shape == (1, 512, 512, 21), f"Expected (1,512,512,21), got {result.shape}"
+print(f"DeepLabV3+ proxy output shape: {result.shape} ✓")
+print("✓ All DeepLabV3+ shape assertions passed!")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|----------------|-----|
+| **Low-level feature map spatial size not matching 4× upsampled encoder** | The decoder concatenates ASPP output (upsampled 4× from 64×64 = 128×128) with the low-level backbone features. If the backbone's chosen early layer has spatial size 256×256 (not 128×128), the concatenation fails silently via broadcasting or raises a shape error. | Pin the low-level feature extraction to the backbone layer that produces exactly `input_size / 4` spatial resolution; assert both tensors are the same HxW before `Concatenate()`. |
+| **Atrous separable conv depthwise kernel not using `padding='same'`** | `DepthwiseConv2D` with `dilation_rate > 1` and `padding='valid'` shrinks the spatial dimensions, causing the pointwise `Conv2D(1,1)` output to be smaller than expected and breaking the ASPP branch concatenation. | Always pair `DepthwiseConv2D(dilation_rate=r, padding='same')` with `Conv2D(C, 1)` to preserve spatial size throughout the ASPP module. |
+| **Bilinear upsampling in decoder introduces scale jitter** | `tf.keras.layers.UpSampling2D(interpolation='bilinear')` produces different outputs at training vs inference if `training=True` causes any stochastic component upstream. Combined with dropout in the encoder, outputs vary run-to-run. | Disable dropout during inference by passing `training=False`; prefer `tf.keras.layers.Resizing(H, W)` for deterministic bilinear upsampling that is immune to training-mode flags. |
+| **MobileNetV2 feature layers named differently across TF versions** | Extracting intermediate layers by name (e.g., `block_13_expand_relu`) fails on TF 2.9+ where layer names changed to `expanded_conv_13/expand/Relu6`. The model builds silently but the ASPP receives the wrong feature map. | Extract layers by index after inspecting `model.layers` with a print; or use the `outputs` parameter when creating the base model submodel: `tf.keras.Model(inputs, [l1_out, l13_out])`. |
+| **Not freezing the backbone during initial training epochs** | DeepLabV3+ combines a pretrained backbone with a randomly initialized decoder. With a high learning rate, the optimizer can degrade the pretrained backbone weights in the first 2–3 epochs, destroying the ImageNet features before the decoder has stabilized. | Freeze the backbone for the first 5 epochs (`backbone.trainable = False`), then unfreeze with a 10× lower learning rate for fine-tuning. |
+
+## Stretch Goals
+
+1. **Swap the backbone to ResNet-50 with output stride 8.** Replace MobileNetV2 with `tf.keras.applications.ResNet50(include_top=False, weights='imagenet')`, modify the last two residual blocks to use `dilation_rate=2` and `dilation_rate=4` (removing the strides), and measure the mIoU vs MobileNetV2 — expected: +5–8% mIoU at the cost of 3× more parameters.
+2. **Implement test-time augmentation (TTA) with horizontal flip.** At inference, run the model on both the original image and its horizontal flip, average the softmax outputs, and take argmax. Measure the mIoU gain from TTA on your validation set; expected improvement: 0.3–1.5%.
+3. **Apply TransUNet-style Transformer bottleneck.** Replace the ASPP module with a Vision Transformer (ViT) patch encoder (patch size 16, 64×64 → 16 patches per dim) that captures global context via self-attention. Compare mIoU and convergence speed vs ASPP on a 200-image synthetic benchmark.
+4. **Profile and optimize inference with TensorRT.** Convert the trained DeepLabV3+ to TensorRT FP16, benchmark throughput at 512×512, and verify that mIoU on the test set degrades by no more than 1% relative to TF float32. Report achieved FPS vs the original TF model.
+
 ---

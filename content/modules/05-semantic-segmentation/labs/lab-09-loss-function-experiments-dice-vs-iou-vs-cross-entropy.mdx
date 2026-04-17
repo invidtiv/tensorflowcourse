@@ -14,6 +14,36 @@ source: "lab-01-complete.md"
 - Visualize loss landscapes
 - Evaluate on segmentation task
 
+## Expected Output
+
+After running all sections you should see results consistent with the following:
+
+**Section 1 — Loss value sanity table** (4 rows × 3 columns):
+
+| Loss Function | Perfect | Partial | Wrong |
+|---------------|---------|---------|-------|
+| Dice Loss | ~0.0000 | ~0.2–0.4 | ~1.0000 |
+| IoU Loss | ~0.0000 | ~0.3–0.5 | ~1.0000 |
+| Tversky Loss (α=0.3, β=0.7) | ~0.0000 | ~0.3–0.5 | ~1.0000 |
+| Focal Loss (γ=2, α=0.25) | ~0.0000 | ~0.05–0.15 | ~1.0–2.0 |
+
+*Dice and IoU should be 0 for perfect predictions and ~1 for inverted predictions. Focal loss will have a smaller absolute magnitude than BCE due to down-weighting of easy examples.*
+
+**Section 2 — Loss landscape plot**: BCE curve is steepest near `p=0` (log-scale divergence); Dice and IoU curves are nearly linear through [0.2, 0.8]; Focal curve lies *below* BCE everywhere due to `(1−p)^γ` weight, converging to 0 only at `p=1`.
+
+**Section 3 — Comparison experiment** (20 epochs, 100 train / 20 val synthetic samples):
+
+| Loss | Best Val Dice | Best Val IoU | Notes |
+|------|--------------|-------------|-------|
+| BCE | ~0.82–0.88 | ~0.70–0.78 | Faster early convergence |
+| Dice | ~0.88–0.93 | ~0.79–0.85 | Stronger on imbalanced circles |
+| IoU | ~0.86–0.92 | ~0.78–0.84 | Slightly stricter than Dice |
+| BCE+Dice | ~0.90–0.94 | ~0.81–0.87 | Typically best overall |
+
+*Exact numbers vary per run due to random data generation — trends matter more than absolute values.*
+
+**Validation assertions**: All 5 should print `✅ All 5 validation assertions passed.`
+
 ## Complete Implementation
 
 ```python
@@ -471,5 +501,56 @@ Key Takeaways:
 Next: Lab 5.9 will explore handling class imbalance in detail.
 """)
 ```
+
+---
+
+## ✅ Validation Checkpoint
+
+Run these assertions after training each loss variant. All must pass before trusting the comparison table.
+
+```python
+# 1. Loss-value sanity: non-negative and finite for every batch.
+for name, hist in histories.items():
+    arr = np.asarray(hist.history["loss"])
+    assert np.all(np.isfinite(arr)), f"{name}: NaN/Inf loss — check smoothing term"
+    assert np.all(arr >= -1e-6), f"{name}: negative loss detected"
+
+# 2. Dice-on-empty-mask guard: both empty → dice_loss == 0, NOT NaN.
+y_empty = tf.zeros((1, 64, 64, 1))
+assert abs(dice_loss(y_empty, y_empty).numpy()) < 1e-3, "dice_loss degenerates on empty masks"
+
+# 3. Monotone-improvement: BCE+Dice val_loss final ≤ 0.95 × epoch-1.
+combined = histories["bce_dice"].history["val_loss"]
+assert combined[-1] < 0.95 * combined[0], "BCE+Dice failed to improve — check LR or masks"
+
+# 4. IoU-ordering: on imbalanced data, Dice-trained FG IoU > BCE-trained FG IoU.
+assert iou_scores["dice"] > iou_scores["bce"], "Dice did not beat BCE on imbalance"
+
+# 5. Focal γ effect: γ=2 focal loss < BCE on an easy (confident-correct) pixel.
+y_pred_easy = tf.constant([[[[0.95]]]], dtype=tf.float32)
+y_true_easy = tf.constant([[[[1.0]]]], dtype=tf.float32)
+assert focal_loss(y_true_easy, y_pred_easy).numpy() < bce(y_true_easy, y_pred_easy).numpy(), \
+    "focal γ down-weighting not active"
+
+print("✅ All 5 validation assertions passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|----------------|-----|
+| **Missing smoothing term in Dice/IoU** | `2·|A∩B| / (|A|+|B|)` is undefined (`0/0`) when both the predicted and ground-truth masks are empty (all-background batch). This produces `NaN` gradients that propagate backward and corrupt all weights. | Add a smoothing constant `ε = 1.0` (Milletari 2016) or `ε = 1e-6` to both numerator and denominator: `(2·intersection + ε) / (sum + ε)`. |
+| **Computing Dice over the full batch instead of per-sample** | Reducing over `[B,H,W,C]` and dividing by a batch-wide denominator lets large-foreground samples dominate the gradient signal, effectively ignoring the minority-class samples the loss was designed to up-weight. | Compute Dice per sample over `[H,W,C]`, then average across the batch dimension; this treats each image equally regardless of foreground fraction. |
+| **`sigmoid` output fed to Dice/IoU expecting `softmax` probabilities** | Dice loss expects class probabilities that sum to 1 per pixel. Sigmoid outputs are independent per-class logistic scores that can sum to more than 1; the intersection/union calculation then overestimates the score silently. | Use `activation='sigmoid'` only for binary segmentation (1 output channel). For multi-class, use `activation='softmax'`; never pass raw logits to Dice/IoU without applying an activation first. |
+| **Focal loss γ set too high (γ ≥ 5)** | The `(1−p)^γ` modulating factor zeroes out gradients for all pixels with `p > 0.5` when γ ≥ 5, effectively stopping training after 1–2 epochs because the network quickly learns to predict near 0.5 for every pixel. | Start at γ=2 (Lin et al. 2017 default); increase to γ=3–4 only when the easy-negative ratio exceeds 1:1000. Monitor gradient norms — if they drop to near zero after epoch 2, reduce γ. |
+| **Comparing loss runs with different class-weight scales** | Applying `class_weights=[1, 10]` to BCE but using unweighted Dice in the same comparison makes the absolute loss values incomparable and the optimizer's relative contribution of each loss term unpredictable in combined BCE+Dice setups. | Log the exact weight configuration alongside every mIoU measurement; when using combined losses, normalize each component to the same magnitude before summing. |
+
+## Stretch Goals
+
+1. **Implement boundary-aware loss (Kervadec et al. 2019).** Compute a signed distance map from the ground-truth boundary and use it to weight BCE, giving higher penalty to boundary-pixel errors. Measure Hausdorff distance (HD95) reduction compared to plain Dice on both the binary and multi-class splits.
+2. **Add Lovász-Softmax loss as a Dice alternative.** Lovász-Softmax directly optimizes the Jaccard index via a convex surrogate, avoiding the smoothing-term approximation. Implement from the official repository and compare mIoU and training stability vs. smoothed Dice over 30 epochs.
+3. **Visualize the loss landscape.** Use the 2D random-direction slicing method (Li et al. 2018): sample two random unit vectors in parameter space, evaluate BCE and Dice on a 20×20 grid around the converged weights, and plot as a surface. Confirm the hypothesis that the Dice landscape is flatter near its minimum than BCE.
+4. **Auto-balance the Tversky loss.** After epoch 1, compute per-class FP and FN rates on the validation set and set `α = FP/(FP+FN)`, `β = FN/(FP+FN)` automatically. Compare convergence speed and final Dice score against the fixed α=0.3, β=0.7 baseline used in this lab.
+
 
 ---

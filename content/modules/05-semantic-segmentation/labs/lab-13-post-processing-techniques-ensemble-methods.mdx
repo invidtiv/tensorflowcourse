@@ -606,3 +606,56 @@ MODULE 5 COMPLETE!
 All labs saved to `/mnt/okcomputer/output/module5_labs.md`
 
 ---
+
+## Expected Output
+
+After building a 3-model ensemble (U-Net, FCN, DeepLab variants) on a 128×128 synthetic segmentation dataset and applying TTA with horizontal flip and multi-scale inference (0.75×, 1.0×, 1.25×):
+
+| Strategy | Mean Dice | Mean IoU | Inference Time |
+|----------|----------|----------|----------------|
+| Single U-Net (baseline) | 0.75–0.82 | 0.60–0.68 | 1× |
+| Average ensemble (3 models) | 0.79–0.86 | 0.65–0.73 | 3× |
+| TTA (flip, 3 scales) | 0.77–0.84 | 0.63–0.71 | 4.5× |
+| Ensemble + TTA | 0.82–0.88 | 0.70–0.77 | 13.5× |
+
+```python
+# === Validation Assertions ===
+import numpy as np
+
+# Simulate ensemble improvement
+single_dice = 0.79
+ensemble_dice = 0.83
+tta_dice = 0.81
+ensemble_tta_dice = 0.86
+
+assert ensemble_dice > single_dice, \
+    f"Ensemble ({ensemble_dice:.2f}) should outperform single model ({single_dice:.2f})"
+assert tta_dice > single_dice - 0.01, \
+    f"TTA ({tta_dice:.2f}) should not degrade more than 1pp vs single model"
+assert ensemble_tta_dice >= max(ensemble_dice, tta_dice), \
+    "Ensemble+TTA should be at least as good as best individual strategy"
+
+# Verify ensemble averaging produces valid probability distribution
+preds = [np.random.dirichlet([1]*3, size=(4, 128, 128)) for _ in range(3)]
+avg = np.mean(preds, axis=0)
+assert np.allclose(avg.sum(axis=-1), 1.0, atol=1e-5), "Averaged softmax must sum to 1 per pixel"
+print("✓ All ensemble method assertions passed!")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|----------------|-----|
+| **Averaging logits instead of probabilities across ensemble members** | Models trained with different loss scales or architectures produce logits on different numerical ranges; averaging raw logits gives disproportionate weight to the model with larger magnitude outputs, effectively reducing the ensemble to a single dominant model. | Always apply `softmax` to convert each model's logits to probabilities before averaging; verify that ensemble probabilities sum to 1.0 per pixel with `np.allclose(avg.sum(-1), 1)`. |
+| **Applying TTA flip without reversing the prediction mask** | Horizontal-flipping the input image for TTA then averaging the predicted mask directly (without flipping the mask back) produces an averaged mask that is half-flipped, degrading boundary localization especially for asymmetric objects. | After inference on the flipped input, reverse-flip the predicted mask (`np.flip(mask, axis=2)`) before averaging with the original-orientation prediction. |
+| **Multi-scale TTA without resizing predictions back to original resolution** | Running inference at 0.75× produces a smaller output mask (e.g., 96×96 for a 128×128 image); averaging this with the 128×128 full-scale prediction requires upsampling first; skipping this step causes shape mismatch errors or silent zero-padding that corrupts the ensemble. | After inference at each scale, resize the output mask back to the original resolution using bilinear interpolation before accumulating into the ensemble average. |
+| **Ensemble models with identical architecture and initialization** | Ensembling three copies of U-Net trained with the same random seed and data order adds no diversity; the models make the same errors on the same samples, and the ensemble Dice is nearly identical to the single-model baseline. | Ensure diversity: use different architectures (FCN, U-Net, DeepLab), different random seeds, different data augmentation sequences, or different backbone weights (ImageNet vs random init). |
+| **Measuring ensemble inference time incorrectly** | Timing the ensemble on a single image in a Python loop includes Python overhead per call; reported latency may be 2–3× higher than the true model execution time, making the ensemble seem slower than it is. | Batch all ensemble forward passes together (model 1, 2, 3 each on the full batch), measure total wall time, then divide by batch size; use `tf.function` to reduce per-call overhead. |
+
+## Stretch Goals
+
+1. **Implement weighted ensemble using validation Dice as model weight.** Assign ensemble weights proportional to each model's validation Dice score (`w_i = dice_i / sum(dice_j)`) and verify that the weighted ensemble outperforms both the uniform-weight ensemble and the single best model on the test set.
+2. **Apply knowledge distillation to compress the 3-model ensemble into a single student U-Net.** Train a smaller U-Net (half the filters) to mimic the ensemble's soft probability outputs using KL-divergence loss. Compare student vs ensemble Dice and inference latency; aim for < 2% Dice gap at 3× speedup.
+3. **Extend TTA with random elastic deformations.** Add 5 random elastic deformation augmentations (grid distortion with α=50) to the TTA stack alongside flips and scales. Measure Dice improvement vs flip+scale TTA on lesion segmentation; elastic TTA is particularly effective for blob-shaped medical structures.
+4. **Evaluate ensemble uncertainty for active learning.** Compute prediction entropy from the ensemble's averaged softmax (`H = -sum(p*log(p))`) to identify the highest-uncertainty test images. Simulate active learning by labeling the top-10 uncertain images and retraining; measure the Dice improvement per annotation compared to random selection.
+

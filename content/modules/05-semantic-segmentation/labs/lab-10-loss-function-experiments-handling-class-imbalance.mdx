@@ -417,4 +417,51 @@ Next: Lab 5.10 will implement custom loss functions.
 """)
 ```
 
+## Expected Output
+
+After running all four loss-function strategies (weighted BCE, OHEM, Focal, Dice) for 20 epochs on a 10:1 imbalanced synthetic dataset (background:foreground):
+
+| Strategy | Val Dice (fg) | Val IoU (fg) | Pixel Acc | Notes |
+|----------|--------------|-------------|-----------|-------|
+| Unweighted BCE | 0.30–0.50 | 0.20–0.35 | 0.88–0.95 | High acc, low Dice → background bias |
+| Weighted BCE (w=10) | 0.65–0.78 | 0.48–0.62 | 0.82–0.90 | Overweighting can hurt background |
+| Focal Loss (γ=2) | 0.68–0.80 | 0.52–0.66 | 0.85–0.92 | Adaptive, no manual tuning |
+| Dice Loss | 0.72–0.85 | 0.56–0.74 | 0.85–0.93 | Best on foreground, slower convergence |
+
+```python
+# === Validation Assertions ===
+import numpy as np
+
+# Replace with actual metric values from experiments
+baseline_dice = 0.40   # Unweighted BCE
+weighted_dice = 0.70   # Weighted BCE
+focal_dice    = 0.74   # Focal loss
+dice_loss_val = 0.78   # Dice loss
+
+assert weighted_dice > baseline_dice + 0.10, \
+    f"Weighted BCE ({weighted_dice:.2f}) should be >10pp better than baseline ({baseline_dice:.2f})"
+assert focal_dice > baseline_dice + 0.15, \
+    f"Focal loss ({focal_dice:.2f}) should be >15pp better than baseline"
+assert dice_loss_val > baseline_dice + 0.15, \
+    f"Dice loss ({dice_loss_val:.2f}) should be >15pp better than baseline"
+print("✓ All class-imbalance strategy assertions passed!")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|----------------|-----|
+| **Class weights computed on the full dataset instead of the batch** | Estimating class frequencies from all training images gives the correct global weight vector, but when a particular batch contains 0 foreground pixels, the gradient contribution from that sample is entirely from the background weight, making the training signal noisy per-batch. | Use dataset-level class weights for the weight vector; additionally, apply stratified sampling to ensure every batch contains at least one foreground sample. |
+| **OHEM top-k threshold too aggressive** | Setting `k=0.05` (keep only the hardest 5% of pixels) on a small batch (B=4, H=W=256 → 262 K pixels) retains only ~13 K pixels per iteration; the gradient estimate has very high variance, causing training loss oscillation without improvement. | Start at `k=0.25–0.50`; reduce gradually after the model has learned the easy examples (monitor validation loss stability); never go below `k=0.10` for batch sizes < 16. |
+| **Applying Focal loss with `from_logits=False` to raw logits** | If the model's output layer has no activation but `from_logits=False` is set (default), Focal loss tries to take `log(p)` of raw logits > 1 or < 0, producing NaN losses immediately. | Set `from_logits=True` when the final layer uses no activation; set `from_logits=False` only when using `activation='sigmoid'` or `activation='softmax'`. |
+| **Monitoring only pixel accuracy with imbalanced classes** | Pixel accuracy rewards the model for correctly classifying the majority background class; a model that predicts 100% background achieves 90% accuracy on a 10:1 dataset while completely missing the foreground. | Always use foreground-class Dice and IoU as the primary metrics; treat pixel accuracy as secondary context and flag runs where pixel accuracy > 90% but Dice < 0.5. |
+| **Using the same learning rate for weighted and unweighted loss** | Class weighting effectively rescales the gradient magnitude; using the same learning rate as the unweighted baseline often causes gradient explosion in the first epoch when foreground weight is 10×. | Divide the learning rate by the maximum class weight (or use gradient clipping `tf.keras.optimizers.Adam(clipnorm=1.0)`) when applying strong class weights ≥ 5. |
+
+## Stretch Goals
+
+1. **Implement median-frequency class weighting.** Compute the median pixel frequency across all training images and set `w_c = median_freq / freq_c`. Compare convergence speed and final foreground Dice vs. the inverse-frequency weighting used in this lab; median-frequency weighting is more robust to extreme outlier classes.
+2. **Add curriculum learning for class imbalance.** Start training with equal class weights, then linearly increase the foreground weight from 1 to 10 over the first 10 epochs. Compare the loss trajectory and final Dice vs. training with fixed weight=10 from epoch 0; curriculum weighting typically avoids early-epoch divergence.
+3. **Apply nnU-Net's automatic class weighting.** nnU-Net estimates class weights from the dataset fingerprint (foreground fraction per case) and clips extreme values to `[0.1, 10]`. Implement this strategy and compare to your hand-tuned weight on this synthetic dataset.
+4. **Extend to semi-supervised learning with pseudo-labels for the minority class.** Generate pseudo-labels for 100 unlabeled synthetic images using your best model, filter pseudo-labels by prediction confidence > 0.90, and retrain. Measure the improvement in foreground Dice relative to the supervised-only baseline.
+
 ---

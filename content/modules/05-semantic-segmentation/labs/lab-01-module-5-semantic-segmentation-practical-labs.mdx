@@ -23,3 +23,163 @@ source: "lab-01-complete.md"
 12. [Lab 5.12: Post-processing Techniques - Ensemble Methods](#lab-512-post-processing-techniques---ensemble-methods)
 
 ---
+
+## Overview
+
+Semantic segmentation assigns a class label to **every pixel** in an image, producing a dense output mask of the same spatial resolution as the input. Unlike image classification (one label per image) or object detection (one bounding box per object), segmentation captures precise object boundaries and enables applications such as autonomous driving lane detection, medical lesion delineation, and satellite land-cover mapping.
+
+This module covers the four major families of segmentation architectures and their supporting techniques:
+
+- **Fully Convolutional Networks (FCN)** — the first end-to-end trainable dense prediction network, converting VGG's fully-connected layers to convolutional ones and adding transposed convolutions for upsampling. FCN-8s introduces skip connections from pool3/pool4 to recover fine spatial detail.
+- **U-Net and variants** — an encoder–decoder with symmetric skip connections that concatenate high-resolution encoder features with the corresponding decoder level. Widely used in medical imaging; extended to U-Net++, Residual U-Net, and Attention U-Net.
+- **DeepLab and ASPP** — uses atrous (dilated) convolutions to enlarge the receptive field without reducing resolution, and Atrous Spatial Pyramid Pooling (ASPP) to capture multi-scale context. DeepLabV3+ adds a lightweight decoder that fuses low-level features for sharper boundaries.
+- **Loss functions and post-processing** — Dice loss, IoU loss, Focal loss, and Tversky loss address class imbalance; CRF post-processing refines boundaries; morphological operations and connected-component filtering clean up noise; test-time augmentation and model ensembling boost final metrics.
+
+By the end of this module you will be able to build, train, evaluate, and deploy all major segmentation architectures from scratch in TensorFlow/Keras.
+
+## Python Scaffold
+
+Use this template as the starting point for the overview exercise. Complete each `# TODO` section before checking your results against the Expected Output below.
+
+```python
+"""
+Module 5 Overview: Semantic Segmentation End-to-End Scaffold
+Complete each # TODO to build a minimal segmentation pipeline.
+"""
+
+import tensorflow as tf
+from tensorflow.keras import layers, Model
+import numpy as np
+import matplotlib.pyplot as plt
+
+tf.random.set_seed(42)
+np.random.seed(42)
+
+# ---------------------------------------------------------------------------
+# 1. Data loading and preprocessing
+# ---------------------------------------------------------------------------
+
+def load_image_mask_pair(image_path: str, mask_path: str, target_size=(256, 256)):
+    """Load and preprocess a single image-mask pair."""
+    # TODO: Load image (RGB, float32 / 255.0), shape (H, W, 3)
+    # TODO: Load mask (integer class IDs), shape (H, W, 1)
+    # TODO: Resize image with bilinear; resize mask with nearest-neighbor
+    raise NotImplementedError("Implement load_image_mask_pair")
+
+def build_data_generator(image_dir: str, mask_dir: str,
+                          batch_size: int = 8,
+                          target_size=(256, 256)):
+    """Build a tf.data pipeline with augmentation."""
+    # TODO: Create tf.data.Dataset from image/mask file paths
+    # TODO: Apply horizontal flip augmentation (same transform to image AND mask)
+    # TODO: Batch, prefetch, and return dataset
+    raise NotImplementedError("Implement build_data_generator")
+
+# ---------------------------------------------------------------------------
+# 2. Baseline model: minimal U-Net
+# ---------------------------------------------------------------------------
+
+def build_baseline_unet(input_shape=(256, 256, 3), num_classes=2):
+    """Two-level U-Net for binary segmentation."""
+    inputs = tf.keras.Input(shape=input_shape)
+    # TODO: Encoder - two conv blocks with MaxPool2D, save skip connections
+    # TODO: Bottleneck - one conv block at lowest resolution
+    # TODO: Decoder - two upsampling steps with skip-connection Concatenate
+    # TODO: Output - Conv2D(num_classes, 1) with 'softmax' activation
+    raise NotImplementedError("Implement build_baseline_unet")
+
+# ---------------------------------------------------------------------------
+# 3. Evaluation metrics
+# ---------------------------------------------------------------------------
+
+def compute_mean_iou(y_true, y_pred_logits, num_classes: int):
+    """Compute mean Intersection-over-Union across all classes."""
+    # TODO: Convert logits to predicted class map via tf.argmax
+    # TODO: Use tf.keras.metrics.MeanIoU to accumulate TP/FP/FN over batch
+    # TODO: Return scalar mIoU value
+    raise NotImplementedError("Implement compute_mean_iou")
+
+def compute_dice(y_true_onehot, y_pred_softmax, smooth=1.0):
+    """Compute mean Dice coefficient across classes and batch."""
+    # TODO: intersection = sum(y_true * y_pred) over spatial dims [H, W]
+    # TODO: dice = (2*intersection + smooth) / (sum(y_true) + sum(y_pred) + smooth)
+    # TODO: Return mean Dice over batch and classes
+    raise NotImplementedError("Implement compute_dice")
+
+# ---------------------------------------------------------------------------
+# 4. Training loop (stub)
+# ---------------------------------------------------------------------------
+
+def train_model(model, train_ds, val_ds, epochs=10, learning_rate=1e-3):
+    """Compile and train the segmentation model."""
+    # TODO: Compile with Adam(lr), SparseCategoricalCrossentropy(from_logits=False)
+    # TODO: Add MeanIoU and Dice as metrics
+    # TODO: model.fit(train_ds, validation_data=val_ds, epochs=epochs)
+    # TODO: Return history object
+    raise NotImplementedError("Implement train_model")
+
+# ---------------------------------------------------------------------------
+# Quick sanity check (runs without real data)
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    print(f"TensorFlow version: {tf.__version__}")
+    # Verify output shape on a dummy forward pass
+    dummy_model = tf.keras.Sequential([
+        layers.Conv2D(32, 3, padding='same', activation='relu',
+                      input_shape=(256, 256, 3)),
+        layers.Conv2D(2, 1, activation='softmax'),
+    ])
+    dummy_out = dummy_model(tf.zeros((1, 256, 256, 3)))
+    print(f"Dummy model output shape: {dummy_out.shape}")
+    assert dummy_out.shape == (1, 256, 256, 2)
+    print("Scaffold shape check passed. Implement the TODOs to proceed.")
+```
+
+## Expected Output
+
+After completing the scaffold and running a 10-epoch trial on a 200-sample synthetic dataset (256×256, 2 classes, ~20% foreground pixels):
+
+| Metric | Expected Range | Red Flag |
+|--------|---------------|----------|
+| Model output shape | (B, 256, 256, 2) | Any other shape signals activation or architecture bug |
+| Train Dice (epoch 10) | 0.70–0.85 | < 0.50 → check mask encoding or loss setup |
+| Val Dice (epoch 10) | 0.65–0.80 | < 0.45 → overfitting or data pipeline error |
+| Mean IoU (val) | 0.52–0.68 | < 0.40 → class weighting or metric accumulation issue |
+| Pixel accuracy | 0.88–0.96 | > 0.97 with Dice < 0.5 → predicting all-background |
+
+```python
+# === Validation Assertions ===
+import tensorflow as tf
+import numpy as np
+
+# Verify the scaffold model produces correct output shape and valid probabilities
+sanity_model = tf.keras.Sequential([
+    tf.keras.layers.Conv2D(16, 3, padding='same', activation='relu',
+                           input_shape=(256, 256, 3)),
+    tf.keras.layers.Conv2D(2, 1, activation='softmax'),
+])
+out = sanity_model(tf.zeros((2, 256, 256, 3)))
+assert out.shape == (2, 256, 256, 2), f"Expected (2,256,256,2), got {out.shape}"
+prob_sums = tf.reduce_sum(out, axis=-1).numpy()
+assert np.allclose(prob_sums, 1.0, atol=1e-5), "Softmax probabilities must sum to 1.0 per pixel"
+print("✓ Overview scaffold validation passed!")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|----------------|-----|
+| **Resizing masks with bilinear interpolation** | Bilinear resizing on integer class-ID masks creates fractional values between class IDs at boundaries; after rounding, these become wrong class labels and introduce spurious boundary errors in the ground truth. | Always resize masks with `method='nearest'` (`tf.image.resize(mask, size, method='nearest')`); apply bilinear only to the RGB image. |
+| **Applying image augmentation without matching mask transform** | Random horizontal flip or rotation applied to the image but not to the corresponding mask creates misaligned pairs; the network learns boundary locations that do not correspond to real object edges, and both loss and metrics degrade silently. | Bundle image and mask into a single `(image, mask)` tuple and apply identical geometric transforms by sharing the same random state or `tf.random.Generator` seed. |
+| **Using sigmoid output for multi-class segmentation** | For `num_classes > 2`, sigmoid produces independent per-class probabilities that sum to more than 1; this breaks Dice loss (over-counts the intersection) and makes argmax unpredictable when multiple class probabilities exceed 0.5. | Use `activation='softmax'` for multi-class; reserve `activation='sigmoid'` for strictly binary segmentation with one output channel. |
+| **Mask encoding mismatch: one-hot vs integer class IDs** | Passing one-hot `(B,H,W,C)` masks to `SparseCategoricalCrossentropy` (which expects `(B,H,W)` integer IDs) causes TF to broadcast the extra channel dimension and compute a numerically incorrect loss without raising an error. | Use `SparseCategoricalCrossentropy` with integer masks `(B,H,W)` or `(B,H,W,1)`; use `CategoricalCrossentropy` only with fully one-hot encoded `(B,H,W,C)` masks. |
+| **Not normalizing image pixels before feeding to the model** | Training with uint8 `[0, 255]` inputs causes the convolutional pre-activations to overflow, producing NaN weights within the first few gradient steps; the model appears to train (loss prints) but all weights become `nan` after step 2. | Cast and scale: `image = tf.cast(image, tf.float32) / 255.0`; add `tf.debugging.assert_all_finite(image, "Image contains NaN/Inf")` as a pipeline guard. |
+
+## Stretch Goals
+
+1. **Implement the full data pipeline with a real dataset.** Download the Oxford-IIIT Pet dataset via `tensorflow_datasets.load('oxford_iiit_pet')`, replace the `# TODO` stubs in `build_data_generator`, and verify the pipeline delivers batches of shape `(8, 256, 256, 3)` and `(8, 256, 256, 1)` at > 100 samples/sec measured with `tf.data.experimental.AUTOTUNE`.
+2. **Extend the baseline to a full 4-level U-Net with Attention gates.** Modify `build_baseline_unet` to 4 encoder levels (`filters=[32,64,128,256]`, bottleneck=512), then add Attention U-Net gates (Oktay et al. 2018) at each skip connection. Compare attention-gated vs standard skip-connection Dice on the Pet dataset.
+3. **Complete the metric dashboard and compare all five module architectures.** Implement `compute_mean_iou` and `compute_dice`, train FCN-8s, standard U-Net, DeepLabV3+, Focal-loss U-Net, and a 3-model ensemble each for 20 epochs on the same 200-sample synthetic split. Report mIoU, Dice, inference FPS, and parameter count in a final comparison table.
+4. **Apply semi-supervised pseudo-labeling for the minority class.** Train the baseline model on 100 labeled samples, generate pseudo-labels for 200 unlabeled images (keeping predictions with confidence > 0.90), and retrain on the combined 300-sample set. Measure whether pseudo-label expansion improves foreground Dice by > 3% relative, matching the nnU-Net semi-supervised strategy.
+

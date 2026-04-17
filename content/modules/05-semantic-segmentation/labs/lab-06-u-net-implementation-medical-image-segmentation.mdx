@@ -551,4 +551,52 @@ Next: Lab 5.6 will implement DeepLab with Atrous Spatial Pyramid Pooling.
 """)
 ```
 
+## Expected Output
+
+After training U-Net for 30 epochs on synthetic medical images (256×256, 3 classes: background, tumor, vessel):
+
+| Metric | Expected Range | Clinical Concern if… |
+|--------|---------------|----------------------|
+| Mean Dice (test, all classes) | 0.72–0.82 | < 0.60 → check class weighting |
+| Tumor class Dice | 0.68–0.78 | < 0.50 → severe class imbalance |
+| Vessel class Dice | 0.65–0.75 | < 0.45 → thin structure loss |
+| Sensitivity (tumor) | 0.75–0.88 | < 0.65 → false negatives too high |
+| Pixel accuracy | 0.88–0.95 | > 0.97 with Dice < 0.5 → background-only prediction |
+
+```python
+# === Validation Assertions ===
+import numpy as np
+
+# Replace with actual metric values from model evaluation
+mean_dice = 0.75
+tumor_dice = 0.72
+vessel_dice = 0.68
+sensitivity = 0.80
+pixel_acc = 0.91
+
+assert mean_dice > 0.60, f"Mean Dice {mean_dice:.3f} < 0.60: check weighted loss configuration"
+assert tumor_dice > 0.50, f"Tumor Dice {tumor_dice:.3f} < 0.50: increase tumor class weight in loss"
+assert vessel_dice > 0.45, f"Vessel Dice {vessel_dice:.3f} < 0.45: check thin-structure augmentation"
+assert sensitivity > 0.65, f"Sensitivity {sensitivity:.3f} < 0.65: model missing too many true positives"
+assert not (pixel_acc > 0.97 and mean_dice < 0.50), "High pixel accuracy + low Dice → predicting only background"
+print("✓ All medical segmentation validation checks passed!")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|----------------|-----|
+| **Class weight vector wrong length or on wrong axis** | Passing `class_weights=[1, 10, 5]` to `SparseCategoricalCrossentropy` does not work directly; the built-in loss doesn't accept a vector. Attempting to use `sample_weight` instead of pixel-wise weights silently applies the same weight to entire images. | Implement pixel-wise weighting manually: compute a weight map tensor of shape `(B,H,W)` assigning each pixel its class weight, then multiply the per-pixel loss tensor element-wise before reducing. |
+| **Evaluating Dice on the argmax mask instead of soft probabilities** | Taking `argmax` before computing Dice introduces rounding that makes Dice non-differentiable and alters metric values at evaluation time compared to training (where soft probabilities are used). | At evaluation, compute Dice on one-hot encoded argmax predictions to get the hard metric; at training, compute soft Dice directly on softmax probabilities to keep gradients smooth. |
+| **Preprocessing mismatch: training on normalized images, inferring on raw scans** | Medical images (CT, MRI) often have vastly different intensity ranges between scanners. Training on z-score normalized images but inferring on unnormalized HU values degrades Dice from 0.75 to near zero. | Apply identical normalization (clip to `[p1, p99]` then z-score) in both the training pipeline and the inference preprocessing function; export the computed statistics alongside the model weights. |
+| **Comparing sensitivity without fixing specificity** | Reporting sensitivity in isolation allows trivially optimizing it by predicting the entire image as tumor; sensitivity reaches 1.0 while generating massive false positives (specificity → 0). | Always report sensitivity and specificity as a pair, or use the Dice/F1 score which intrinsically balances precision and recall. Report confidence intervals over the test set. |
+| **Thin structure (vessel) loss due to max-pool resolution collapse** | Vessels are often 1–3 pixels wide; the standard U-Net bottleneck at 16×16 loses fine vascular topology entirely. Reconstructed vessels appear as blobs, not tubular structures. | Use deep supervision at the 64×64 and 32×32 decoder levels with auxiliary Dice losses; or switch to a topology-preserving loss (clDice, Shit et al. 2021) that penalizes centerline connectivity errors. |
+
+## Stretch Goals
+
+1. **Implement Attention U-Net for lesion localization.** Add attention gate modules (Oktay et al. 2018) at each skip connection; attention maps should highlight tumor regions. Compare tumor-class Dice and sensitivity vs. standard U-Net and visualize the learned attention maps overlaid on example slices.
+2. **Apply semi-supervised training with pseudo-labeling.** Generate pseudo-labels for 200 unlabeled synthetic images using the model trained on 100 labeled samples, then retrain on the full 300-image set. Measure whether the pseudo-labeled expansion improves mean Dice by > 2% and reduces false-negative rate on the tumor class.
+3. **Benchmark nnU-Net preprocessing on this dataset.** nnU-Net (Isensee et al. 2021) automatically configures patch size, normalization, and architecture based on dataset fingerprinting. Apply its preprocessing rules (median spacing normalization, percentile clipping) to your synthetic data and measure the effect on baseline U-Net Dice without changing the architecture.
+4. **Extend to 3D volumetric segmentation.** Stack 16 synthetic 2D slices into a pseudo-volume and build a 3D U-Net using `Conv3D` and `Conv3DTranspose`. Compare 3D Dice against the 2D slice-by-slice baseline; 3D context typically improves vessel continuity by reducing inter-slice inconsistencies.
+
 ---

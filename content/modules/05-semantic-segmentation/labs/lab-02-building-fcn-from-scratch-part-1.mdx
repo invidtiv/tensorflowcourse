@@ -431,4 +431,89 @@ Total params: ~134M (most from FC6 and FC7 layers)
 | Output shape mismatch | Check padding='same' in all layers |
 | NaN losses | Add gradient clipping, reduce learning rate |
 
+<Callout type="warning" title="Common Pitfalls">
+
+- **Forgetting `padding='same'` in every encoder block.** FCN relies on
+  the 32x spatial reduction coming *only* from the 5 max-pool stages.
+  A single `padding='valid'` convolution silently shaves 2 pixels off
+  the feature map, making the final transposed-conv output no longer
+  align with the input resolution. Symptom: output is `(None, 220, 220, 21)`
+  instead of `(None, 224, 224, 21)`.
+- **Loading VGG16 weights with `include_top=True`.** The fully-connected
+  layers in classification VGG expect a flat `(None, 25088)` input and
+  will break the moment you convert FC6/FC7 into 1×1 convolutions. Always
+  load with `include_top=False` and rebuild the classifier head as conv
+  layers (FC6 → `Conv2D(4096, (7,7))`, FC7 → `Conv2D(4096, (1,1))`).
+- **Misunderstanding upsampling factor 32.** The transposed conv
+  `strides=(32,32)` with `kernel_size=(64,64)` is not arbitrary — the
+  kernel must be at least `2 * stride` for bilinear-like initialization
+  to cover the receptive field. Using `kernel_size=(32,32)` produces
+  checkerboard artifacts.
+- **Training FCN-32s end-to-end from scratch.** The encoder *must* start
+  from ImageNet-pretrained VGG weights; random init on 134M params
+  against a ~3k-image segmentation dataset (PASCAL VOC trainaug) will
+  not converge in a realistic budget. Loss will plateau near uniform
+  class probability.
+- **Using `softmax_cross_entropy` with integer masks reshaped wrong.**
+  Masks must be `(batch, H, W)` with integer class IDs for
+  `SparseCategoricalCrossentropy`, or `(batch, H, W, num_classes)`
+  one-hot for `CategoricalCrossentropy`. Mixing them silently produces
+  loss values that don't decrease.
+- **Evaluating on the full 21-class VOC when mIoU looks suspiciously low.**
+  The background class (id=0) dominates pixel counts. Report both
+  pixel accuracy (inflated) and per-class mIoU (honest); expected FCN-32s
+  mIoU on VOC val is only ~59.4%.
+
+</Callout>
+
+<Callout type="tip" title="Stretch Goals">
+
+1. **Implement FCN-16s and FCN-8s variants.** FCN-32s is the simplest
+   — a single 32× upsample. FCN-16s fuses pool4 via a 2× upsample + skip
+   connection before the final 16× upsample. FCN-8s adds a second fusion
+   from pool3. Expected mIoU jump: 59.4% → 62.4% → 62.7% on VOC val.
+   You already built pool3/pool4 outputs — wire them in.
+2. **Benchmark transposed conv vs bilinear + 1×1 conv upsampling.**
+   Replace `Conv2DTranspose(strides=32)` with
+   `UpSampling2D(size=32, interpolation='bilinear')` followed by a
+   `Conv2D(num_classes, 1)`. Bilinear upsampling has zero trainable
+   parameters for the upsample step and often avoids checkerboard
+   artifacts. Compare mIoU and inference latency on a batch of 8
+   at 512×512.
+3. **Add deep supervision.** Attach auxiliary classifier heads at
+   pool3, pool4, and pool5, each with its own loss weighted
+   `{0.3, 0.3, 1.0}`. This stabilizes gradients flowing back through
+   the encoder and typically improves mIoU by 1–2 points at the cost
+   of ~15% more training time.
+4. **Convert to a fully-convolutional inference pipeline that accepts
+   arbitrary input sizes.** FCN's key claim is dense prediction on any
+   resolution. Remove the `input_shape=(224,224,3)` constraint by
+   setting `input_shape=(None, None, 3)` and verify that a 512×768
+   test image produces a `(1, 512, 768, 21)` output in a single forward
+   pass (no tiling).
+5. **Measure receptive field.** Use a gradient probe
+   (`tf.GradientTape` on a single center pixel of the logits w.r.t.
+   the input) to empirically map the receptive field of FCN-32s.
+   Expected: ~404×404 pixels — larger than 224×224 input, which is
+   why input-resolution flexibility matters.
+
+</Callout>
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|----------------|-----|
+| **Missing `padding='same'` in encoder convolutions** | A single `padding='valid'` layer silently shrinks feature-map spatial dimensions, so the final 32× transposed conv output no longer aligns with the input size (e.g., `(220,220)` instead of `(224,224)`). | Set `padding='same'` on every `Conv2D` in the encoder; verify output shape after each block with a dummy `tf.zeros` forward pass. |
+| **Loading VGG16 with `include_top=True`** | The classification head expects a flat `(None, 25088)` vector and breaks when you attempt to convert FC layers to `Conv2D` for dense prediction. | Always use `include_top=False`; rebuild FC6/FC7 as `Conv2D(4096, (7,7))` and `Conv2D(4096, (1,1))` respectively. |
+| **Wrong upsampling kernel size for 32× stride** | `Conv2DTranspose` with `strides=(32,32)` but `kernel_size=(32,32)` (< `2×stride`) leaves the receptive field under-covered, producing checkerboard artifacts. | Use `kernel_size=(64,64)` (≥ `2×stride`) or switch to bilinear `UpSampling2D(32)` + `Conv2D(num_classes,1)`. |
+| **Integer mask shape mismatch with loss function** | Passing `(batch, H, W)` integer masks to `CategoricalCrossentropy` (which expects one-hot) produces incorrect gradients; loss appears to decrease but mIoU stays flat. | Use `SparseCategoricalCrossentropy` for integer masks or `tf.one_hot` + `CategoricalCrossentropy` for one-hot masks; never mix. |
+| **Evaluating only pixel accuracy and ignoring mIoU** | Background pixels dominate VOC (~70%), so pixel accuracy inflates to ~90%+ even for a model that mostly predicts background, masking poor foreground detection. | Always report per-class mIoU alongside pixel accuracy; expected FCN-32s mIoU on VOC val is ~59.4% — a large gap signals background bias. |
+
+## Stretch Goals
+
+1. **Implement FCN-16s and FCN-8s with skip connections.** FCN-16s fuses the pool4 feature map (2× upsampled) with the conv7 prediction before the final 16× upsample; FCN-8s additionally fuses pool3. Expected mIoU progression: 59.4% → 62.4% → 62.7% on VOC val. Both encoder outputs (`pool3`, `pool4`) are already available from the VGG encoder you built.
+2. **Benchmark transposed convolution vs bilinear + 1×1 upsampling.** Replace `Conv2DTranspose(strides=32)` with `UpSampling2D(32, interpolation='bilinear')` followed by `Conv2D(num_classes, 1)`. Compare mIoU, checkerboard artifact presence, and inference latency at 512×512 on a batch of 8 images.
+3. **Add deep supervision with auxiliary heads.** Attach lightweight `Conv2D(num_classes, 1)` classifier heads at pool3, pool4, and pool5 during training, each weighted `{0.3, 0.3, 1.0}`. Remove auxiliary heads at inference. This stabilizes encoder gradients and typically improves mIoU by 1–2 points.
+4. **Validate arbitrary-resolution inference.** Remove the fixed `input_shape=(224,224,3)` constraint by setting `input_shape=(None, None, 3)` and confirm that a 512×768 image produces a `(1, 512, 768, 21)` output in a single forward pass without tiling or resizing.
+
 ---

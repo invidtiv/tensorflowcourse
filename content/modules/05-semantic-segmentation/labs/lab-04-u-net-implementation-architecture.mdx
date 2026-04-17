@@ -13,6 +13,51 @@ source: "lab-01-complete.md"
 - Implement U-Net from scratch with skip connections
 - Learn about the contracting and expanding paths
 
+## Expected Output
+
+**Section 1 — Building blocks test** (shapes for 1×128×128×3 input):
+```
+Conv block output shape:    (1, 128, 128, 64)
+Encoder output shape:       (1, 64, 64, 64),   skip shape: (1, 128, 128, 64)
+Decoder output shape:       (1, 128, 128, 64)
+```
+
+**Section 2 — Standard U-Net `model.summary()` highlights** (256×256×3 binary, filters=[64,128,256,512,1024]):
+
+| Section | Layer | Output Shape | Notes |
+|---------|-------|-------------|-------|
+| Input | input | (None, 256, 256, 3) | |
+| Encoder 1 | encoder_1_pool | (None, 128, 128, 64) | skip: (256,256,64) |
+| Encoder 2 | encoder_2_pool | (None, 64, 64, 128) | skip: (128,128,128) |
+| Encoder 3 | encoder_3_pool | (None, 32, 32, 256) | skip: (64,64,256) |
+| Encoder 4 | encoder_4_pool | (None, 16, 16, 512) | skip: (32,32,512) |
+| Bottleneck | bottleneck_dropout | (None, 16, 16, 1024) | |
+| Decoder 4 | decoder_4_conv2 | (None, 32, 32, 512) | |
+| Decoder 3 | decoder_3_conv2 | (None, 64, 64, 256) | |
+| Decoder 2 | decoder_2_conv2 | (None, 128, 128, 128) | |
+| Decoder 1 | decoder_1_conv2 | (None, 256, 256, 64) | |
+| Output | output | (None, 256, 256, 1) | sigmoid |
+
+**Total parameters**: ~31.0 M (trainable), 0 non-trainable  
+**Multi-class U-Net output shape**: `(None, 256, 256, 4)`
+
+**Section 4 — Random data inference**:
+```
+Binary output shape: (2, 256, 256, 1)
+Output range:        [0.47, 0.53]   ← untrained weights, near 0.5 is correct
+Class probs sum:     1.0000         ← softmax sums to 1 per pixel
+```
+
+**Section 5 — Variant parameter comparison**:
+
+| Variant | Filters | Parameters |
+|---------|---------|-----------|
+| U-Net Mini | 32→64→128→256→512 | ~7.8 M |
+| U-Net Standard | 64→128→256→512→1024 | ~31.0 M |
+| U-Net Large | 128→256→512→1024→2048 | ~124 M |
+
+**Attention U-Net**: ~31.5 M parameters (slightly more than standard due to attention gate convolutions).
+
 ## Complete Implementation
 
 ```python
@@ -558,5 +603,25 @@ Key Takeaways:
 Next: Lab 5.4 will apply U-Net to road segmentation.
 """)
 ```
+
+---
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|----------------|-----|
+| **Skip-connection shape mismatch at `Concatenate()`** | When input spatial dimensions are not powers of 2, or when `padding='valid'` is used in any encoder conv, the encoder and decoder feature maps can differ by 1–2 pixels, causing a shape error at concatenation. | Enforce `padding='same'` everywhere; ensure input is padded to a power-of-2 size; or add `tf.keras.layers.CenterCrop` / `Resizing` before concatenation. |
+| **Uninitialized BatchNorm running statistics** | At inference (`training=False`), BatchNorm uses running mean/variance accumulated during training. Evaluating immediately after `model.build()` without training returns near-zero running mean and all-ones variance, producing misleading outputs. | Always run at least one forward pass with `training=True` (or call `model.fit`) before trusting evaluation metrics; the loss may look reasonable while predictions are random. |
+| **Bottleneck dropout rate too high for small datasets** | The original paper's `dropout=0.5` was designed for 572×572 histology images with thousands of annotated samples. Applying it to small synthetic datasets (< 500 images) causes the network to fail to learn any structure for the first 10–20 epochs. | Start at `dropout=0.2–0.3` for small datasets; only increase to 0.5 if the model clearly overfits on the training Dice score. |
+| **`Conv2DTranspose` checkerboard artifacts** | Transposed convolution with `strides=2` and `kernel_size=2` creates overlapping output regions that produce a visible grid pattern in the predicted mask. | Replace `Conv2DTranspose(f, 2, strides=2)` with `UpSampling2D(2) + Conv2D(f, 3, padding='same')`; bilinear upsampling eliminates the artifact at the cost of slightly fewer learnable decoder parameters. |
+| **Multi-class sigmoid + `categorical_crossentropy` mismatch** | For `num_classes > 1`, using `activation='sigmoid'` on the output produces independent per-class probabilities that sum to more than 1, which breaks `CategoricalCrossentropy` and makes Dice loss undefined. | Use `activation='softmax'` for multi-class output; pass one-hot masks (`tf.one_hot(mask, num_classes)`) with `CategoricalCrossentropy`, or integer masks with `SparseCategoricalCrossentropy`. |
+
+## Stretch Goals
+
+1. **Build a Residual U-Net.** Replace each `conv_block` with a residual block that adds the block input to its output via a 1×1 projection conv when channel counts differ. Improved gradient flow typically yields 0.5–1.5% higher mIoU over 50 epochs on the same parameter budget, particularly on deeper (5-level) architectures.
+2. **Implement U-Net++ (nested dense skip connections).** Add intermediate dense nodes between encoder and decoder paths at each resolution level. Start with the `d=2` variant (two intermediate nodes per level, as in Zhou et al. 2018) and compare Dice score and parameter count vs. standard U-Net.
+3. **Swap in an EfficientNetB0 encoder backbone.** Replace the custom contracting path with `tf.keras.applications.EfficientNetB0(include_top=False, weights='imagenet')`, freeze the first 3 stages, and attach the U-Net decoder to the last 4 stage outputs. ImageNet pretraining typically boosts mIoU by 5–10% on real segmentation benchmarks.
+4. **Enable dynamic (any-resolution) inference.** Modify `build_unet` to accept `input_shape=(None, None, C)` and verify that `model.predict` correctly handles both a 256×256 and a 512×384 input in a single forward pass, producing output spatial dimensions that match the input.
+
 
 ---

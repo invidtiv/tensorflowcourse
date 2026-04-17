@@ -489,4 +489,61 @@ Next: Lab 5.7 will complete DeepLab implementation with decoder.
 """)
 ```
 
+## Expected Output
+
+After building the ASPP module and DeepLab-style encoder with `input_shape=(512, 512, 3)` and dilation rates `[6, 12, 18]`:
+
+| Component | Output Shape | Notes |
+|-----------|-------------|-------|
+| Atrous conv (rate=6) | (1, 512, 512, 256) | Effective receptive field: 67×67 |
+| Atrous conv (rate=18) | (1, 512, 512, 256) | Effective receptive field: 179×179 |
+| ASPP module output | (1, 512, 512, 256) | Concatenated + 1×1 projection |
+| DeepLab encoder output | (1, 64, 64, 256) | After OS=8 backbone |
+| Image-level pooling branch | (1, 512, 512, 256) | Global avg + bilinear upsample |
+
+```python
+# === Validation Assertions ===
+import tensorflow as tf
+import numpy as np
+
+# Quick shape check for ASPP output
+def build_aspp_test(input_shape=(512, 512, 3), out_channels=256, rates=(6, 12, 18)):
+    inp = tf.keras.Input(shape=input_shape)
+    branches = [tf.keras.layers.Conv2D(out_channels, 1, padding='same')(inp)]
+    for r in rates:
+        branches.append(tf.keras.layers.Conv2D(out_channels, 3, dilation_rate=r, padding='same')(inp))
+    # Image-level pooling
+    gp = tf.keras.layers.GlobalAveragePooling2D(keepdims=True)(inp)
+    gp = tf.keras.layers.Conv2D(out_channels, 1)(gp)
+    gp = tf.keras.layers.Resizing(input_shape[0], input_shape[1])(gp)
+    branches.append(gp)
+    x = tf.keras.layers.Concatenate()(branches)
+    out = tf.keras.layers.Conv2D(out_channels, 1)(x)
+    return tf.keras.Model(inp, out)
+
+aspp = build_aspp_test()
+dummy = tf.zeros((1, 512, 512, 3))
+result = aspp(dummy)
+assert result.shape == (1, 512, 512, 256), f"ASPP output shape {result.shape} != (1,512,512,256)"
+assert len(aspp.trainable_variables) > 0, "ASPP has no trainable parameters"
+print("✓ All ASPP shape and parameter assertions passed!")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|----------------|-----|
+| **Dilation rate too large for feature map size** | An atrous conv with `dilation_rate=24` on a 32×32 feature map means the kernel points fall entirely outside the feature map boundaries; TensorFlow pads with zeros, returning a nearly-uniform activation map that provides no useful multi-scale context. | Keep `rate × (kernel_size − 1) < feature_map_size / 2`; for OS=8 backbone with 64×64 features, maximum useful rate is ~12. Use the ASPP rates `[6, 12, 18]` on the full-resolution (512×512) feature map. |
+| **Missing `padding='same'` in atrous convolutions** | `padding='valid'` with `dilation_rate > 1` produces output sizes smaller than input, making it impossible to concatenate branches of different spatial sizes in the ASPP module. | Always use `padding='same'` for all atrous convolution branches so every branch produces the same spatial output size as the input feature map. |
+| **Image-level pooling branch not upsampled to match other branches** | The global average pooling branch reduces to `(B, 1, 1, C)`; concatenating without bilinear upsampling to the full feature map size causes a shape mismatch in the `Concatenate()` layer. | Upsample the pooling branch to the input feature map size with `tf.keras.layers.Resizing(H, W)` or `tf.image.resize` before concatenation. |
+| **Backbone output stride not matching ASPP input assumptions** | DeepLab ASPP is designed for OS=8 or OS=16 backbone features (feature maps at 1/8 or 1/16 input resolution). Using a standard backbone with OS=32 (five pooling stages) means the ASPP rates of [6,12,18] at 7×7 are too large, providing no multi-scale diversity. | Remove the last 1–2 max-pool stages and replace them with atrous convolutions to achieve OS=8; or use `strides=1` + `dilation_rate=2` in the last residual block. |
+| **Not applying BatchNorm between ASPP branch projections** | The 1×1 projection conv after concatenating ASPP branches processes a tensor of concatenated raw conv outputs; without BatchNorm, scale differences between branches create gradient imbalance and the model effectively learns to ignore higher-rate branches. | Apply `Conv2D → BatchNormalization → ReLU` as a unit at every ASPP step, including the final 1×1 projection; use `use_bias=False` when BatchNorm follows. |
+
+## Stretch Goals
+
+1. **Sweep ASPP dilation rates and measure receptive field coverage.** Test rate sets `[6,12,18]`, `[4,8,12]`, and `[12,24,36]` on a 512×512 input. Use gradient-based receptive field estimation (`tf.GradientTape` from center pixel to input) and visualize how each rate set covers different object scales; compare mIoU on a 20-image validation subset.
+2. **Implement DeepLabV3 (without decoder).** Build the full DeepLabV3 model: ResNet-50 backbone with OS=8 atrous convolutions + ASPP + simple bilinear 8× upsample to input resolution. Verify that a single forward pass on a 512×512 image produces `(1, 512, 512, 21)` logits within 50 ms on GPU.
+3. **Visualize ASPP branch activations.** After training on 100 synthetic examples, extract and visualize the feature maps from each of the 4 parallel ASPP branches for a single test image. Confirm that higher-rate branches respond to larger objects/regions while lower-rate branches capture fine details.
+4. **Replace fixed ASPP rates with learned parallel depthwise separable convolutions.** Implement each ASPP branch as `DepthwiseConv2D(dilation_rate=r)` + `Conv2D(C, 1)` (depthwise separable atrous conv). Compare parameter count, FLOPs, and validation mIoU vs. standard ASPP to quantify the efficiency–accuracy tradeoff.
+
 ---
