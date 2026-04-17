@@ -1,0 +1,137 @@
+{
+  "title": "Module 05 — Semantic Segmentation",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "scenes": [
+    {
+      "kind": "title",
+      "durationSec": 4,
+      "props": {
+        "title": "Semantic Segmentation",
+        "subtitle": "Module 05 · Pixel-level prediction"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 8,
+      "props": {
+        "items": [
+          "From image classification to dense prediction",
+          "Encoder–decoder architectures",
+          "Losses that handle class imbalance",
+          "Post-processing and ensembling"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "FCN: fully convolutional networks",
+        "subtitle": "Replace dense layers with 1×1 convs"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 9,
+      "props": {
+        "items": [
+          "Any CNN classifier → segmentation via 1×1 conv",
+          "Upsample feature maps to input resolution",
+          "FCN-32s / 16s / 8s — progressively better skip fusion",
+          "Output shape: (H, W, num_classes)"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "U-Net",
+        "subtitle": "The medical imaging workhorse"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 9,
+      "props": {
+        "items": [
+          "Symmetric encoder–decoder with skip connections",
+          "Skip links preserve fine spatial detail",
+          "Works with very small training sets",
+          "Attention U-Net, TransUNet — modern variants",
+          "nnU-Net — auto-configured for medical tasks"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "DeepLab & ASPP",
+        "subtitle": "Atrous convolutions for multi-scale context"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 8,
+      "props": {
+        "items": [
+          "Dilated convs expand receptive field without pooling",
+          "ASPP — parallel atrous convs at multiple rates",
+          "DeepLabv3+ — encoder–decoder with ASPP bottleneck",
+          "State-of-the-art on Cityscapes and Pascal VOC"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "Loss functions",
+        "subtitle": "Cross-entropy · Dice · Focal · Tversky"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 9,
+      "props": {
+        "items": [
+          "Cross-entropy — default but imbalance-sensitive",
+          "Dice loss — directly optimize overlap (F1)",
+          "Focal loss — down-weights easy pixels",
+          "Tversky — tune false-positive vs false-negative",
+          "Combined CE + Dice often wins in practice"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "Post-processing",
+        "subtitle": "CRF · morphology · ensembling"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 8,
+      "props": {
+        "items": [
+          "DenseCRF — sharpens object boundaries",
+          "Morphological open/close — remove small noise",
+          "Test-time augmentation — flip/rotate and average",
+          "Ensemble different backbones for 1–2 mIoU lift"
+        ]
+      }
+    },
+    {
+      "kind": "cta",
+      "durationSec": 4,
+      "props": {
+        "text": "Build a U-Net from scratch in the labs →"
+      }
+    }
+  ]
+}

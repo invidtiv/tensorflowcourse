@@ -1,0 +1,137 @@
+{
+  "title": "Module 02 — Neural Network Fundamentals",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "scenes": [
+    {
+      "kind": "title",
+      "durationSec": 4,
+      "props": {
+        "title": "Neural Network Fundamentals",
+        "subtitle": "Module 02 · From neuron to MLP"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 8,
+      "props": {
+        "items": [
+          "The artificial neuron: w·x + b",
+          "Activation functions and what they do",
+          "Forward pass, loss, and backpropagation",
+          "Training loop anatomy in Keras"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "The perceptron",
+        "subtitle": "A linear classifier with a threshold"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 8,
+      "props": {
+        "items": [
+          "Inputs weighted, summed, passed through activation",
+          "Linear boundary — cannot solve XOR on its own",
+          "Stack perceptrons → hidden layers → non-linearity",
+          "MLP = universal function approximator (given enough width)"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "Activations that matter",
+        "subtitle": "Sigmoid · tanh · ReLU · GELU"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 9,
+      "props": {
+        "items": [
+          "Sigmoid: saturates and kills gradients",
+          "Tanh: zero-centered but still saturates",
+          "ReLU: the default workhorse — cheap and sparse",
+          "GELU: smoother ReLU, popular in Transformers",
+          "Pick activation + initializer together (He for ReLU)"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "Forward and backward pass",
+        "subtitle": "Gradient tape + chain rule"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 9,
+      "props": {
+        "items": [
+          "Forward: compute loss from inputs and current weights",
+          "Backward: ∂loss/∂w_i via recursive chain rule",
+          "Each layer has a local Jacobian — just matmul and apply",
+          "Optimizer uses gradients to update weights in place",
+          "GradientTape makes the tape explicit for debugging"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "Sequential vs Functional API",
+        "subtitle": "Two Keras flavors — same training engine"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 8,
+      "props": {
+        "items": [
+          "Sequential — linear stacks, fastest to prototype",
+          "Functional — arbitrary DAGs, multi-input/multi-output",
+          "Subclass tf.keras.Model for full research flexibility",
+          "Model.summary() and plot_model() work on all three"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "Normalization & initialization",
+        "subtitle": "What makes deep networks trainable"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 8,
+      "props": {
+        "items": [
+          "Normalize inputs → mean 0, variance 1",
+          "Batch norm stabilizes intermediate activations",
+          "Glorot for tanh, He for ReLU — match init to activation",
+          "Bad init = vanishing or exploding gradients"
+        ]
+      }
+    },
+    {
+      "kind": "cta",
+      "durationSec": 4,
+      "props": {
+        "text": "Build your first MLP in the labs →"
+      }
+    }
+  ]
+}

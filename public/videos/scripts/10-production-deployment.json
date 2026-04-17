@@ -1,0 +1,140 @@
+{
+  "title": "Module 10 — Production Deployment & Optimization",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "scenes": [
+    {
+      "kind": "title",
+      "durationSec": 4,
+      "props": {
+        "title": "Production Deployment",
+        "subtitle": "Module 10 · From notebook to users"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 8,
+      "props": {
+        "items": [
+          "Quantization — shrink and speed up models",
+          "TFLite for mobile and edge",
+          "TensorFlow Serving for REST and gRPC",
+          "TFX pipelines, drift detection, monitoring"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "Quantization",
+        "subtitle": "FP32 → INT8 with minimal accuracy loss"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 9,
+      "props": {
+        "items": [
+          "Post-training dynamic — weights only, activations FP32",
+          "Post-training integer — full INT8 with calibration set",
+          "Float16 — halves size, no calibration needed",
+          "QAT — train with fake quantization for best accuracy",
+          "Expect 2–4× inference speedup, ~4× size reduction"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "TensorFlow Lite",
+        "subtitle": "Mobile, edge, and embedded"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 9,
+      "props": {
+        "items": [
+          "TFLiteConverter.from_keras_model(...)",
+          "Run via Interpreter on Android, iOS, and microcontrollers",
+          "Delegates — GPU, NNAPI, Hexagon accelerate inference",
+          "Verify accuracy on target — ops may be unsupported",
+          "Compress further with pruning + weight clustering"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "TensorFlow Serving",
+        "subtitle": "REST and gRPC for server inference"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 9,
+      "props": {
+        "items": [
+          "Save model in SavedModel format",
+          "Directory layout: model_name/version/",
+          "REST on 8501 · gRPC on 8500 (gRPC is ~2× faster)",
+          "Warmup requests prevent cold-start latency spikes",
+          "Deploy via Docker — official tensorflow/serving image"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "TFX pipelines",
+        "subtitle": "Production ML orchestration"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 9,
+      "props": {
+        "items": [
+          "ExampleGen → StatisticsGen → SchemaGen → Validators",
+          "Trainer → Evaluator → Pusher to Serving",
+          "Schema drift blocks bad data from hitting production",
+          "Orchestrate with Kubeflow, Airflow, or Vertex AI",
+          "Pipeline artifacts are versioned and reproducible"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "Monitoring & drift",
+        "subtitle": "Catch problems before users do"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 9,
+      "props": {
+        "items": [
+          "Data drift — input distribution shifts",
+          "Concept drift — input→output relationship changes",
+          "KS test or PSI on features weekly",
+          "Shadow mode and canary deploys for safe rollouts",
+          "Log predictions + eventual ground truth for retraining"
+        ]
+      }
+    },
+    {
+      "kind": "cta",
+      "durationSec": 4,
+      "props": {
+        "text": "Ship your model in the labs →"
+      }
+    }
+  ]
+}

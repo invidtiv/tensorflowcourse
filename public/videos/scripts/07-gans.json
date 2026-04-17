@@ -1,0 +1,159 @@
+{
+  "title": "Module 07 — Generative Adversarial Networks",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "scenes": [
+    {
+      "kind": "title",
+      "durationSec": 4,
+      "props": {
+        "title": "Generative Adversarial Networks",
+        "subtitle": "Module 07 · Two networks play a game"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 8,
+      "props": {
+        "items": [
+          "Generator vs Discriminator — adversarial training",
+          "DCGAN, Conditional GAN, WGAN, SNGAN",
+          "Mode collapse and how to detect it",
+          "Evaluation with IS and FID"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "The adversarial game",
+        "subtitle": "Generator tries to fool the discriminator"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 9,
+      "props": {
+        "items": [
+          "G maps noise z → fake image",
+          "D classifies real vs fake",
+          "Train D to distinguish, G to fool",
+          "At equilibrium, D outputs 0.5 everywhere",
+          "In practice — balance is fragile"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "DCGAN — first stable recipe",
+        "subtitle": "Convs + batch norm + specific tricks"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 8,
+      "props": {
+        "items": [
+          "Transposed convs in G, strided convs in D",
+          "BatchNorm in both, LeakyReLU in D",
+          "No fully-connected layers, tanh output",
+          "Adam with β₁=0.5 — unstable at default 0.9"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "Mode collapse",
+        "subtitle": "When G settles for a subset of the distribution"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 9,
+      "props": {
+        "items": [
+          "Symptom: repetitive samples, low diversity",
+          "Track per-class sample distribution during training",
+          "Mini-batch discrimination — D sees sample variance",
+          "Feature matching loss — match G to real statistics",
+          "Unrolled GAN — D lookahead prevents G gaming"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "WGAN and WGAN-GP",
+        "subtitle": "Wasserstein distance for stability"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 9,
+      "props": {
+        "items": [
+          "Replace JS divergence with Earth-Mover distance",
+          "Critic (not discriminator) — linear output, no sigmoid",
+          "1-Lipschitz constraint: clip weights or use GP",
+          "Gradient penalty is the modern default",
+          "Loss actually correlates with sample quality"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "Conditional and controllable GANs",
+        "subtitle": "Class labels, attributes, images"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 8,
+      "props": {
+        "items": [
+          "Concatenate class embedding to noise input",
+          "AC-GAN — auxiliary classifier head on D",
+          "Projection discriminator — cleaner conditioning",
+          "pix2pix / CycleGAN — image-to-image translation"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "Evaluation: IS and FID",
+        "subtitle": "How 'good' is a generator?"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 8,
+      "props": {
+        "items": [
+          "Inception Score — rewards confidence and diversity",
+          "IS is domain-limited and gameable",
+          "FID — Fréchet distance between feature distributions",
+          "Lower FID = closer to real data — now the standard",
+          "Always report both IS and FID with sample size"
+        ]
+      }
+    },
+    {
+      "kind": "cta",
+      "durationSec": 4,
+      "props": {
+        "text": "Train a DCGAN on MNIST in the labs →"
+      }
+    }
+  ]
+}

@@ -1,0 +1,139 @@
+{
+  "title": "Module 06 — Object Detection Systems",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "scenes": [
+    {
+      "kind": "title",
+      "durationSec": 4,
+      "props": {
+        "title": "Object Detection",
+        "subtitle": "Module 06 · Bounding boxes & classes"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 8,
+      "props": {
+        "items": [
+          "Detection = classification + localization per object",
+          "IoU and mAP — the core metrics",
+          "Anchor boxes and feature pyramids",
+          "YOLO, two-stage detectors, and DETR"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "IoU and advanced variants",
+        "subtitle": "How well do two boxes overlap?"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 9,
+      "props": {
+        "items": [
+          "IoU = intersection / union (0 to 1)",
+          "GIoU — rewards closer non-overlapping boxes",
+          "DIoU — adds center-distance penalty",
+          "CIoU — also accounts for aspect ratio",
+          "DIoU/CIoU loss converges faster than L2 on boxes"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "Anchor boxes",
+        "subtitle": "Prior shapes to regress from"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 9,
+      "props": {
+        "items": [
+          "Tile the image with boxes of varied scales and ratios",
+          "Each anchor predicts offset + objectness + class",
+          "K-means on ground truth boxes finds good priors",
+          "Multi-scale anchors = feature pyramid network (FPN)",
+          "Anchor-free detectors (FCOS, CenterNet) skip this step"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "Non-Maximum Suppression",
+        "subtitle": "Deduplicate overlapping predictions"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 8,
+      "props": {
+        "items": [
+          "Sort predictions by confidence",
+          "Keep top box, remove others with IoU > threshold",
+          "Soft-NMS decays instead of removing",
+          "Matrix-NMS / DIoU-NMS — modern differentiable variants",
+          "Tune threshold per dataset (0.3–0.7 typical)"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "YOLO family",
+        "subtitle": "Real-time single-stage detection"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 9,
+      "props": {
+        "items": [
+          "Grid-based predictions — one pass per image",
+          "Detection head: objectness + class + box offsets",
+          "Loss weights balance classification and regression",
+          "YOLOv3/v5/v8 — incremental accuracy & speed gains",
+          "Export to TFLite/ONNX for mobile and edge"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "Evaluation with mAP",
+        "subtitle": "Precision–recall over IoU thresholds"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 8,
+      "props": {
+        "items": [
+          "Compute AP per class — area under PR curve",
+          "mAP = average across classes",
+          "mAP@0.5 (VOC) vs mAP@[0.5:0.95] (COCO)",
+          "Always report mAP alongside per-class F1"
+        ]
+      }
+    },
+    {
+      "kind": "cta",
+      "durationSec": 4,
+      "props": {
+        "text": "Train a YOLO detector in the labs →"
+      }
+    }
+  ]
+}

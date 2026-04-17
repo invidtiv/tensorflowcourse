@@ -1,0 +1,140 @@
+{
+  "title": "Module 08 — Natural Language Processing",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "scenes": [
+    {
+      "kind": "title",
+      "durationSec": 4,
+      "props": {
+        "title": "Natural Language Processing",
+        "subtitle": "Module 08 · Text to tensors"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 8,
+      "props": {
+        "items": [
+          "Tokenization — word, character, and subword (BPE)",
+          "Word embeddings — Word2Vec, GloVe",
+          "RNNs: SimpleRNN, LSTM, GRU",
+          "Attention and Transformers"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "Tokenization",
+        "subtitle": "How we turn text into integer IDs"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 9,
+      "props": {
+        "items": [
+          "Word-level — simple but huge vocabulary",
+          "Character-level — small vocab, long sequences",
+          "BPE / WordPiece — subword, best of both",
+          "SentencePiece — language-agnostic, trained on raw bytes",
+          "Modern LLMs use ~30–200k subword tokens"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "Word embeddings",
+        "subtitle": "Dense representations of meaning"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 9,
+      "props": {
+        "items": [
+          "One-hot is sparse and meaningless",
+          "Word2Vec — Skip-gram & CBOW, local co-occurrence",
+          "GloVe — global matrix factorization on counts",
+          "Semantic arithmetic: king − man + woman ≈ queen",
+          "Pretrained embeddings accelerate downstream tasks"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "Recurrent networks",
+        "subtitle": "Process sequences one step at a time"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 9,
+      "props": {
+        "items": [
+          "SimpleRNN — vanishing gradient on long sequences",
+          "LSTM — gated cell preserves long-term state",
+          "GRU — fewer parameters, similar performance",
+          "Bidirectional wrapper reads forward and backward",
+          "Mask padded tokens with tf.keras.layers.Masking"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "Attention mechanism",
+        "subtitle": "Learn where to look"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 9,
+      "props": {
+        "items": [
+          "Query · Key → similarity scores",
+          "Softmax over scores → attention weights",
+          "Weighted sum of Values → context vector",
+          "Scaled dot-product attention = √d_k scaling",
+          "Multi-head attention learns multiple relationships"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "Common NLP tasks",
+        "subtitle": "Classification, NER, generation"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 8,
+      "props": {
+        "items": [
+          "Sentiment analysis — sequence → single class",
+          "Named entity recognition — token-level classification",
+          "Text generation — autoregressive language modeling",
+          "Machine translation — encoder–decoder with attention",
+          "Modern stack: start from BERT / GPT / T5 weights"
+        ]
+      }
+    },
+    {
+      "kind": "cta",
+      "durationSec": 4,
+      "props": {
+        "text": "Build an attention model from scratch →"
+      }
+    }
+  ]
+}

@@ -1,0 +1,141 @@
+{
+  "title": "Module 09 — Time Series and Sequence Prediction",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "scenes": [
+    {
+      "kind": "title",
+      "durationSec": 4,
+      "props": {
+        "title": "Time Series Forecasting",
+        "subtitle": "Module 09 · Sequential data done right"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 8,
+      "props": {
+        "items": [
+          "Stationarity, seasonality, trend",
+          "Windowing: univariate and multivariate",
+          "1D CNN, LSTM, and attention-based forecasters",
+          "Multi-step strategies and anomaly detection"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "Preprocessing",
+        "subtitle": "Stationarity and decomposition"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 9,
+      "props": {
+        "items": [
+          "Plot first — look for trend, seasonality, level shifts",
+          "Differencing removes trend",
+          "Seasonal decomposition — trend + seasonal + residual",
+          "Rolling mean/std to visualize stationarity",
+          "Never scale using the full series — avoid leakage"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "Windowing",
+        "subtitle": "Turn a series into supervised samples"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 9,
+      "props": {
+        "items": [
+          "Slide a window of length L over the series",
+          "Inputs: t−L…t−1, target: t (or t…t+h)",
+          "Expanding vs rolling windows",
+          "Train/val/test split by time — never shuffle randomly",
+          "Match window size to the meaningful look-back"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "Model choices",
+        "subtitle": "1D CNN · LSTM · Bi-LSTM · Transformer"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 10,
+      "props": {
+        "items": [
+          "1D CNN — fast, captures local patterns",
+          "LSTM — long-term memory, slower",
+          "Bidirectional LSTM — whole-window context",
+          "Attention / Transformer — scales to long sequences",
+          "Seq2seq encoder–decoder for multi-step forecasting",
+          "Simple baselines (naive, SARIMA) must be beaten"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "Multi-step forecasting",
+        "subtitle": "Direct · recursive · seq2seq"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 9,
+      "props": {
+        "items": [
+          "Direct — one model per forecast horizon",
+          "Recursive — feed predictions back as inputs (error compounds)",
+          "Seq2seq — decoder emits full horizon in one pass",
+          "Teacher forcing vs scheduled sampling at training",
+          "Probabilistic outputs (DeepAR, TFT) quantify uncertainty"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "Anomaly detection",
+        "subtitle": "LSTM autoencoders and VAEs"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 9,
+      "props": {
+        "items": [
+          "Train model to reconstruct normal windows",
+          "High reconstruction error = anomaly",
+          "Threshold by validation-set quantile",
+          "VAE variants provide calibrated scores",
+          "Change-point detection complements deep models"
+        ]
+      }
+    },
+    {
+      "kind": "cta",
+      "durationSec": 4,
+      "props": {
+        "text": "Build forecasters in the labs →"
+      }
+    }
+  ]
+}

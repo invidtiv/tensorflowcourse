@@ -1,0 +1,139 @@
+{
+  "title": "Module 04 — Advanced Training Methodologies",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "scenes": [
+    {
+      "kind": "title",
+      "durationSec": 4,
+      "props": {
+        "title": "Advanced Training",
+        "subtitle": "Module 04 · Optimize like the papers"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 8,
+      "props": {
+        "items": [
+          "Optimizers beyond vanilla SGD",
+          "Learning rate schedules and the LR finder",
+          "Regularization: dropout, weight decay, early stopping",
+          "Mixed precision and high-throughput data pipelines"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "Optimizer zoo",
+        "subtitle": "SGD · Momentum · Adam · AdamW"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 10,
+      "props": {
+        "items": [
+          "SGD + momentum still beats Adam for vision",
+          "Adam adapts per-parameter learning rate automatically",
+          "AdamW decouples weight decay from gradient update",
+          "Nesterov, Adamax, Nadam — minor variants",
+          "Your LR schedule matters more than the optimizer choice"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "Learning rate schedules",
+        "subtitle": "Cosine, OneCycle, warmup"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 9,
+      "props": {
+        "items": [
+          "Constant LR = plateau early, waste epochs",
+          "Step decay and exponential decay — simple but dated",
+          "Cosine annealing + warmup — modern default",
+          "OneCycle policy — super-convergence at large LR",
+          "Use an LR range test to find the max stable LR"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "Regularization toolkit",
+        "subtitle": "Dropout · L2 · label smoothing"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 9,
+      "props": {
+        "items": [
+          "Dropout — randomly zero activations at train time only",
+          "L2 / weight decay — penalize large weights",
+          "L1 — penalize AND sparsify weights",
+          "Label smoothing — softens one-hot targets",
+          "Early stopping — remember best val loss, restore it"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "Normalization deep dive",
+        "subtitle": "Batch · Layer · Group · Instance"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 8,
+      "props": {
+        "items": [
+          "BatchNorm: normalize across batch — small batch = unstable",
+          "LayerNorm: normalize per-sample — default in Transformers",
+          "GroupNorm: middle ground, batch-size-independent",
+          "InstanceNorm: per-sample per-channel — style transfer"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "Mixed precision & tf.data",
+        "subtitle": "Fast, scalable training pipelines"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 9,
+      "props": {
+        "items": [
+          "Mixed FP16 — 1.5–2× speedup on modern GPUs",
+          "LossScaleOptimizer prevents underflow",
+          "tf.data + prefetch + cache + AUTOTUNE = near-peak GPU use",
+          "Distribute across GPUs with tf.distribute.MirroredStrategy",
+          "Profile first — don't guess the bottleneck"
+        ]
+      }
+    },
+    {
+      "kind": "cta",
+      "durationSec": 4,
+      "props": {
+        "text": "Benchmark optimizers and schedules in the labs →"
+      }
+    }
+  ]
+}

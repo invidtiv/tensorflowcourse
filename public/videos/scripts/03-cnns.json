@@ -1,0 +1,138 @@
+{
+  "title": "Module 03 — Convolutional Neural Networks",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "scenes": [
+    {
+      "kind": "title",
+      "durationSec": 4,
+      "props": {
+        "title": "Convolutional Neural Networks",
+        "subtitle": "Module 03 · Vision architectures"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 8,
+      "props": {
+        "items": [
+          "Why convolutions beat dense layers on images",
+          "Filters, feature maps, pooling, stride, padding",
+          "Classic architectures: LeNet → VGG → ResNet",
+          "Transfer learning and data augmentation"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "The convolution operation",
+        "subtitle": "Weight sharing across spatial positions"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 9,
+      "props": {
+        "items": [
+          "Small kernel slides over the image",
+          "Same weights applied everywhere — translation equivariance",
+          "Output channels = number of filters learned",
+          "Far fewer params than fully-connected on images",
+          "Receptive field grows with depth"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "Pooling and stride",
+        "subtitle": "Downsampling spatial resolution"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 8,
+      "props": {
+        "items": [
+          "MaxPool: keep the strongest response in a window",
+          "AvgPool: smoother, often used pre-classifier",
+          "Strided conv: same effect, learnable",
+          "GlobalAveragePooling replaces dense heads in modern nets"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "Architecture evolution",
+        "subtitle": "LeNet → AlexNet → VGG → ResNet"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 10,
+      "props": {
+        "items": [
+          "LeNet-5 (1998): convs, pooling, MNIST digits",
+          "AlexNet (2012): ReLU + GPUs + dropout on ImageNet",
+          "VGG (2014): stack 3×3 convs, go deeper",
+          "ResNet (2015): skip connections, 100+ layers",
+          "EfficientNet, ConvNeXt: compound scaling and modern tweaks"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "Transfer learning",
+        "subtitle": "Reuse pretrained features"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 9,
+      "props": {
+        "items": [
+          "Start from ImageNet weights — features generalize well",
+          "Freeze the base, train a small head on your dataset",
+          "Unfreeze and fine-tune with a much smaller learning rate",
+          "Match preprocessing to the pretrained model",
+          "Mind BatchNorm layers — keep them in inference mode initially"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationSec": 3,
+      "props": {
+        "title": "Data augmentation",
+        "subtitle": "Free regularization on images"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationSec": 8,
+      "props": {
+        "items": [
+          "RandomFlip, RandomCrop, RandomRotation — built into Keras",
+          "MixUp / CutMix / RandAugment — newer, stronger",
+          "Apply only during training (training=True)",
+          "Stronger augmentation for small datasets"
+        ]
+      }
+    },
+    {
+      "kind": "cta",
+      "durationSec": 4,
+      "props": {
+        "text": "Build and visualize a CNN in the labs →"
+      }
+    }
+  ]
+}
