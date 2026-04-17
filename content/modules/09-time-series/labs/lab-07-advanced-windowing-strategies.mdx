@@ -116,4 +116,40 @@ print("=" * 60)
 
 ---
 
+## Expected Output
+
+After applying rolling and combined-statistic windows to a 500-point series with trend and seasonality:
+
+| Metric | Expected value | Tolerance |
+|---|---|---|
+| `X_rolling.shape` | `(~470, 10)` | ±5 |
+| `X_combined.shape` | `(~470, 14)` (10 raw + 4 stats) | ±5 |
+| Rolling mean of first window | ≈ mean of first 20 data points | ±0.5 |
+| Rolling std of a flat segment | ≈ 0.0 | ±0.1 |
+| Expanding window size at step 100 | 100 (grows linearly) | exact |
+
+```python
+assert X_combined.shape[1] == 14, f"Expected 14 features, got {X_combined.shape[1]}"
+assert X_rolling.shape[0] == y_rolling.shape[0], "X/y length mismatch for rolling windows"
+assert X_combined.shape[0] == X_rolling.shape[0], "Rolling and combined shapes should match"
+print("Advanced windowing assertions passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Rolling statistics computed on full series before split | Rolling mean/std over a window that crosses the train/test boundary leaks future values into training statistics | Compute rolling features only on the training segment; for val/test, roll over the available past including training tail |
+| Expanding window with no minimum size | The first few expanding windows are too small (1–5 samples) to produce meaningful statistics, causing NaN or extreme outliers | Set `min_periods` equal to at least 10% of the expected window size; use `ewm(span=...)` for a smooth alternative |
+| Mixing window sizes between X features and y target | Using a 20-step rolling mean for X but a 10-step window for y produces a mismatch in the temporal reference point | Align all feature windows to the same `anchor_time` (the last timestep of the input window) |
+| Concatenating raw values with unscaled statistics | Rolling mean and raw values may have very different magnitudes, causing gradient imbalance during training | Scale all sub-arrays independently before concatenation, or use `StandardScaler` after concatenation |
+| Expanding window leakage near train/val boundary | Expanding windows computed on the full series include future val/test values in the statistics for the last training samples | Build expanding statistics on training data only; for val/test, use a fixed rolling window anchored at the train split point |
+
+## Stretch Goals
+
+1. **WaveNet receptive field with dilated windows** — Instead of a single rolling window, create a dilated window by sampling the series at timesteps `t-1, t-2, t-4, t-8, t-16, t-32` (powers of 2). Compare the information content (mutual information with `y`) of the dilated window against a contiguous 32-step window.
+2. **Feature importance for rolling statistics** — Train a gradient-boosted tree (XGBoost or LightGBM) on the 14-feature combined window. Extract SHAP values to rank the 4 rolling statistics (mean, std, min, max) against the 10 raw timesteps. Use this ranking to prune features before feeding to an LSTM.
+3. **Adaptive window sizing via PACF** — Compute the PACF of the training series and select the window size as the lag where partial autocorrelation drops below 0.05. Implement a function that automatically determines `window_size` from PACF and compare the automatically-sized vs manually-sized model on val MAE.
+4. **Seasonal sub-series windows** — For a daily series with weekly seasonality, build a window that stacks the same day-of-week from the last 4 weeks rather than a contiguous 28-step window. Compare this aligned seasonal window against the contiguous window on forecasting next week's same-day value.
+
 # Part 3: 1D CNN for Forecasting

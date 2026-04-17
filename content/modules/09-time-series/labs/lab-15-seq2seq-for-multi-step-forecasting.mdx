@@ -168,4 +168,58 @@ print("=" * 60)
 
 ---
 
+## Expected Output
+
+After a successful run you should see console output similar to:
+
+```
+Metrics per horizon step:
+Step 1: MSE=5.3219, MAE=1.7834
+Step 2: MSE=6.8841, MAE=2.0123
+Step 3: MSE=7.2209, MAE=2.1456
+Step 4: MSE=7.9934, MAE=2.3211
+Step 5: MSE=8.4412, MAE=2.5009
+Step 6: MSE=8.7731, MAE=2.6134
+Step 7: MSE=9.1098, MAE=2.7201
+```
+
+Key observation: **Seq2Seq error growth across the horizon is much gentler than recursive forecasting** (compare to lab-14). This is because the decoder does not feed its own predictions back into itself at training time — it uses teacher forcing during training, which is why the per-step errors are more uniform. However, at *inference* time the decoder does autoregress, so a small compounding effect is still visible. If all steps have exactly equal MSE, the teacher forcing signal has not been properly removed at inference.
+
+Saved artefacts: `lab5_3_seq2seq_history.png` (training curves), `lab5_3_seq2seq_predictions.png` (4-panel grid of per-horizon predictions), `lab5_3_seq2seq_model.h5`.
+
+<Callout type="warning" title="Common Pitfalls">
+1. **Teacher-forcing exposure bias** — the encoder-decoder is trained with teacher forcing (ground-truth decoder inputs), but at inference the decoder receives its own previous predictions. This distribution mismatch is *exposure bias* and causes performance degradation on long horizons. Scheduled Sampling partially mitigates this by randomly replacing teacher inputs with model outputs during training.
+2. **`TimeDistributed` wrapper omission** — the dense output layer must be wrapped in `layers.TimeDistributed(layers.Dense(1))` to apply the same projection independently at each decoder timestep. Without it, Keras broadcasts incorrectly and shapes silently mismatch.
+3. **Decoder input shape mismatch** — the decoder input `X_dec_train` must have shape `(samples, decoder_size, 1)`. A common error is passing the flat target `y_train` of shape `(samples, decoder_size)` directly, causing a shape error or incorrect broadcasting inside the LSTM.
+4. **Encoder state not passed to decoder** — if `return_state=True` is not set on the encoder LSTM and the `initial_state` argument is not passed to the decoder LSTM, the decoder starts from a zero state and the encoder context is discarded. This reduces Seq2Seq to two independent LSTMs.
+5. **Loss computed on scaled targets** — MSE is computed on scaled data inside Keras; but the `metrics per horizon step` loop must inverse-transform both `y_test` and `y_pred` before computing per-step metrics. Comparing raw scaled values inflates apparent accuracy.
+6. **Deprecated `.h5` save format** — `model.save('path.h5')` produces a monolithic HDF5 file, deprecated in Keras 3. Use `model.save('path.keras')` or the default SavedModel format (`model.save('path/')`) instead to avoid future load failures.
+</Callout>
+
+<Callout type="tip" title="Stretch Goals">
+1. **Scheduled Sampling** — implement scheduled sampling by replacing a random fraction `ε` (decayed from 1→0 over training) of teacher-forcing inputs with the model's own previous prediction. Measure the impact on per-step MSE vs. vanilla teacher forcing.
+2. **Attention over the encoder sequence** — add Bahdanau (additive) attention from the decoder hidden state to all encoder output timesteps. Compare the per-step MSE against the vanilla Seq2Seq to quantify the attention benefit, especially on longer horizons (steps 5–7).
+3. **Seq2Seq vs. Direct vs. Recursive benchmark** — produce a single comparison plot of MSE vs horizon for all three strategies (lab-13, lab-14, and this lab) on the same dataset. Annotate the crossover points and explain when each strategy is preferred.
+4. **Multivariate encoder** — replace the univariate sinusoidal input with a multivariate series (e.g., 3 correlated features generated from the same underlying process). Feed all three channels into the encoder and predict only the target channel from the decoder. Observe whether additional context channels improve per-step accuracy.
+</Callout>
+
+---
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Teacher-forcing exposure bias at inference | The model trains with ground-truth decoder inputs but at inference receives its own (imperfect) predictions; this distribution mismatch is exposure bias and degrades long-horizon accuracy | Apply Scheduled Sampling: replace a random fraction `ε` (annealed from 1→0 over training) of teacher inputs with model outputs to bridge the train/inference gap |
+| `TimeDistributed` wrapper omitted from output Dense | Without `TimeDistributed`, Keras broadcasts the Dense projection incorrectly across decoder timesteps, producing wrong output shapes or a silent shape error | Wrap the output layer: `layers.TimeDistributed(layers.Dense(1))` to apply the same projection independently at each decoder step |
+| Decoder input shape mismatch | Passing flat `y_train` of shape `(N, decoder_size)` instead of the required `(N, decoder_size, 1)` causes a silent broadcasting error or a shape mismatch inside the decoder LSTM | Reshape decoder inputs: `X_dec = y_shifted[..., np.newaxis]` before passing to the model |
+| Encoder state not passed to decoder | If `return_state=True` is not set on the encoder LSTM and `initial_state` is not passed to the decoder, the decoder starts from zero state and the encoder context is discarded | Set `return_state=True` on the encoder, capture `encoder_outputs, state_h, state_c`, and pass `initial_state=[state_h, state_c]` to the decoder |
+| Per-step metrics computed on scaled targets | Computing MAE on scaled `y_pred` vs scaled `y_test` appears low but is not comparable to naive baselines in original units | Inverse-transform both `y_pred` and `y_test` before computing per-step MAE; keep a `scaler` object accessible after training |
+
+## Stretch Goals
+
+1. **Scheduled Sampling** — Implement scheduled sampling by replacing a fraction `ε` (decayed from 1→0 over training epochs) of teacher-forcing decoder inputs with the model's own previous output. Measure per-step MSE vs. vanilla teacher forcing at horizons 1, 3, and 7.
+2. **Bahdanau attention over encoder outputs** — Add additive attention from the decoder hidden state to all encoder output timesteps. Compare per-step MSE against the vanilla Seq2Seq to quantify the attention benefit, especially at longer horizons (steps 5–7).
+3. **Seq2Seq vs Direct vs Recursive three-way benchmark** — Produce a single MSE-vs-horizon plot for all three strategies (lab-13, lab-14, this lab) on identical data splits. Annotate crossover points and write a one-paragraph explanation of when each strategy is preferred.
+4. **Temporal Fusion Transformer as Seq2Seq successor** — Replace the encoder-decoder LSTM with a TFT model (interpretable variable-selection + multi-head attention). Compare TFT's per-step MAE against Seq2Seq and report the parameter efficiency (MAE per million parameters).
+
 # Part 6: Anomaly Detection

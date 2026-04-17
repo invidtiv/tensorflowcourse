@@ -241,9 +241,158 @@ plt.show()
 # Save model
 autoencoder.save('/mnt/okcomputer/output/lab6_1_autoencoder.h5')
 
+# ──────────────────────────────────────────────────────────
+# VALIDATION CHECKPOINT
+# ──────────────────────────────────────────────────────────
+print("\n" + "=" * 60)
+print("VALIDATION CHECKPOINT")
+print("=" * 60)
+
+# 1. Reconstruction error shape matches test set
+assert reconstruction_error.shape[0] == X_test.shape[0], \
+    f"Expected {X_test.shape[0]} reconstruction errors, got {reconstruction_error.shape[0]}"
+
+# 2. Threshold is positive (model learned something)
+assert threshold > 0, \
+    f"Threshold {threshold:.6f} <= 0 — autoencoder may not have trained properly"
+
+# 3. AUC-ROC above random baseline (> 0.55)
+assert roc_auc > 0.55, \
+    f"AUC-ROC {roc_auc:.3f} is near random (0.5) — model is not detecting anomalies"
+
+# 4. Recall is above 0 (at least some anomalies detected)
+assert recall > 0.0, \
+    f"Recall is 0.0 — no anomalies detected at all; check threshold or model capacity"
+
+print("✅ All validation checks passed!")
+print(f"   Reconstruction errors: {reconstruction_error.shape[0]}")
+print(f"   Threshold (95th pctl): {threshold:.4f}")
+print(f"   AUC-ROC:              {roc_auc:.3f} (> 0.55)")
+print(f"   Recall:               {recall:.3f} (> 0.0)")
+
 print("\n" + "=" * 60)
 print("Lab 6.1 Complete!")
 print("=" * 60)
 ```
 
+<Callout type="note" title="Expected Output">
+
+**Model summary** (window_size=60, n_features=1):
+
+```
+Model: "model"
+___________________________________________________________________________
+Layer (type)                    Output Shape              Param #
+===========================================================================
+input_1 (InputLayer)            [(None, 60, 1)]                 0
+lstm (LSTM)                     (None, 60, 32)              4,352
+lstm_1 (LSTM)                   (None, 16)                  3,136
+repeat_vector (RepeatVector)    (None, 60, 16)                  0
+lstm_2 (LSTM)                   (None, 60, 16)              2,112
+lstm_3 (LSTM)                   (None, 60, 32)              6,272
+time_distributed (TimeDistrib.) (None, 60, 1)                  33
+===========================================================================
+Total params: 15,905
+Trainable params: 15,905
+Non-trainable params: 0
+```
+
+**Training trace** — training on normal samples only; early stopping typically triggers around epoch 25–40:
+
+```
+Epoch  1/50  loss: 0.0823  val_loss: 0.0741
+Epoch  5/50  loss: 0.0312  val_loss: 0.0294
+Epoch 10/50  loss: 0.0125  val_loss: 0.0118
+Epoch 15/50  loss: 0.0071  val_loss: 0.0068
+Epoch 20/50  loss: 0.0048  val_loss: 0.0047
+Epoch 25/50  loss: 0.0039  val_loss: 0.0038
+Restoring model weights from the end of the best epoch.
+EarlyStopping: stopped at epoch 28.
+```
+
+**Detection metrics** (95th-percentile threshold on val reconstruction error):
+
+| Metric | Typical range | Notes |
+| ------ | ------------- | ----- |
+| Threshold | 0.008 – 0.025 | Mean absolute reconstruction error |
+| AUC-ROC | 0.70 – 0.88 | Higher with sharper anomaly injections |
+| Precision | 0.65 – 0.85 | Fraction of flagged windows that are true anomalies |
+| Recall | 0.55 – 0.78 | Fraction of true anomalies caught |
+| F1 Score | 0.62 – 0.80 | Harmonic mean; optimise threshold to maximise if needed |
+
+**Validation checkpoint** — all four assertions should pass:
+
+```
+✅ All validation checks passed!
+   Reconstruction errors: N_test
+   Threshold (95th pctl): 0.0153
+   AUC-ROC:              0.763 (> 0.55)
+   Recall:               0.638 (> 0.0)
+```
+
+**Diagnostic tree — if something looks wrong:**
+
+- `AUC-ROC ≈ 0.5` → autoencoder is reconstructing anomalies as well as normal data; likely anomalies leaked into training. Re-check that `X_train_normal` is filtered to normal-only windows.
+- `Recall = 0.0` → threshold is too aggressive; the 95th percentile on val may be lower than the maximum reconstruction error on normal test windows. Try the 90th percentile, or inspect the reconstruction error histogram to see if normal and anomalous distributions overlap.
+- `Threshold = 0` → autoencoder never trained (optimizer or data issue); inspect training loss curve — if it starts at `0.25` and does not decrease the model is receiving constant-zero input.
+- Poor F1 despite reasonable AUC → class imbalance (very few anomalies). Use `precision_recall_curve` and find the threshold that maximises F1 explicitly, rather than relying on the 95th percentile heuristic.
+
+</Callout>
+
+<Callout type="pitfall" title="Common Pitfalls">
+
+- **Training on anomalous data** — The autoencoder must be trained on *normal data only*. If anomalies leak into the training set, the model learns to reconstruct them, defeating the purpose. Always filter training data with known labels or use the earliest, cleanest segment of your data.
+- **Window-label alignment** — When creating sliding windows, the label for a window should correspond to the *last* time step (or all steps) in that window. Off-by-one errors here silently corrupt evaluation: your confusion matrix looks fine but the model is evaluated on misaligned labels.
+- **Threshold sensitivity** — The 95th-percentile threshold is a common default but is arbitrary. In production, tune it using a labeled validation set and optimize for F1 or a business-specific cost function (e.g., cost of false alarms vs. missed anomalies).
+- **Reconstruction error aggregation** — `np.mean(np.abs(...), axis=(1,2))` averages across the entire window. Point anomalies buried in a 60-step window get diluted. Consider using `np.max(...)` along the time axis to catch single-step spikes, or report per-step errors.
+- **Scaling before splitting** — Fit `MinMaxScaler` on training data only, then `.transform()` val and test. Fitting on the full dataset leaks future distribution information into training, inflating apparent model performance.
+
+</Callout>
+
+<Callout type="tip" title="Stretch Goals">
+
+- **Convolutional autoencoder comparison** — Replace the LSTM encoder/decoder with 1D Conv layers (`Conv1D` + `UpSampling1D`). Compare reconstruction quality, training time, and anomaly detection F1. When does the convolutional variant outperform LSTM?
+- **Dynamic threshold** — Instead of a single global threshold, compute a rolling threshold using a sliding window over reconstruction errors (e.g., mean + 3σ over the last 200 steps). This adapts to non-stationary normal behavior (e.g., sensor drift).
+- **Multivariate extension** — Add a second sensor channel (e.g., temperature + vibration). Modify the autoencoder to accept `n_features=2` and evaluate whether cross-sensor correlations improve anomaly detection (anomalies in one channel may be confirmed by the other).
+- **Precision-recall trade-off visualization** — Plot the full precision-recall curve and mark the F1-optimal threshold. In imbalanced anomaly detection, PR-AUC is often more informative than ROC-AUC.
+
+</Callout>
+
 ---
+
+## Expected Output
+
+After training an LSTM autoencoder on normal sensor data and evaluating on a test set with 5% injected anomalies:
+
+| Metric | Expected value | Tolerance |
+|---|---|---|
+| Train reconstruction MSE (normal only) | < 0.005 (scaled) | — |
+| Test reconstruction MSE (mixed) | > train MSE (higher, anomalies present) | — |
+| Threshold (95th percentile of val errors) | ~0.01–0.05 (scaled) | — |
+| Precision at 95th-percentile threshold | 0.55–0.85 | — |
+| AUC-ROC | > 0.80 | — |
+| F1 score | 0.50–0.80 | — |
+
+```python
+assert roc_auc > 0.70, f"AUC-ROC too low ({roc_auc:.3f}) — check that training used normal-only data"
+assert threshold > 0, "Threshold should be positive"
+assert precision > 0 and recall > 0, "Both precision and recall must be non-zero"
+print("LSTM autoencoder assertions passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Training on anomalous windows | If anomalies leak into the training set, the autoencoder learns to reconstruct them, destroying the anomaly signal | Filter training data to normal-labeled windows only; if labels are unavailable, use the earliest chronological segment |
+| Window-label alignment off by one | The label for a window should correspond to the *last* timestep; an off-by-one error silently misaligns labels with windows | Align: `label[i] = labels[i + window_size - 1]`; unit-test with a toy array where anomaly position is known |
+| Threshold set arbitrarily at 95th percentile | The 95th percentile on the validation error distribution is a heuristic; in imbalanced datasets it can produce very high false-alarm rates | Tune threshold using a labeled validation set, optimising for the business cost function (F1, or weighted precision/recall) |
+| Reconstruction error dilution by window averaging | `np.mean(errors, axis=(1,2))` averages a point anomaly across the entire window, making it nearly invisible | Use `np.max(errors, axis=1)` along the time axis to detect single-step spikes; report both mean and max per-window errors |
+| Scaler fitted on full dataset including test anomalies | Future anomalous values (extreme spikes) inflate the scaler's range, compressing normal variation into a narrow band | Fit `MinMaxScaler` on training (normal-only) data; apply `.transform()` to val and test |
+
+## Stretch Goals
+
+1. **Convolutional autoencoder comparison** — Replace the LSTM encoder/decoder with 1D Conv layers (`Conv1D` + `UpSampling1D`). Compare reconstruction MSE on normal windows, training time, and anomaly detection F1. Identify the input window characteristics (length, sparsity of anomalies) where CNN outperforms LSTM.
+2. **Dynamic threshold with rolling statistics** — Compute a rolling threshold as `mean(errors[t-200:t]) + 3σ(errors[t-200:t])` over the test stream. Compare this adaptive threshold against the static 95th-percentile threshold on a non-stationary sensor stream where normal behaviour drifts over time.
+3. **Multivariate extension** — Add a second sensor channel (e.g., temperature + vibration). Modify the autoencoder to accept `n_features=2` and evaluate whether cross-channel correlation improves anomaly detection F1 on anomalies that appear in only one channel.
+4. **Precision-recall optimised threshold** — Plot the full precision-recall curve, mark the F1-optimal threshold, and compare it to the 95th-percentile heuristic. Report PR-AUC alongside ROC-AUC to give a complete picture of model quality under class imbalance.

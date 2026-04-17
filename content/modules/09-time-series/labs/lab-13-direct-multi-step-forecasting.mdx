@@ -160,3 +160,45 @@ print("=" * 60)
 ```
 
 ---
+
+## Expected Output
+
+After running this lab end-to-end you should see the following anchors. Use them as invariants — if any disagrees by more than the noted tolerance, something is off.
+
+- **Shapes.** `X_train.shape == (N_train, lookback, 1)`, `y_train.shape == (N_train, horizon)` where `horizon == 7`. The last axis of `y_train` must be the flat horizon vector, not `(horizon, 1)` — the dense head emits `horizon` units.
+- **Training curve.** Both `loss` and `val_loss` monotonically decrease for the first 10–15 epochs, then flatten. A persistent gap where `val_loss > loss` by > 3× at epoch 50 indicates overfitting — reduce `lookback` or add dropout.
+- **Per-step error monotonicity.** `MAE[step_1] <= MAE[step_2] <= … <= MAE[step_7]` in expectation. Early-step MAE should land in a band roughly **1.2–2.0× the naive-persistence baseline** on the same horizon; later-step MAE can grow up to **~3×**. A flat per-step MAE curve is a red flag — usually means the model collapsed to predicting the training mean.
+- **Prediction plots.** At horizon step 1 the predicted curve should closely track the actual curve with a visible 1-step phase lag. At horizon step 7 the curve is smoother (lower variance) than the actual — expected, because direct models trade sharpness for horizon coverage.
+
+## ⚠️ Common Pitfalls
+
+1. **Target leakage via future features.** If `X` is built by sliding a window over the *same* scaled series that `y` is drawn from *without* a strict time cut between train and test, you will leak. Always fit the scaler on `train` only, then `transform` val/test. The split must be **chronological**, never shuffled — `train_test_split(..., shuffle=False)` or an explicit index cut.
+2. **Shuffling windows across the split boundary.** Shuffling *within* the training set is fine and recommended, but shuffling the full dataset **before** the chronological split will place windows that straddle train/test into both sides. Symptom: suspiciously low val MAE that collapses on a true held-out tail.
+3. **Scaler refit on the full series.** `MinMaxScaler().fit(series)` before splitting bakes test-set statistics into training. Refit only on the training slice, then apply `transform` to val/test. This is the single most common leakage bug in multi-step forecasting labs.
+4. **Mismatched horizon between data and head.** The `Dense(horizon)` output layer and the `y` construction `y[i] = series[i+lookback : i+lookback+horizon]` must use the **same** `horizon` constant. An off-by-one here silently trains the model on a shifted target and the per-step plots will look diagonally smeared.
+5. **No naive baseline.** Always report **persistence** (predict `y_t` = `x_{t-1}` repeated `horizon` times) and **seasonal-naive** (predict `y_t` = `x_{t-season}`). If your direct model can't beat both across all horizon steps, the deep architecture is not earning its keep — the issue is usually data leakage in the other direction (the baselines are artificially strong because train/test overlap in seasonality) or underfitting from too-small `lookback`.
+
+## 🚀 Stretch Goals
+
+1. **Quantile heads.** Replace the single `Dense(horizon)` with three parallel heads predicting the 10th, 50th, and 90th percentile using pinball loss. Plot prediction intervals — a well-calibrated model should have the actual curve inside the 10–90 band ~80% of the time.
+2. **Direct vs recursive head-to-head.** Run lab-14 with identical data splits and lookback, then plot MAE-per-step for both on the same axes. Direct usually wins at long horizons; recursive often wins at step 1. Explain the crossover in one paragraph of markdown — it's the classic bias/variance tradeoff of the two strategies.
+3. **DirRec hybrid.** Implement a `DirRec` strategy: train one model per horizon step, but feed step `k-1`'s prediction as an extra input feature to step `k`'s model. Compare to pure direct and pure recursive on the same per-step MAE plot.
+4. **Exogenous features with strict causality.** Add a known-future regressor (e.g., day-of-week one-hot) to `X`. Verify causality by constructing a synthetic feature that leaks `y[t+3]` and confirming val MAE collapses to ~0 — then remove it. This is the cleanest way to prove your split is leak-free.
+5. **Error-autocorrelation diagnostic.** After training, compute ACF of the residuals at each horizon step. Significant autocorrelation at lag 1 means the model left signal on the table (typically seasonality or a trend term). Surface this as a per-step bar chart alongside the MAE plot.
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Lookahead leakage from global scaling | Fitting `MinMaxScaler` on the full series (including test) bakes future price extremes into training statistics | Always `fit` the scaler on the training slice only; `transform` val and test |
+| Shuffled train/test split destroying temporal order | Using `train_test_split(..., shuffle=True)` places windows that straddle the train/test boundary in both sets | Use chronological split: explicit index cut or `train_test_split(..., shuffle=False)` |
+| Mismatched horizon between `y` construction and `Dense` head | Building `y[i] = series[i+lookback:i+lookback+7]` but declaring `Dense(5)` trains on a silently shifted target | Use a single `HORIZON` constant for both `y` slicing and `Dense(HORIZON)` |
+| Missing stationarity check causing trend bias | A trending input series biases the model toward always predicting up (or down); per-step MAE grows monotonically | Run ADF test; difference or detrend until `p < 0.05` before building windows |
+| No naive persistence baseline | Without a baseline, an apparently low MAE may still be worse than simply repeating the last observation `horizon` times | Always compute and report persistence baseline MAE alongside model MAE for all horizon steps |
+
+## Stretch Goals
+
+1. **Quantile direct heads** — Replace the single `Dense(horizon)` with three parallel output heads predicting the 10th, 50th, and 90th percentile using pinball (quantile) loss. Plot prediction intervals and verify that the actual curve falls inside the 10–90 band approximately 80% of the time.
+2. **Direct vs Recursive head-to-head** — Run lab-14 with identical data splits and lookback, then plot MAE-per-step for both strategies on the same axes. Direct typically wins at long horizons; recursive often wins at step 1. Annotate the crossover point and explain it as the bias/variance tradeoff between the two strategies.
+3. **DirRec hybrid strategy** — Train one model per horizon step, but feed step `k-1`'s prediction as an extra input feature to step `k`'s model. Compare per-step MAE against pure direct and pure recursive on the same dataset.
+4. **Temporal Fusion Transformer direct multi-step** — Re-implement direct multi-step forecasting using a TFT with interpretable variable-selection weights. Compare TFT's per-step MAE against the Dense-head LSTM and report which architecture is more parameter-efficient at horizon step 7.

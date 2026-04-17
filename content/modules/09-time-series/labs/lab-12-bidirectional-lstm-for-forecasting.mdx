@@ -158,4 +158,41 @@ print("=" * 60)
 
 ---
 
+## Expected Output
+
+After training a Bidirectional LSTM on 2 years of daily temperature data with `window_size=30` and `horizon=1`:
+
+| Metric | Expected value | Tolerance |
+|---|---|---|
+| `X_train.shape` | `(~450, 30, 1)` | ±20 |
+| Model total parameters | 60,000–180,000 (2× unidirectional) | — |
+| Val MAE (°C, original scale) | 1.5–4.0 | — |
+| Test RMSE (°C) | 2.0–5.0 | — |
+| Training time per epoch (CPU) | 4–10 s | — |
+
+```python
+assert X_train.shape[1:] == (30, 1), f"Window shape wrong: {X_train.shape}"
+assert rmse > 0 and rmse < 15, f"RMSE out of expected range: {rmse:.4f}"
+assert model_bilstm.count_params() > model_lstm_baseline.count_params(), \
+    "BiLSTM should have more params than unidirectional LSTM"
+print("Bidirectional LSTM assertions passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Using Bidirectional LSTM for a strictly causal forecast | BiLSTM processes the sequence in both directions, meaning the forward pass sees future timesteps within the window — this is valid for classification but constitutes lookahead leakage in a real streaming forecast | For strict causal deployment, use `Bidirectional(LSTM(...), merge_mode='concat')` only with historical windows that end strictly before the forecast horizon; never feed truly future data |
+| Merge mode mismatch with downstream layer size | `merge_mode='concat'` doubles the output dimension to `2×units`; a downstream Dense layer sized for `units` will have a shape mismatch | Either use `merge_mode='ave'` (keeps `units` dimension) or adjust the Dense input size to `2×units` |
+| Scaler fitted on full temperature series | Future temperature extremes (summer/winter peaks) leak into training statistics | Fit `MinMaxScaler` on training slice only; transform val/test separately |
+| Missing stationarity check on temperature data | Daily temperature has strong annual seasonality; the LSTM may overfit the trend rather than the residual | Run ADF test; apply seasonal differencing (`series.diff(365)`) until `p < 0.05` |
+| Bidirectional doubling confused with stacking | `Bidirectional(LSTM(64))` gives `128` output units, not `64`; stacking two `Bidirectional(LSTM(64))` layers gives `256→128`, not `64→64` | Explicitly print `model.summary()` after building and verify output shapes match your Dense head's expected input |
+
+## Stretch Goals
+
+1. **Bidirectional vs unidirectional benchmark** — Train an identical unidirectional LSTM (same `units`, depth, and dropout) and a BiLSTM on the same weather data. Plot training/val loss curves side by side and report the absolute MAE improvement. Explain why the gain is smaller for causal forecasting than for sequence labelling.
+2. **N-BEATS seasonal baseline** — Implement an N-BEATS stack (trend block + seasonality block) as a feed-forward competitor to the BiLSTM. N-BEATS has no recurrence and is strictly causal. Compare validation MAE, parameter count, and training time.
+3. **Scheduled sampling for error accumulation** — Extend the BiLSTM to a multi-step decoder that replaces teacher-forcing inputs with its own predictions at probability `ε` (decayed from 0 to 1 over training). Measure whether scheduled sampling reduces per-step MAE growth for horizons 1–14 days.
+4. **Probabilistic forecast with MC Dropout** — Add `Dropout(0.1, trainable=True)` to the BiLSTM and keep dropout active at inference (`training=True`). Run 200 stochastic forward passes and plot the 10th/50th/90th percentile temperature forecasts. Measure empirical coverage of the 80% interval.
+
 # Part 5: Multi-step Forecasting

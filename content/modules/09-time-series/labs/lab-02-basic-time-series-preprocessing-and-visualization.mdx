@@ -192,3 +192,43 @@ print("=" * 60)
 4. **Normalization**: Min-Max for bounded outputs; Standard for neural networks
 
 ---
+
+## Expected Output
+
+After running the full preprocessing pipeline on 1,000 synthetic trading days you should see results in these ranges:
+
+| Metric | Expected value | Tolerance |
+|---|---|---|
+| Raw price series length | 1,000 rows | exact |
+| `data_clean.shape` | `(970, 5)` approx (after dropna) | ±15 rows |
+| MinMax scaled range `[min, max]` | `[0.0, 1.0]` for every column | exact |
+| Standard scaled mean | `≈ 0.0` per column | ±0.01 |
+| Standard scaled std | `≈ 1.0` per column | ±0.05 |
+| MA_10 NaN rows dropped | ~9 | ±1 |
+
+```python
+# Paste after the full lab cell to verify preprocessing correctness
+assert data_minmax_df.min().min() >= 0.0, "MinMax min should be >= 0"
+assert data_minmax_df.max().max() <= 1.0, "MinMax max should be <= 1"
+assert abs(data_standard_df.mean().mean()) < 0.05, "Standard scaler mean should be near 0"
+assert abs(data_standard_df.std().mean() - 1.0) < 0.1, "Standard scaler std should be near 1"
+print("Preprocessing assertions passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Scaler fitted before train/test split | Global min/max from the full series leaks future price extremes into training statistics | Split first, then call `scaler.fit()` on the training slice only; `transform` val and test |
+| Forward-fill applied after split | NaN values in val/test get filled with values from the end of the training window, injecting lookahead | Apply `ffill()` only within each split, or use `.fillna(method='ffill', limit=5)` on the full series before splitting |
+| Missing stationarity check | Raw prices have a unit root (non-stationary); many models assume stationarity | Run `adfuller(series)` and report the p-value; difference or log-return the series until `p < 0.05` |
+| RSI/MACD computed over entire series including test | Rolling indicator windows peek into the future for test-set rows near the split boundary | Compute indicators on training data, then roll forward using only past values for val/test |
+| Confusing MinMaxScaler with StandardScaler use cases | Min-Max is bounded [0,1] but sensitive to outliers; Standard is unbounded but centers data | Use MinMaxScaler for sigmoid/output-bounded models; use StandardScaler for LSTM/dense networks with no bounded activation |
+
+## Stretch Goals
+
+1. **Log-return stationarity** — Convert raw prices to log-returns (`np.log(price / price.shift(1))`), re-run the ADF test, and confirm the series becomes stationary (`p < 0.01`). Compare the ACF plot of raw prices vs log-returns to visualise the difference in autocorrelation structure.
+2. **Robust scaler benchmark** — Replace `MinMaxScaler` with `RobustScaler` (uses IQR instead of min/max) and inject 5% synthetic outliers into the price series. Compare how the scaled distributions differ and which scaler produces cleaner LSTM inputs.
+3. **Rolling z-score normalisation** — Implement an adaptive scaler that normalises each window using its own mean and std (`(x - window_mean) / window_std`). This is a non-leaking alternative to global scaling and is used in production forecasting systems for non-stationary data.
+4. **Technical indicator sensitivity analysis** — Train a simple linear regression model predicting next-day return using each indicator (MA_10, MA_20, RSI, Volatility) individually. Rank by R² and identify which single feature is most predictive. Use this to motivate feature selection before building the deep model.
+

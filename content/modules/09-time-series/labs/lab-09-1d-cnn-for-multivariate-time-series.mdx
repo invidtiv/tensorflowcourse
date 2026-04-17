@@ -186,4 +186,40 @@ print("=" * 60)
 
 ---
 
+## Expected Output
+
+After training a multivariate 1D CNN on 1 year of hourly energy data (8,760 rows) with 4 input features, `window_size=24`, and `horizon=1`:
+
+| Metric | Expected value | Tolerance |
+|---|---|---|
+| `X_train.shape` | `(~6072, 24, 4)` | ±50 |
+| Model total parameters | 15,000–50,000 | — |
+| Val MAE (original scale, kWh) | 2.0–8.0 | — |
+| Test MAPE | < 10% | — |
+| Training time per epoch (CPU) | 4–10 s | — |
+
+```python
+assert mape < 50.0, f"MAPE too high ({mape:.2f}%) — check inverse transform or data split"
+assert mae > 0.0, "MAE should be positive"
+assert model_multi.input_shape == (None, 24, 4), f"Input shape mismatch: {model_multi.input_shape}"
+print("Multivariate 1D CNN assertions passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Lookahead leakage from per-feature global scaling | Fitting one scaler per feature on the full dataset (including test) leaks future distribution into training | Fit each feature's scaler on `train` rows only; apply `.transform()` to val and test separately |
+| Feature-channel dimension collapsed | Reshaping `(N, W, F)` to `(N, W*F)` before Conv1D destroys the spatial alignment of features | Keep the 3D shape `(N, W, F)` and let Conv1D operate on the `W` axis with `F` input channels |
+| Inverse-transforming target with wrong scaler | If the target (demand) was scaled with `scaler_X` (feature scaler), inverse-transforming with `scaler_y` produces wrong units | Keep `scaler_X` for input features and `scaler_y` (fit on target column only) for inverse-transforming predictions |
+| Non-causal padding leaking future within the window | `padding="same"` on Conv1D uses centered kernel, peeking at future timesteps within the input window | Use `padding="causal"` for strict causality; verify by masking future steps and checking that predictions are invariant |
+| MAPE undefined or infinite when true values near zero | `np.mean(np.abs((y_true - y_pred) / y_true))` explodes when `y_true ≈ 0` | Use `np.mean(np.abs((y_true - y_pred) / np.maximum(y_true, 1e-3)))` or SMAPE as a more robust alternative |
+
+## Stretch Goals
+
+1. **Channel-wise depthwise Conv1D** — Replace standard Conv1D with `tf.keras.layers.DepthwiseConv1D` to process each input channel independently, then combine with a 1×1 pointwise convolution. Compare parameter count and val MAE against the standard Conv1D baseline.
+2. **DeepAR probabilistic energy forecasting** — Wrap the CNN output in a Gaussian output layer (`mu` and `log_sigma` heads trained with negative log-likelihood). Plot 90% prediction intervals for peak-demand hours and measure empirical coverage rate.
+3. **Attention-weighted channel fusion** — After the Conv1D layers, add a channel-attention mechanism (SE-Net style: global-average-pool → Dense(F/4) → ReLU → Dense(F) → Sigmoid) that rescales each feature channel. Visualise the learned channel weights to interpret which sensors the model relies on most.
+4. **Transfer learning from univariate pre-training** — Pre-train a 1D CNN on the univariate target channel, then fine-tune the full multivariate model by replacing the first Conv1D layer's weights as initialisation. Compare convergence speed and final val MAE against training from scratch.
+
 # Part 4: LSTM Forecasting

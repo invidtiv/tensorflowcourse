@@ -133,4 +133,83 @@ print("Lab 2.1 Complete!")
 print("=" * 60)
 ```
 
+<Callout type="note" title="Expected Output">
+
+After running the full cell you should see shapes roughly matching:
+
+```
+X_train: (N_train - W - H + 1, 24), y_train: (N_train - W - H + 1,)
+X_val:   (N_val   - W - H + 1, 24), y_val:   (N_val   - W - H + 1,)
+X_test:  (N_test  - W - H + 1, 24), y_test:  (N_test  - W - H + 1,)
+```
+
+With `window_size=24` and `horizon=1`, and a 70/15/15 split on a ~1,000-point series, typical counts land near `X_train ≈ (676, 24)`, `X_val ≈ (126, 24)`, `X_test ≈ (126, 24)`. If your `y_train` is 2D `(N, 1)` instead of 1D `(N,)`, that is fine — downstream models accept both; just stay consistent.
+
+**Diagnostic tree — if you see something else:**
+
+- `y_train.shape[0] != X_train.shape[0]` → off-by-one in the loop bounds. Stride should be `1`; loop range should be `len(data) - window_size - horizon + 1`.
+- `X_train.shape[1] != 24` → window being flattened into feature axis by accident (e.g. using `data[i:i+W].flatten()` when data is already 1D — harmless here, but breaks when you add features later).
+- All-zero or all-one scaled values → scaler fit on the full series instead of training-only. Refit on `train_data` alone.
+- `X_val` or `X_test` shape is `(0, 24)` → the validation or test split is shorter than `window_size + horizon`. Either grow the split or shrink the window.
+
+</Callout>
+
+<Callout type="pitfall" title="Common Pitfalls">
+
+- **Data leakage via scaler** — Fit `MinMaxScaler` on `train_data` only, then `transform` val and test. Fitting on the full series leaks future statistics (min/max) into training and inflates validation metrics.
+- **Shuffling windowed data** — Once you have `(X, y)` pairs you *can* shuffle between samples (the temporal order within each window is preserved), but you must **not** shuffle the raw series before windowing. The latter destroys the signal entirely.
+- **Window size unrelated to seasonality** — A 24-step window on hourly data captures one day, on daily data captures ~3 weeks. Check the ACF/PACF first and pick a window that covers at least one dominant seasonal period, or the model has no way to see it.
+- **Horizon confusion** — `horizon=1` means "predict the next single step." To predict 5 steps ahead as a *single* target, use `horizon=5` with `y = data[i+W+H-1]` (direct). For a *sequence* of 5 predictions, `y` becomes 2D `(N, 5)` — a different problem (covered in lab-13).
+- **Forgetting the `+1` in the loop bound** — `range(len(data) - window_size - horizon + 1)` is correct. Dropping the `+1` silently discards the last valid window; adding an extra one causes an `IndexError` on the final sample.
+- **Hard-coded absolute paths** — `/mnt/okcomputer/output/...` works in this sandbox but breaks elsewhere. Prefer `pathlib.Path(__file__).parent / "output"` or a `OUTPUT_DIR` variable so the lab is portable.
+- **Reusing a scaler across experiments** — If you change `train_ratio` or the data, the saved `scaler.pkl` is stale. Always re-fit or version the scaler alongside the model checkpoint.
+
+</Callout>
+
+<Callout type="tip" title="Stretch Goals">
+
+- **tf.data.Dataset.window** — Re-implement `create_windows_numpy` using `tf.data.Dataset.from_tensor_slices(...).window(W+H, shift=1, drop_remainder=True)`. Benchmark against NumPy; the tf.data version streams and is essential for larger-than-memory series.
+- **Stride > 1** — Parameterise stride and compare `stride=1` vs `stride=W` (non-overlapping). Non-overlapping windows reduce correlation between training samples but cut the dataset size by `W`.
+- **Walk-forward splits** — Replace the single 70/15/15 split with expanding-window cross-validation: train on `[0:t]`, validate on `[t:t+v]`, step forward, repeat. Report mean ± std of RMSE across folds.
+- **Gap between splits** — Add a `gap` parameter so `val` starts at `train_end + gap` (and similarly for test). This prevents leakage when the series has strong autocorrelation at the split boundary.
+
+</Callout>
+
 ---
+
+## Expected Output
+
+After building sliding windows from a 1,000-point univariate series with `window_size=24` and `horizon=1`:
+
+| Metric | Expected value | Tolerance |
+|---|---|---|
+| `X_train.shape` | `(~676, 24)` | ±10 |
+| `y_train.shape` | `(~676,)` | ±10 |
+| `X_val.shape` | `(~126, 24)` | ±10 |
+| `X_test.shape` | `(~126, 24)` | ±10 |
+| Scaled value range `[min, max]` | `[0.0, 1.0]` on training set | exact |
+| Window-to-window autocorrelation (lag 1) | > 0.8 for overlapping windows | — |
+
+```python
+assert X_train.shape[1] == 24, f"Window size mismatch: {X_train.shape[1]}"
+assert X_train.shape[0] == y_train.shape[0], "X/y sample count mismatch"
+assert X_val.shape[0] > 0 and X_test.shape[0] > 0, "Empty val or test split"
+print("Basic windowing assertions passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Scaler fitted on full series before splitting | Global min/max leaks future statistics into the training distribution | Fit `MinMaxScaler` on `train_data` only; call `.transform()` on val and test slices |
+| Shuffling the raw series before windowing | Destroys temporal ordering; windows no longer represent contiguous segments | Never shuffle the raw series; shuffle the `(X, y)` pairs only after windowing, and only within the training set |
+| Window size unrelated to dominant period | A 24-step window on daily data covers only 3.4 weeks; annual seasonality is invisible to the model | Inspect the ACF plot for the dominant lag; set `window_size >= 1 × dominant period` |
+| Horizon confusion between direct and sequential | `horizon=1` predicts one step; using `y = series[i+W+H-1]` for `H>1` changes to direct multi-step without signalling it | Define `horizon` explicitly and match the `y` construction to the intended strategy |
+| Off-by-one in loop bound | `range(len(data) - W - H)` silently drops the last valid window | Use exactly `range(len(data) - W - H + 1)`; verify with a toy array of known length |
+
+## Stretch Goals
+
+1. **tf.data pipeline** — Re-implement `create_windows_numpy` using `tf.data.Dataset.from_tensor_slices(series).window(W + H, shift=1, drop_remainder=True)` with `flat_map` to extract `(X, y)` pairs. Benchmark throughput (samples/sec) against the NumPy version on a 100K-point series.
+2. **Non-overlapping windows** — Parameterise a `stride` argument and compare `stride=1` vs `stride=W` in terms of training set size, sample correlation, and final val MAE.
+3. **Walk-forward cross-validation** — Replace the single 70/15/15 split with an expanding-window CV loop over 5 folds. Report mean ± std of RMSE across folds to quantify model stability over time.
+4. **Gap buffer between splits** — Add a `gap = W` buffer so no validation window contains any training timestep. Measure how gap size affects val MAE and compare with the no-gap estimate.

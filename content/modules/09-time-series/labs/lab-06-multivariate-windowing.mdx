@@ -143,3 +143,41 @@ print("=" * 60)
 ```
 
 ---
+
+## Expected Output
+
+After windowing a 1,000-point, 4-feature multivariate series with `window_size=30` and `horizon=1`:
+
+| Metric | Expected value | Tolerance |
+|---|---|---|
+| `X_final.shape` | `(~940, 30, 4)` | ±10 on N |
+| `y_final.shape` | `(~940,)` | ±10 |
+| `X_train.shape` | `(~658, 30, 4)` | ±10 |
+| `X_val.shape` | `(~141, 30, 4)` | ±10 |
+| Cross-correlation between var1 and var2 | > 0.7 (lagged sine) | — |
+| Scaled feature range on training set | `[0.0, 1.0]` per channel | exact |
+
+```python
+assert X_final.ndim == 3, f"Expected 3D array, got {X_final.ndim}D"
+assert X_final.shape[1] == 30, f"Window size mismatch: {X_final.shape[1]}"
+assert X_final.shape[2] == 4, f"Feature count mismatch: {X_final.shape[2]}"
+assert X_final.shape[0] == y_final.shape[0], "X/y sample count mismatch"
+print("Multivariate windowing assertions passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Fitting one shared scaler across all features | A single `MinMaxScaler.fit()` on a 2D array of shape `(N, F)` scales each feature by the *global* min/max across all features, distorting relative magnitudes | Use `scaler.fit(data)` where `data` is the 2D `(N, F)` array; `MinMaxScaler` operates per-column by default when the input is 2D |
+| Target channel included in input scaler | If the target variable is in both `X` and `y`, scaling `X` after filtering it out but fitting on the full frame leaks target statistics into feature scaling | Separate input features from the target column before fitting any scaler |
+| Temporal split applied after windowing | Splitting `(X, y)` arrays with random indices instead of the raw series means windows near the boundary appear in both train and val | Split the raw series first, then window each split independently |
+| Returning 2D `(N, W×F)` instead of 3D `(N, W, F)` | A common mistake is `X.append(data[i:i+W].flatten())` which collapses the time and feature dimensions | Use `X.append(data[i:i+W])` (no flatten); final array should be `np.array(X)` with shape `(N, W, F)` |
+| Ignoring lag structure between features | Feeding all features at the same timestep ignores that some channels lead others | Inspect cross-correlation (`df.shift(k).corrwith(target)` for k=1…W) and add optimal-lag copies as extra channels |
+
+## Stretch Goals
+
+1. **Per-channel attention** — Build an LSTM model with a feature-wise attention head that produces a scalar weight per input channel per timestep. Visualise the attention map as a heatmap over `(time, feature)` to identify which channels the model relies on most for different forecast horizons.
+2. **Temporal Fusion Transformer inputs** — Feed the 4 multivariate channels into a TFT model using `pytorch-forecasting` or a TensorFlow port, treating each channel as a known past covariate. Compare TFT's variable-selection weights against the attention heatmap from goal 1.
+3. **Granger causality screening** — For each pair of features, run a Granger causality test (`statsmodels.tsa.stattools.grangercausalitytests`) to identify causal lags. Use the significant lags to engineer lag features and measure whether explicit lag encoding outperforms implicit temporal learning.
+4. **Memory-efficient tf.data pipeline** — Re-implement multivariate windowing using `tf.data.Dataset.from_tensor_slices(scaled_data).window(W+1, shift=1, drop_remainder=True)` with a `map` function that splits the last timestep as the target. Benchmark peak RAM usage against the NumPy implementation on a 500K-row dataset.

@@ -163,4 +163,70 @@ print("Lab 3.1 Complete!")
 print("=" * 60)
 ```
 
+<Callout type="info" title="Expected Output">
+
+- `model.summary()` reports roughly **~10k–30k params** depending on your filter counts; a typical config (Conv1D(32, 3) → Conv1D(64, 3) → GlobalAveragePooling1D → Dense(1)) sits near **~12.9k params**.
+- Training on a synthetic sinusoid + noise dataset with window=24, horizon=1 should reach **val MAE ≈ 0.04–0.08** (scaled) within **20–30 epochs**; wall clock is **~2–4 s/epoch on CPU**, **sub-second on a T4**.
+- The learning curve shows train/val MAE tracking closely — a **large train–val gap (>2×)** indicates the window is too short to capture the period or the receptive field is too small.
+- Predictions vs. ground truth on the test slice should track the waveform shape with a **small phase lag of 1–2 steps** — that lag is the model's conservative bias toward the last seen value, not a bug.
+- If val MAE plateaus near the **naive-persistence baseline** (predict `y[t]=y[t-1]`), your 1D CNN is not learning temporal structure — increase kernel size, stack more Conv1D layers, or switch to a dilated stack.
+
+</Callout>
+
+<Callout type="pitfall" title="Common Pitfalls">
+
+- **Receptive field too small** — Two Conv1D layers with kernel=3 only see 5 timesteps. If your dominant period is 24 (hourly→daily), the model physically cannot see a full cycle. Fix with **dilated convolutions** (`dilation_rate=2, 4, 8`) or larger kernels.
+- **GlobalAveragePooling1D erases position** — Pooling across time collapses "when" information. For forecasting tasks that depend on recency, prefer **Flatten** (for fixed-length windows) or the **last-step slice** (`x[:, -1, :]`) before the Dense head.
+- **Leaking the scaler** — Fitting `MinMaxScaler` on the full series before splitting contaminates val/test with training-distribution information. Always `fit` on train only, then `transform` val and test.
+- **Causal vs. non-causal convolutions** — Default `padding="same"` uses a centered kernel, which peeks at future timesteps within the window. For strict causal forecasting, use `padding="causal"` (Conv1D supports this natively).
+- **Confusing windowing stride with horizon** — Stride controls how densely you sample training windows; horizon controls how far ahead you predict. Mixing them up silently inflates your effective test-set overlap.
+
+</Callout>
+
+<Callout type="tip" title="Stretch Goals">
+
+- **Dilated stack** — Replace the plain Conv1D stack with a WaveNet-style dilated block (dilations 1, 2, 4, 8, 16). Compare receptive field and val MAE.
+- **Residual connections** — Wrap each Conv1D in a residual `x + Conv1D(...)` pattern (match channels with a 1×1 Conv if needed). Does deeper actually help on this dataset?
+- **Multi-horizon head** — Replace `Dense(1)` with `Dense(horizon)` to predict all future steps at once (direct multi-step). Benchmark against the recursive approach covered in lab-14.
+- **Hybrid CNN-LSTM** — Feed Conv1D output into an LSTM head to keep CNN's local-feature efficiency and LSTM's long-range memory. Is the combined param count worth the accuracy gain?
+- **Causal convolutions + leakage audit** — Switch to `padding="causal"`, then write a test that asserts `y_pred[t]` depends only on `x[:t+1]` by masking the future and checking prediction invariance.
+
+</Callout>
+
 ---
+
+## Expected Output
+
+After training a basic 1D CNN on 1,000 synthetic stock-price windows with `window_size=24` and `horizon=1`:
+
+| Metric | Expected value | Tolerance |
+|---|---|---|
+| Model total parameters | 10,000–30,000 | — |
+| Val MAE (scaled) at convergence | 0.04–0.08 | — |
+| Training time per epoch (CPU) | 2–4 s | — |
+| Prediction phase lag vs actual | 1–2 timesteps | — |
+| Test RMSE (original scale) | < 20% of price range | — |
+
+```python
+assert mae < 20.0, f"Test MAE suspiciously high ({mae:.2f}) — check scaler and data split"
+assert rmse > 0.0, "RMSE should be positive"
+assert model_basic.count_params() < 100_000, "Model unexpectedly large — check architecture"
+print("1D CNN assertions passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Receptive field too small for the dominant period | Two Conv1D(kernel=3) layers see only 5 timesteps; a 24-step daily period is outside the receptive field | Add dilated convolutions (`dilation_rate=2, 4, 8`) or increase `kernel_size` to cover at least one full dominant period |
+| `GlobalAveragePooling1D` erases positional information | Averaging across all timesteps collapses the temporal structure needed for forecasting | Use `Flatten()` or slice the last timestep (`x[:, -1, :]`) before the Dense head for position-sensitive forecasting |
+| Scaler fitted on the full series | Future min/max contaminates training statistics | Fit `MinMaxScaler` on training slice only; use `.transform()` on val/test |
+| Default `padding="same"` leaks future within the window | Centered kernel sees future timesteps within the context window | Switch to `padding="causal"` for strictly causal convolutions |
+| Confusing windowing stride with forecast horizon | Stride controls sampling density of training windows; horizon controls how far ahead to predict | Keep stride and horizon as separate arguments; do not conflate them in the window construction loop |
+
+## Stretch Goals
+
+1. **Dilated WaveNet stack** — Replace the plain Conv1D stack with a WaveNet-style dilated block (`dilation_rate=1, 2, 4, 8, 16`). Compare receptive field size and val MAE. On the synthetic stock series, dilations should reach the full 24-step period with fewer parameters.
+2. **Residual CNN** — Wrap each Conv1D in a residual connection `x + Conv1D(filters, kernel_size, padding='causal')(x)` using a 1×1 Conv to match channels when needed. Measure whether depth with residuals outperforms depth without on val MAE.
+3. **Direct multi-step head** — Replace `Dense(1)` with `Dense(7)` to predict 7 steps ahead simultaneously. Plot per-step MAE and compare against the recursive roll-out from lab-14.
+4. **Hybrid CNN-LSTM** — Stack a Conv1D feature extractor feeding into a single-layer LSTM. Compare parameter count and val MAE against a pure-CNN and pure-LSTM model of similar depth to determine if the hybrid earns its extra complexity.

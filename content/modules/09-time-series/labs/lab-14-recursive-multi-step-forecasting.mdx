@@ -191,3 +191,66 @@ print("=" * 60)
 ```
 
 ---
+
+## Expected Output
+
+After a successful run you should see console output similar to:
+
+```
+Recursive Predictions vs Actual:
+Step 1: Predicted=152.34, Actual=149.87
+Step 2: Predicted=154.12, Actual=153.20
+Step 3: Predicted=157.88, Actual=158.44
+Step 4: Predicted=161.43, Actual=164.09
+Step 5: Predicted=165.90, Actual=170.22
+Step 6: Predicted=171.56, Actual=175.66
+Step 7: Predicted=177.83, Actual=178.91
+
+Metrics per horizon step:
+Step 1: MSE=6.2341, MAE=2.0147
+Step 2: MSE=9.8812, MAE=2.8834
+Step 3: MSE=15.4423, MAE=3.7219
+Step 4: MSE=22.9987, MAE=4.6201
+Step 5: MSE=33.4412, MAE=5.8877
+Step 6: MSE=46.7731, MAE=7.2134
+Step 7: MSE=62.1098, MAE=8.5901
+```
+
+Key observation: **MSE grows monotonically with the horizon step** — this is the error-compounding signature of recursive forecasting. If your Step 7 MSE is not clearly larger than Step 1 MSE, suspect data leakage (future values used during windowing) or an incorrect array slice inside `recursive_predict`.
+
+Saved artefacts: `lab5_2_recursive_predictions.png` (sample trajectory + MSE vs horizon plot), `lab5_2_recursive_model.h5`.
+
+<Callout type="warning" title="Common Pitfalls">
+1. **Off-by-one in `np.roll`** — `np.roll(window, -1)` shifts left; the *last* element (index `-1`) must be overwritten with the new prediction, not the first. An off-by-one error silently produces a window that still contains the original last observation, hiding the compounding effect entirely.
+2. **Scaling mismatch mid-loop** — the model was trained on scaled data; predictions come out in scaled space. If you inverse-transform a prediction mid-loop and feed the raw value back, the next step receives an out-of-distribution input that destroys coherence. Always feed back the *scaled* prediction.
+3. **Teacher forcing disguised as recursive** — feeding `y_test[i+1]` instead of `pred` as the next input converts recursive forecasting into teacher-forced evaluation, producing misleadingly low error. This is the most common mistake in naive implementations.
+4. **Horizon longer than the training window** — if `horizon > window_size`, the model extrapolates beyond any context it saw during training (the entire context window becomes synthetic). Empirically, cap the horizon to at most half the window size for stable behaviour.
+5. **Evaluating only one test sample** — a single trajectory can be wildly unrepresentative. Always aggregate metrics over `n_test_samples ≥ 50` to get a reliable picture of error-vs-horizon growth.
+6. **Flat MSE-vs-horizon curve** — a curve that does not grow is a strong signal of data leakage or teacher forcing, not a well-calibrated model. A spike at step 2 that then flattens usually indicates mean-reversion bias in the model.
+</Callout>
+
+<Callout type="tip" title="Stretch Goals">
+1. **Direct vs Recursive comparison** — train a parallel direct multi-step model (one output per horizon step, see lab-13) on the same data and plot MSE vs horizon for both on the same axes. Identify the crossover horizon where recursive outperforms direct (typically steps 1–3) and vice versa (typically steps 5+).
+2. **RECTIFY strategy (hybrid)** — implement the RECTIFY method: train the model recursively but correct accumulated error using a secondary linear model trained on the per-step residuals. Compare to vanilla recursive to measure the correction gain.
+3. **Confidence intervals via MC Dropout** — add `Dropout(0.1)` layers with `training=True` kept enabled at inference time and run 100 stochastic forward passes per horizon step. Plot the 10th/90th percentile bands around the mean trajectory.
+4. **Real-world dataset substitution** — replace the synthetic sinusoidal data with the ETT benchmark (Electricity Transformer Temperature) or the Jena Climate Dataset. Rerun and compare how error-vs-horizon growth rates differ between synthetic and genuine temporal structure.
+</Callout>
+
+---
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Scaling mismatch mid-loop | Model trained on scaled data; inverse-transforming a prediction before feeding it back puts an out-of-distribution value into the next step | Always feed back the *scaled* prediction; only inverse-transform the final trajectory for evaluation |
+| Teacher forcing disguised as recursive | Using `y_test[i+1]` as the next input instead of the model's own prediction silently converts recursive to teacher-forced evaluation | Build the roll-out loop to read exclusively from the model's own previous output |
+| Horizon longer than the training window | If `horizon > window_size`, the entire context window becomes synthetic by the last step; the model extrapolates far outside its training distribution | Cap `horizon ≤ 0.5 × window_size` for reliable behaviour; warn the user when this constraint is violated |
+| Flat MSE-vs-horizon curve (no error growth) | Indicates data leakage or teacher forcing — a well-calibrated recursive model should show monotonically growing MSE | Verify the roll-out loop uses model predictions, not ground truth, and that the scaler was fit on training data only |
+| Missing stationarity check before recursive forecasting | A non-stationary series causes the recursive trajectory to drift unboundedly, compounding errors exponentially rather than polynomially | Run ADF test; difference until `p < 0.05`; forecast on the differenced series and cumsum back |
+
+## Stretch Goals
+
+1. **Direct vs Recursive benchmark** — Train a parallel direct multi-step model (lab-13) on the same data and plot MSE vs horizon for both strategies on the same axes. Annotate the crossover horizon (typically steps 3–5) and explain the bias/variance tradeoff that determines which strategy wins at each horizon.
+2. **RECTIFY error correction** — Implement the RECTIFY method: train a secondary linear model on the per-step residuals `(recursive_pred - true)` and subtract its output from the recursive forecast. Measure the per-step MSE reduction from RECTIFY vs vanilla recursive.
+3. **Seq2Seq upgrade** — Replace the single-step LSTM with an encoder-decoder Seq2Seq model (lab-15) trained with teacher forcing. Compare error-vs-horizon growth rate between Seq2Seq and recursive LSTM — Seq2Seq's gentler degradation is the key motivation for the architecture.
+4. **DeepAR probabilistic recursive forecasting** — Wrap the LSTM output in a Normal distribution head (`mu`, `log_sigma`). Sample the predicted distribution at each step and feed the sample back as the next input. Plot 10th/90th percentile bands from 500 trajectory samples and measure empirical interval coverage.

@@ -198,12 +198,75 @@ print("Lab 4.1 Complete!")
 print("=" * 60)
 ```
 
+<Callout type="note" title="Expected Output">
+
+**Model summary** (window_size=60, n_features=1):
+
+```
+Model: "sequential"
+_________________________________________________________________
+Layer (type)              Output Shape          Param #
+=================================================================
+lstm (LSTM)               (None, 60, 50)         10,400
+dropout (Dropout)         (None, 60, 50)              0
+lstm_1 (LSTM)             (None, 50)             20,200
+dropout_1 (Dropout)       (None, 50)                  0
+dense (Dense)             (None, 25)              1,275
+dense_1 (Dense)           (None, 1)                  26
+=================================================================
+Total params: 31,901
+Trainable params: 31,901
+Non-trainable params: 0
+```
+
+**Training trace** — expect early stopping to trigger around epoch 20–35 on the synthetic dataset (your exact epoch count varies with random seed):
+
+```
+Epoch  1/50  loss: 0.0312  mae: 0.1342  val_loss: 0.0285  val_mae: 0.1267
+Epoch  5/50  loss: 0.0108  mae: 0.0789  val_loss: 0.0098  val_mae: 0.0741
+Epoch 10/50  loss: 0.0041  mae: 0.0494  val_loss: 0.0038  val_mae: 0.0471
+Epoch 15/50  loss: 0.0022  mae: 0.0360  val_loss: 0.0021  val_mae: 0.0348
+Epoch 20/50  loss: 0.0017  mae: 0.0312  val_loss: 0.0018  val_mae: 0.0322
+Epoch 25/50  loss: 0.0015  mae: 0.0295  val_loss: 0.0016  val_mae: 0.0303
+Restoring model weights from the end of the best epoch.
+EarlyStopping: stopped at epoch 27 (no improvement for 10 epochs).
+```
+
+**Test-set metrics** (inverse-transformed, price units ≈ $100–$130 range):
+
+| Metric | Typical range |
+| ------ | ------------- |
+| Test MSE | 1.5 – 6.0 |
+| Test MAE | 0.9 – 2.0 |
+| Test RMSE | 1.2 – 2.5 |
+
+**Validation checkpoint** — all four assertions should pass:
+
+```
+✅ All validation checks passed!
+   Input shape:  (N_test, 60, 1)
+   Output shape: (N_test, 1)
+   RMSE:         ~1.8 (< 20% of price range ~30)
+   Pred std:     ~4.2 (> 0.01)
+```
+
+**Diagnostic tree — if something looks wrong:**
+
+- `RMSE > 20% of price range` → model did not converge; check that `MinMaxScaler` was fit on training data only (not the full series), that `X` is reshaped to `(N, 60, 1)`, and that `EarlyStopping` uses `restore_best_weights=True`.
+- `Pred std ≈ 0` → collapsed predictions; the learning rate may be too high causing divergence, or the model was evaluated before any training. Inspect training loss — if it jumped then plateaued near 0.25 (random-guess MSE on [0,1]) the optimizer diverged.
+- `AssertionError on input shape` → `X` not reshaped to 3D. Add `X = X.reshape(X.shape[0], X.shape[1], 1)` after `create_windows`.
+- Validation loss is *lower* than training loss throughout → data leakage (scaler fit on full series). Refit scaler on `train_data` only.
+
+</Callout>
+
 <Callout type="pitfall" title="Common Pitfalls">
 
 - **Not scaling the data** — LSTMs are sensitive to input magnitude. Always use `MinMaxScaler` or `StandardScaler` before windowing; fit on training data only and transform val/test to avoid leakage.
 - **Window size too small** — A 5-step window cannot capture weekly or monthly seasonality. Match the window to the dominant period in your data (check ACF for guidance).
 - **Forgetting to reshape for LSTM** — LSTM expects 3D input `(samples, timesteps, features)`. A common error is passing 2D `(samples, timesteps)` and getting a cryptic shape error.
 - **Using `input_shape` with Keras 3** — In TF 2.16+ / Keras 3, `input_shape` in the first layer is deprecated. Use an explicit `keras.Input(shape=(...))` layer instead.
+- **Early stopping without `restore_best_weights=True`** — Without this flag, `EarlyStopping` halts training at the patience threshold but keeps the *last* (not best) weights. Always pass `restore_best_weights=True`; omitting it silently gives you a degraded model.
+- **Saving with `.h5` in Keras 3** — `model.save('file.h5')` is deprecated in TF 2.16+ / Keras 3. Use `model.save('file.keras')` (native format) or `tf.saved_model.save(model, 'dir/')` for production serialisation. The `.h5` call still works via legacy path but emits deprecation warnings.
 
 </Callout>
 
@@ -217,3 +280,39 @@ print("=" * 60)
 </Callout>
 
 ---
+
+## Expected Output
+
+After training a 2-layer stacked LSTM on 1,000 days of univariate stock prices with `window_size=60` and `horizon=1`:
+
+| Metric | Expected value | Tolerance |
+|---|---|---|
+| `X_train.shape` | `(~640, 60, 1)` | ±20 |
+| Model total parameters | 50,000–150,000 | — |
+| Val MAE (scaled, [0,1]) | < 0.05 | — |
+| Test RMSE (original price scale) | < 20% of price range | — |
+| Training time per epoch (CPU) | 3–8 s | — |
+
+```python
+assert X_train.shape[1:] == (60, 1), f"Window shape wrong: {X_train.shape}"
+assert val_loss[-1] < 0.02, f"Val MSE too high ({val_loss[-1]:.4f}) — check scaler fit"
+assert mae > 0, "MAE must be positive"
+print("Basic LSTM assertions passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Scaler fitted on full price series | Global min/max from future test prices leaks into training statistics | Fit `MinMaxScaler` only on `train_data`; call `.transform()` on val and test slices separately |
+| Window size too small for the dominant period | A 5-step window cannot capture weekly or monthly stock cycles | Match window to dominant ACF lag; for stocks use at least `window_size=20` (one trading month) |
+| 2-D input passed to LSTM | LSTM requires `(samples, timesteps, features)`; a 2-D `(samples, timesteps)` input raises a shape error | Add `[..., np.newaxis]` or `.reshape(N, W, 1)` after windowing |
+| `EarlyStopping` without `restore_best_weights=True` | Training halts at patience threshold but keeps the *last* (degraded) weights, not the best | Always pass `restore_best_weights=True` to `EarlyStopping` |
+| Validation loss lower than training loss throughout | Classic sign of data leakage — scaler was fitted on the full series | Refit scaler on `train_data` only; if the gap persists, check that val windows do not overlap with train |
+
+## Stretch Goals
+
+1. **Direct multi-step output** — Change `Dense(1)` to `Dense(5)` and update `create_windows` to build `y` as a 5-step vector. Compare per-step MAE of direct vs recursive (roll-out) forecasting on the same test split.
+2. **Bidirectional LSTM** — Wrap the first LSTM layer with `layers.Bidirectional(...)`. Report whether val MAE improves and explain why bidirectionality offers smaller gains for forecasting than for sequence classification.
+3. **Walk-forward cross-validation** — Replace the single split with an expanding-window CV loop over 5 folds. Plot RMSE stability across folds to assess whether the model's performance is consistent over time.
+4. **Seq2Seq upgrade** — Extend the architecture to an encoder-decoder with a 2-layer encoder LSTM and a 1-layer decoder LSTM. Compare encoder-decoder vs stacked-LSTM on the same data using identical `window_size` and training budget.

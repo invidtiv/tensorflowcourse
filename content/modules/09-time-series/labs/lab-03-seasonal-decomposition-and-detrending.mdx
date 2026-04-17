@@ -159,3 +159,45 @@ print("=" * 60)
 ```
 
 ---
+
+## Expected Output
+
+After decomposing 3 years of synthetic weather data you should see:
+
+| Metric | Expected value | Tolerance |
+|---|---|---|
+| Input series length | 1,095 rows (365×3) | exact |
+| ADF test p-value (raw temperature) | > 0.05 (non-stationary) | — |
+| ADF test p-value (after differencing) | < 0.01 (stationary) | — |
+| Decomposition trend NaN rows at each end | ~182 (half of period=365) | ±10 |
+| Seasonal component period detected | 365 days | exact |
+| Residual std after additive decomposition | ~3.0 | ±0.5 |
+
+```python
+# Paste after lab cell to verify decomposition results
+from statsmodels.tsa.stattools import adfuller
+p_raw = adfuller(weather_data['Temperature'])[1]
+differenced = weather_data['Temperature'].diff().dropna()
+p_diff = adfuller(differenced)[1]
+assert p_raw > 0.05, f"Raw series should be non-stationary, got p={p_raw:.4f}"
+assert p_diff < 0.01, f"Differenced series should be stationary, got p={p_diff:.4f}"
+print(f"ADF p-values: raw={p_raw:.4f}, differenced={p_diff:.4f} — assertions passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Seasonal period set incorrectly | `seasonal_decompose` requires `period` to match the dominant cycle; wrong period produces meaningless trend/residual | Plot ACF to find the dominant lag peak, then pass that as `period`; for daily data with annual cycle use `period=365` |
+| Additive vs multiplicative model choice | Using additive decomposition on multiplicative (amplitude-growing) series inflates the residual and masks the seasonal shape | Plot the series; if seasonal amplitude grows with level, use `model='multiplicative'`; if amplitude is stable, use `model='additive'` |
+| Missing stationarity check before differencing | Differencing a series that is already stationary introduces artificial negative autocorrelation (over-differencing) | Always run ADF first; difference only if `p > 0.05`, and re-test after each order of differencing |
+| Detrending removes signal needed by the model | Aggressive polynomial detrending can remove genuine low-frequency variation that the forecasting model should learn | Prefer first-order differencing over polynomial detrending for general-purpose stationarity; reserve polynomial detrending for cases with a clear deterministic trend |
+| NaN propagation after decomposition | `seasonal_decompose` leaves NaN at the head/tail of the trend component (window/2 on each side) | Use `.dropna()` on the residual before passing to a model, or use STL decomposition (`statsmodels.tsa.stl.STL`) which has no NaN boundary effect |
+
+## Stretch Goals
+
+1. **STL decomposition comparison** — Replace `seasonal_decompose` with `statsmodels.tsa.stl.STL(series, period=365, seasonal=13).fit()`. STL is robust to outliers and has no boundary NaN issue. Compare the trend and seasonal components from classical vs STL decomposition on the same weather series.
+2. **MSTL for multiple seasonalities** — Extend the weather data to hourly resolution (3 years × 365 × 24 points) to expose both daily and annual seasonalities. Use `statsmodels.tsa.stl.MSTL` with `periods=(24, 24*365)` to decompose both simultaneously and visualise the two seasonal components.
+3. **Temporal Fusion Transformer with known seasonality** — After extracting the seasonal index from STL, encode it as a static covariate fed into a TFT model. Measure whether explicitly providing the seasonal feature reduces val MAE compared to a model that must learn seasonality from raw input.
+4. **Change-point detection** — Apply `ruptures` (Python library) with a `Pelt` search and an `rbf` cost function to identify regime changes in the detrended residual. Annotate change points on the residual plot and verify they correspond to the injected trend breaks in the synthetic data.
+

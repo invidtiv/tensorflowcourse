@@ -209,6 +209,43 @@ print("=" * 60)
 
 ---
 
+## Expected Output
+
+After training a VAE on normal sensor windows and evaluating on a test set with 5% anomalies:
+
+| Metric | Expected value | Tolerance |
+|---|---|---|
+| Training ELBO loss (normal data) | Negative, decreasing over epochs | — |
+| KL-divergence term at convergence | 0.1–2.0 (depends on `latent_dim`) | — |
+| Reconstruction loss on normal windows | < 0.01 (scaled MSE) | — |
+| AUC-ROC on anomaly detection | > 0.75 | — |
+| F1 score at 95th-percentile threshold | 0.45–0.75 | — |
+| Precision | 0.50–0.85 | — |
+
+```python
+assert roc_auc > 0.65, f"VAE AUC-ROC too low ({roc_auc:.3f}) — verify normal-only training"
+assert f1 > 0.3, f"F1 too low ({f1:.3f}) — check threshold and class balance"
+assert precision > 0 and recall > 0, "Both precision and recall must be non-zero"
+print("VAE anomaly detection assertions passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| KL annealing skipped causing posterior collapse | Without warm-up (annealing `β` from 0→1 over the first N epochs), the VAE learns to ignore the latent space (posterior collapses to prior) and reconstruction drives the loss entirely | Apply `β`-VAE annealing: `β = min(1.0, epoch / warmup_epochs)` and multiply the KL term by `β` during training |
+| Reconstruction loss scale dwarfs KL term | If reconstruction MSE is computed on raw (unscaled) sensor values, its magnitude (e.g., 1000×) overwhelms the KL term (typically 0.1–2.0), preventing the latent space from learning a structured prior | Scale inputs to [0,1] before training; alternatively, weight the KL term by `reconstruction_scale / kl_scale` |
+| Training on anomalous windows contaminates latent space | Anomalous patterns included in training inflate reconstruction error for normal patterns, raising false-alarm rates | Filter training to confirmed-normal windows; for unsupervised settings, use the first chronological 60% of data as a proxy for normality |
+| Reconstruction error as sole anomaly score ignores latent uncertainty | A plain MSE score discards the probabilistic benefit of the VAE; anomalies may also appear as unusual latent codes even with low reconstruction error | Combine reconstruction MSE with KL divergence of the encoded window's `(mu, log_var)` from the prior `N(0,1)` as a composite anomaly score |
+| Evaluation without calibrated threshold | The 95th-percentile heuristic on validation errors may not transfer to test data if the val set has a different anomaly rate | Compute the threshold on a held-out normal-only validation set, then evaluate on the test set; report the full precision-recall curve |
+
+## Stretch Goals
+
+1. **Beta-VAE for disentangled anomaly dimensions** — Train a `β`-VAE with `β=4` and visualise the 2D latent space. Verify that anomalous windows cluster away from the normal manifold and that individual latent dimensions correspond to interpretable sensor behaviours (e.g., spike amplitude vs duration).
+2. **VAE vs LSTM Autoencoder head-to-head** — Run both lab-16 and this lab on the same anomaly dataset with identical train/test splits. Compare AUC-ROC, F1, training time, and model size. Explain when the VAE's probabilistic latent space provides a practical advantage over the deterministic LSTM autoencoder.
+3. **Change-point detection via latent drift** — Encode a long sensor stream window-by-window and plot the latent code trajectory over time. Apply PELT or Bayesian change-point detection to the `mu` sequence to flag structural regime changes as well as point anomalies.
+4. **Seq2Seq VAE for temporal anomaly localisation** — Replace the flat Dense decoder with an LSTM decoder that reconstructs the window step-by-step. Compute per-timestep reconstruction error to localise *when* within the window the anomaly occurs, producing a fine-grained anomaly timeline rather than a single window-level flag.
+
 # Summary and Key Takeaways
 
 ## Module 9 Complete Labs Summary

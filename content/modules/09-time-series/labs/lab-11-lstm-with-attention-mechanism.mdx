@@ -156,3 +156,65 @@ print("=" * 60)
 ```
 
 ---
+
+## Expected Output
+
+After a successful run you should see output similar to:
+
+```
+Test MSE: 0.0024
+Test MAE: 0.0381
+
+Model: "model"
+__________________________________
+ Layer (type)          Output Shape   Param #
+==================================
+ input_1 (InputLayer)  [(None,30,1)]  0
+ lstm (LSTM)           [(None,30,64), 16896
+ attention_layer ...   [(None, 64), ( 8320
+ concatenate (Concat.) (None, 128)    0
+ dense (Dense)         (None, 32)     4128
+ dropout (Dropout)     (None, 32)     0
+ dense_1 (Dense)       (None, 1)      33
+==================================
+Total params: 29,377
+```
+
+The attention weights array (shape `(batch, window_size, 1)`) should show a peaked distribution — most weight concentrated on 1–3 recent timesteps for short-range patterns, or on periodic positions for seasonal data. A completely flat attention distribution (all weights ≈ 1/window_size) indicates the attention mechanism failed to learn discriminative alignment.
+
+Saved artefacts: `lab4_2_attention_history.png` (training/validation loss curves), `lab4_2_attention_lstm.h5`.
+
+<Callout type="warning" title="Common Pitfalls">
+1. **`query_with_time_axis` expansion axis** — `tf.expand_dims(query, 1)` must expand along axis 1 to broadcast across the `values` timestep dimension. Using axis 0 or -1 silently produces incorrect shapes that still compute without error but produce meaningless scores.
+2. **Missing softmax normalisation** — if you omit `tf.nn.softmax(score, axis=1)` and use raw scores directly as weights, the context vector is an unnormalised weighted sum. Attention weights no longer sum to 1, losing their interpretability as a probability distribution over timesteps.
+3. **Shared W_1/W_2 weights** — `self.W1` and `self.W2` must be separate `Dense` layers. If the same layer is reused for both query and values projection, the attention mechanism collapses into a scalar self-correlation, unable to distinguish the two inputs.
+4. **Concatenation shape mismatch** — `context_vector` (shape `(batch, 64)`) and `state_h` (shape `(batch, 64)`) must both have 2D shapes for `layers.Concatenate()` to work. If `return_sequences=False` is not set for the second LSTM call, `state_h` has shape `(batch, timesteps, 64)` and concatenation raises a shape error.
+5. **Dropout at inference** — ensure `Dropout(0.2)` uses `training=False` during `model.predict()`. Keras handles this automatically when using the `Dropout` layer (not a manual `tf.nn.dropout` call). Using manual dropout that is not conditioned on the training flag inflates inference-time variance and artificially inflates MAE.
+6. **Deprecated `.h5` format** — `model.save('path.h5')` is deprecated in Keras 3. Prefer `model.save('path.keras')` to avoid a `DeprecationWarning` and future incompatibility with saved-model loading.
+</Callout>
+
+<Callout type="tip" title="Stretch Goals">
+1. **Attention weight visualisation** — extract the attention weights via a sub-model (`keras.Model(inputs=model.input, outputs=attention_layer_output)`) and plot them as a heatmap for several test sequences. Verify that the model attends to the correct lag positions for your synthetic data's dominant frequency.
+2. **Multi-head attention upgrade** — replace the single Bahdanau attention with a multi-head variant (4 heads, each projecting to `d_model/4 = 16` dimensions). Compare test MAE and training convergence speed against the single-head baseline.
+3. **Benchmark against vanilla LSTM** — train an identical model without the attention layer (`context_vector = state_h` shortcut). Plot the learning curves side-by-side and report the absolute MAE gain from attention. For simple univariate sine data, the gain is typically small; it becomes meaningful on multi-frequency or multivariate inputs.
+4. **Temporal attention pattern analysis** — generate three datasets with different dominant frequencies (period 7, 14, and 30 in a window of 30 steps) and train separate models on each. Visualise the mean attention weight at each lag position for each dataset and verify that the peak attention lag tracks the dominant period.
+</Callout>
+
+---
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| `tf.expand_dims` on wrong axis for query broadcast | Expanding along axis 0 or -1 instead of axis 1 produces a shape that broadcasts silently but computes wrong attention scores | Use `tf.expand_dims(query, 1)` (axis=1) so the query broadcasts across the `values` timestep dimension |
+| Raw attention scores used without softmax normalisation | Without `tf.nn.softmax(score, axis=1)` the context vector is unnormalised; weights no longer sum to 1 and lose probabilistic interpretation | Always apply softmax over the time axis before computing the weighted sum |
+| Shared `W1`/`W2` weight matrices | Reusing the same `Dense` layer for both query and values projection collapses the attention into a scalar self-correlation | Declare `self.W1` and `self.W2` as separate `Dense` layers in `__init__` |
+| Flat attention distribution (all weights ≈ 1/T) | The attention layer did not converge — often caused by vanishing gradients or too-small learning rate on the attention parameters | Reduce `tanh` saturation by using `LeakyReLU` before the score projection; increase attention layer learning rate via a separate optimizer param group |
+| Missing stationarity check before attention LSTM | Non-stationary input with a strong trend causes the attention to fixate on the most recent timestep regardless of frequency content | Difference or detrend the series until ADF `p < 0.05` before windowing and training |
+
+## Stretch Goals
+
+1. **Multi-head attention upgrade** — Replace the single Bahdanau attention head with a 4-head variant (each head projects to `d_model/4 = 16` dimensions). Compare test MAE and training convergence speed against the single-head baseline. Multi-head attention is the basis of the Transformer and Temporal Fusion Transformer architectures.
+2. **Temporal Fusion Transformer benchmark** — Replace the LSTM-attention model with a full TFT using `pytorch-forecasting` or a TensorFlow port. Compare interpretable variable-selection weights against the Bahdanau attention heatmap on the same synthetic series.
+3. **Attention heatmap analysis across frequencies** — Generate three datasets with dominant periods 7, 14, and 30 in a window of 30 steps. Train separate LSTM-attention models and visualise the mean attention weight at each lag for each dataset. Verify that the peak attention lag tracks the dominant period.
+4. **DeepAR with attention encoder** — Extend the attention LSTM to a probabilistic forecaster by replacing the final Dense head with Gaussian `(mu, sigma)` outputs trained with NLL loss. Plot 80% prediction intervals and measure empirical coverage rate on the test set.

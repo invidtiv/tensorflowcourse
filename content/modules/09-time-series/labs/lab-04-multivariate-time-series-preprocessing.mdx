@@ -165,4 +165,43 @@ print("=" * 60)
 
 ---
 
+## Expected Output
+
+After preprocessing 2 years of hourly energy data (17,520 rows) with 5 engineered features:
+
+| Metric | Expected value | Tolerance |
+|---|---|---|
+| Raw DataFrame shape | `(17520, 5)` approx | ±24 rows |
+| `X_train_scaled.shape` | `(~12264, 5)` (70% split) | ±24 |
+| `X_test_scaled.shape` | `(~2628, 5)` (15% split) | ±24 |
+| Pearson correlation temperature↔demand | > 0.6 (positive) | — |
+| `X_train_scaled` min / max | ≈ 0.0 / ≈ 1.0 | ±0.01 |
+| `X_test_scaled` max > 1.0` possible | Yes (if test has new extremes) | — |
+
+```python
+# Validation assertions
+assert X_train_scaled.shape[1] >= 4, "Expected at least 4 input features"
+assert X_train_scaled.min() >= -0.01, "Scaler min boundary violated"
+assert X_train_scaled.max() <= 1.01, "Scaler max boundary violated on training set"
+assert X_train_scaled.shape[0] > X_test_scaled.shape[0], "Train should be larger than test"
+print("Multivariate preprocessing assertions passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Fitting one scaler for all features jointly | Each feature has its own range; joint scaling distorts relative magnitudes | Fit a separate `MinMaxScaler` (or `StandardScaler`) per feature, or use `feature_range` per column via a `ColumnTransformer` |
+| Scaler target leakage | Fitting the feature scaler on `y` values or including target in `scaler_X.fit()` inflates apparent training accuracy | Fit `scaler_X` on `X_train` only; fit `scaler_y` on `y_train` only; keep them separate objects |
+| Temporal split ignoring autocorrelation horizon | If the gap between train end and val start is smaller than the forecast horizon, the last train windows overlap with first val windows | Add a `gap = horizon` buffer between splits: `val_start = train_end + horizon` |
+| High-cardinality calendar features without encoding | Hour-of-day (0–23) passed as a raw integer looks like a continuous variable; the model treats 23 and 0 as far apart | Encode cyclical features as `sin`/`cos` pairs: `sin(2π·hour/24)`, `cos(2π·hour/24)` |
+| NaN propagation from lag features | Lag features create NaN in the first `max_lag` rows, which silently produce 0s after scaling | Drop or fill NaN before scaling; use `.dropna()` after constructing lag columns and before the train/val split |
+
+## Stretch Goals
+
+1. **N-BEATS multivariate benchmark** — Extend the scaffold to feed all 5 scaled features into an N-BEATS stack with trend and seasonality blocks. Compare validation MAE against the univariate baseline to quantify the benefit of the additional correlated channels.
+2. **Cross-correlation lag analysis** — Use `pandas` `DataFrame.corrwith(df.shift(k))` for lags k=1…48 to identify which feature leads the target by how many hours. Add the optimal lag as an extra engineered column and measure whether it improves LSTM val MAE.
+3. **Sparse feature selection** — Train a Lasso regression with `alpha` swept over [0.001, 0.1]. Identify which features are zeroed out. Retrain the LSTM with only the selected features and compare parameter count vs val MAE.
+4. **DeepAR probabilistic energy forecasting** — Wrap the LSTM output in a `tfp.layers.DistributionLambda` (Normal distribution with learnable `mu`, `sigma`). Train with negative log-likelihood loss. Plot 90% prediction intervals for peak-demand hours and measure empirical coverage.
+
 # Part 2: Windowing Implementations
