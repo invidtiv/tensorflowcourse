@@ -319,7 +319,7 @@ Building the default Sequential model in this lab (3-layer MLP, MNIST):
 
 | Check | Expected value |
 |-------|---------------|
-| `model.summary()` — total params | ~101,770 for a 784→128→64→10 network (Dense layers only, no biases counted separately). Check: `(784×128 + 128) + (128×64 + 64) + (64×10 + 10)` = 101,770. |
+| `model.summary()` — total params | ~109,386 for a 784→128→64→10 network (Dense layers only, no biases counted separately). Check: `(784×128 + 128) + (128×64 + 64) + (64×10 + 10)` = 109,386. |
 | Training accuracy (10 epochs) | ≥ 98% on training set. If `< 95%`, check that the input is flattened (shape `(784,)` not `(28, 28)`). |
 | Validation accuracy (10 epochs) | ≥ 97.5% on MNIST validation split. |
 | `model.get_config()` | Returns a dict with `'layers'` key listing all layer configs. Serializable with `json.dumps()`. |
