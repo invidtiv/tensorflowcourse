@@ -32,14 +32,11 @@ export default function ProgressDashboard() {
   );
 
   const hasAnyProgress = startedModules.length > 0;
-  const [hasMounted, setHasMounted] = useState(false);
   const [open, setOpen] = useState(false);
-  useEffect(() => { setHasMounted(true); }, []);
   useEffect(() => {
     if (hasAnyProgress) setOpen(true);
   }, [hasAnyProgress]);
 
-  if (!hasMounted) return null;
   if (!hasAnyProgress) return null;
 
   const totalMinutes = Math.round(
