@@ -439,4 +439,52 @@ print("=" * 60)
 
 ---
 
+## Expected Output
+
+| Architecture | Test accuracy (CIFAR-10, 10 epochs) | Parameters | Inference time / batch (CPU) |
+|---|---|---|---|
+| LeNet-style | 58–65% | ~60k | 5–10 ms |
+| AlexNet-style (adapted) | 68–74% | ~1.2M | 15–25 ms |
+| VGG-style (mini) | 72–78% | ~2.8M | 30–50 ms |
+| ResNet-style (20 layers) | 76–82% | ~270k | 20–35 ms |
+| MobileNet-style | 70–76% | ~200k | 12–20 ms |
+
+```python
+# Validation: all architectures must compile and exceed random-chance accuracy
+import tensorflow as tf
+
+results = {}
+for name, model in [("lenet", lenet_model), ("alexnet", alexnet_model),
+                    ("vgg", vgg_model), ("resnet", resnet_model)]:
+    _, acc = model.evaluate(x_test, y_test_oh, verbose=0)
+    results[name] = acc
+    assert acc > 0.20, f"{name} accuracy {acc:.2%} is barely above random (10%)"
+    assert model.count_params() < 10_000_000, f"{name} has suspiciously many params"
+
+best = max(results, key=results.get)
+worst = max(results, key=results.get)  # all should be > 0.20
+print(f"✅ Best: {best} ({results[best]:.2%})  Worst: {min(results, key=results.get)} ({min(results.values()):.2%})")
+assert results["resnet"] >= results["lenet"], "ResNet should outperform LeNet on CIFAR-10"
+print("✅ Architecture ranking sanity check passed")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| LeNet much worse than expected (~45%) on CIFAR-10 | LeNet was designed for 28×28 grayscale MNIST — its 5×5 filters see too little context on 32×32 RGB | Add `padding='same'` in the first conv or use a 3-block architecture instead of the historical 2-block layout |
+| AlexNet-adapted accuracy no better than LeNet | AlexNet at its original depth needs ImageNet-scale data; the CIFAR-10 adapted version often overfits with the same aggressive dropout | Reduce filter counts to 32/64/128 for CIFAR-10 and verify `BatchNormalization` is after every conv |
+| ResNet worse than VGG-style after 10 epochs | Residual networks need more epochs to "activate" skip connections; the identity shortcut provides no learning signal in early epochs | Train for ≥30 epochs or use a warmup LR schedule; also verify the projection shortcut uses `padding='same'` not `'valid'` |
+| Parameter counts differ wildly from expectations | `Flatten→Dense(256)` after the last feature map inflates param counts by 10–100× vs `GlobalAveragePooling2D` | Replace `Flatten` with `GlobalAveragePooling2D` in all architectures for a fair comparison; state this explicitly in the comparison table |
+| Inference timing not reproducible | First call incurs JIT compilation overhead (XLA) making it appear 5–10× slower | Warm up each model with one forward pass before timing; use `timeit` over ≥50 iterations |
+
+## Stretch Goals
+
+1. **FLOPs-normalized comparison** — compute FLOPs per inference using `tf.profiler.experimental` and replot accuracy vs FLOPs (not params). Often ResNet wins the param budget contest but loses on FLOPs because bottleneck blocks are compute-heavy at full resolution.
+2. **Learning curve analysis** — plot validation accuracy per epoch for all architectures on the same axes. Identify the "crossover epoch" where ResNet overtakes VGG and quantify how many extra epochs VGG would need to close the gap.
+3. **Pruning experiment** — apply `tensorflow_model_optimization` magnitude pruning (50% sparsity) to the VGG-style model and re-evaluate. Does pruning affect ResNet and VGG equally, or does ResNet's skip-connection redundancy make it more robust to pruning?
+4. **EfficientNet scaling law** — implement the compound scaling formula `d = α^φ, w = β^φ, r = γ^φ` (Tan & Le, 2019) for a base architecture. Show that width scaling alone, depth scaling alone, and compound scaling all hit different accuracy/FLOPs tradeoffs — compound scaling should Pareto-dominate the others.
+
+---
+
 <a name="lab-37"></a>

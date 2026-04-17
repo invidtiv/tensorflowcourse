@@ -663,6 +663,59 @@ print("=" * 60)
 
 ---
 
+## Expected Output
+
+| Technique | Test accuracy (CIFAR-10, 30 epochs, ResNet-20) | Accuracy gain vs basic flip+shift |
+|---|---|---|
+| Basic pipeline (flip + shift) | 83–86% | baseline |
+| + Cutout (16×16 mask) | 85–88% | +1–3% |
+| + MixUp (α=0.2) | 85–89% | +2–3% |
+| + CutMix (α=1.0) | 86–90% | +3–4% |
+| + RandAugment (N=2, M=9) | 87–91% | +4–5% |
+| tf.data pipeline throughput | ≥ 500 img/s (CPU), ≥ 5000 img/s (GPU) | Slow pipeline bottlenecks GPU training |
+
+```python
+# Validation assertions for custom augmentation pipeline
+import numpy as np
+import tensorflow as tf
+
+# MixUp: blended image must be between 0 and 1
+x1, x2 = x_train[:4], x_train[4:8]
+lam = np.random.beta(0.2, 0.2)
+mixed = lam * x1 + (1 - lam) * x2
+assert mixed.min() >= 0.0 and mixed.max() <= 1.0, "MixUp output outside [0, 1]"
+
+# CutMix: replaced region should change pixel values
+cutmix_batch, _ = cutmix(x_train[:8], y_train_oh[:8])
+assert not np.allclose(cutmix_batch[:4], x_train[:4]), "CutMix did not modify the batch"
+
+# tf.data pipeline should produce correct shape and dtype
+for batch_x, batch_y in train_dataset.take(1):
+    assert batch_x.shape[1:] == (32, 32, 3), f"Wrong image shape: {batch_x.shape}"
+    assert batch_x.dtype == tf.float32, f"Expected float32, got {batch_x.dtype}"
+    assert batch_y.shape[-1] == 10, f"Wrong label shape: {batch_y.shape}"
+print(f"✅ MixUp λ={lam:.3f}  mixed range [{mixed.min():.3f}, {mixed.max():.3f}]  batch shape: {batch_x.shape}")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| MixUp labels not mixed — only hard labels used | MixUp requires `y_mixed = λ*y1 + (1-λ)*y2` but the code mixes only images and keeps hard labels | Apply the same λ to labels: `y_mixed = lam * y_train_oh[idx1] + (1 - lam) * y_train_oh[idx2]`; use `categorical_crossentropy`, not `sparse_categorical_crossentropy` |
+| CutMix bounding box coordinates exceed image dimensions | Random `rx, ry` center point + half-width `rw/2` extends past the 0–31 boundary | Clip box: `x1=max(0, rx-rw//2)`, `x2=min(W, rx+rw//2)` before slicing |
+| `tensorflow_addons` import fails in newer TF environments | TFA is deprecated in TF 2.14+ and not compatible with TF 2.16+ | Replace `tfa.image.cutout` with a custom NumPy/TF implementation; replace `tfa.optimizers.SGDW` with `tf.keras.optimizers.SGD` + weight decay via `kernel_regularizer` |
+| RandAugment magnitude parameter too high (M > 15) | Large magnitudes produce unrealistic transformations (>45° rotations, extreme color shifts) that confuse the model | Keep `M ≤ 10` for CIFAR-10; search M ∈ {5, 7, 9, 11} via validation accuracy |
+| tf.data pipeline slower than expected — GPU starved | Too few `num_parallel_calls` or missing `.prefetch(tf.data.AUTOTUNE)` causes the CPU augmentation pipeline to become a bottleneck | Add `.map(augment_fn, num_parallel_calls=tf.data.AUTOTUNE).prefetch(tf.data.AUTOTUNE)` and profile with `tf.data.experimental.enable_debug_mode()` |
+
+## Stretch Goals
+
+1. **AugMix implementation** — implement AugMix (Hendrycks et al., 2020): blend 3 independently augmented copies of each image using Dirichlet-sampled weights, then mix with the original using a Beta sample. Evaluate on CIFAR-10-C (corrupted test set) and compare corruption robustness against CutMix and MixUp.
+2. **Custom RandAugment policy search** — add `SolarizeAdd`, `Equalize`, and `AutoContrast` to the RandAugment operation pool (bring it to 16 operations). Run a grid search over `N ∈ {1, 2, 3}` and `M ∈ {5, 9, 13}`. Plot a 3×3 heatmap of validation accuracy. Does adding photometric operations help for CIFAR-10?
+3. **Feature re-use with augmented embeddings** — train a ResNet20 with and without CutMix/MixUp, extract penultimate-layer embeddings for the test set, and compute the intra-class / inter-class distance ratio. Does augmentation produce more compact, better-separated class clusters in embedding space?
+4. **Online knowledge distillation with augmented teacher** — implement Born-Again Networks: train a student model where the teacher is the same architecture trained with aggressive augmentation (CutMix + MixUp). Soft teacher logits combined with hard ground-truth labels should outperform the student trained alone. Quantify the gain.
+
+---
+
 ## Appendix: Quick Reference
 
 ### Common CNN Architectures

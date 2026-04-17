@@ -398,6 +398,146 @@ print("Lab 3.3 Complete!")
 print("=" * 60)
 ```
 
+## Expected Output
+
+When running the lab successfully, you should see model summaries and performance metrics similar to the following:
+
+**Original LeNet-5 Model Summary:**
+```
+Model: "sequential"
+_________________________________________________________________
+ Layer (type)                Output Shape              Param #   
+=================================================================
+ C1 (Conv2D)                 (None, 28, 28, 6)        156       
+ S2 (AveragePooling2D)       (None, 14, 14, 6)        12        
+ C3 (Conv2D)                 (None, 10, 10, 16)       2416      
+ S4 (AveragePooling2D)       (None, 5, 5, 16)         32        
+ C5 (Conv2D)                 (None, 1, 1, 120)        48120     
+ flatten (Flatten)           (None, 120)              0         
+ F6 (Dense)                  (None, 84)               10164     
+ Output (Dense)              (None, 10)               850       
+=================================================================
+Total params: 61,706
+Trainable params: 61,706
+Non-trainable params: 0
+```
+
+**Performance Comparison Table:**
+```
+Model            Train Acc   Val Acc   Params     Epoch Time (CPU)
+─────────────────────────────────────────────────────────────────
+Original LeNet-5  0.985      0.988     ~61,706    8–12 s
+Modern LeNet      0.993      0.992     ~62,400    9–14 s
+```
+
+**Key Expectations:**
+- Both models should achieve **>98% validation accuracy** on MNIST after 10 epochs
+- Modern variant (with BatchNormalization + ReLU) typically achieves ~0.5% higher accuracy than original (tanh + average pooling)
+- Training curves should show smooth convergence after epoch 3–4
+- If your validation accuracy drops below 95%, check that inputs are normalized to [0,1] range
+
+---
+
+## Common Pitfalls
+
+<Callout type="warning">
+**1. MNIST is 28×28 but LeNet-5 expects 32×32**
+
+MNIST images are 28×28 pixels, but the original LeNet-5 architecture is designed for 32×32 inputs. You **must** pad the images using `np.pad(X_train, ((0, 0), (2, 2), (2, 2)), mode='constant')` to expand them to 32×32. 
+
+If you skip this step, the 5×5 filters will shrink the spatial dimensions too aggressively and you'll run out of spatial dimensions before reaching the fully connected layers, causing a shape mismatch error.
+</Callout>
+
+<Callout type="warning">
+**2. Original LeNet-5 uses tanh + average pooling, not ReLU + max pooling**
+
+The historical LeNet-5 (1998) used **tanh activation** and **average pooling**. Modern variants often substitute ReLU and max pooling for better performance. If your goal is to replicate the *original* architecture for comparison, stick with tanh and `layers.AveragePooling2D()`. Mixing modern and classical conventions invalidates the historical comparison and may produce different parameter counts.
+</Callout>
+
+<Callout type="warning">
+**3. Using wrong input_shape after padding**
+
+After padding MNIST from 28×28 to 32×32, your first Conv2D layer **must** use `input_shape=(32, 32, 1)`, not `(28, 28, 1)`. The shape must match the actual data reaching the model. If you keep the original shape, you'll get a shape mismatch error during training.
+</Callout>
+
+<Callout type="warning">
+**4. Forgetting to normalize pixel values to [0, 1]**
+
+LeNet-5 was designed with small weight initialization that assumes bounded inputs. Raw pixel values [0, 255] can cause **gradient explosion** during backpropagation. Always normalize: `X_train = X_train.astype('float32') / 255.0`. If your loss explodes or becomes NaN, this is the first thing to check.
+</Callout>
+
+<Callout type="warning">
+**5. Using padding='same' in Conv2D layers**
+
+The original LeNet-5 uses **`padding='valid'` (no padding)** in convolution layers, which is what produces the spatial dimension progression: 32 → 28 → 14 → 10 → 5 → 1. If you accidentally use `padding='same'`, the spatial dimensions will shrink too slowly, the feature maps will remain larger, and your fully connected layer parameter count will explode. Always verify the spatial dimensions at each layer match the original specification.
+</Callout>
+
+<Callout type="warning">
+**6. AveragePooling2D stride defaults to pool_size, not 1**
+
+By default, `layers.AveragePooling2D(pool_size=2)` sets `strides=2`, which shrinks the feature maps. If you accidentally override stride to 1 (e.g., `layers.AveragePooling2D(pool_size=2, strides=1)`), the feature maps never shrink, subsequent layers receive larger inputs, and the fully connected layer parameter count explodes from ~61,706 to >500,000.
+</Callout>
+
+<Callout type="warning">
+**7. Missing Flatten() between conv and dense layers**
+
+The `layers.Flatten()` between the convolutional layers and fully connected layers is **required**. Calling `Dense` directly on a 4D tensor can silently reshape along the wrong axis in some TensorFlow versions, leading to silent bugs or incorrect parameter counts. Always explicitly flatten: `layers.Flatten()` after the last convolutional layer.
+</Callout>
+
+---
+
+## Stretch Goals
+
+<Callout type="tip">
+**1. Implement the Asymmetric Connection Table (S2 → C3)**
+
+The original 1998 LeNet-5 paper uses an asymmetric connection table between S2 and C3: only **3 of 6** S2 feature maps feed into each C3 filter. This reduces parameters compared to a fully connected C3. Implement this sparse connectivity pattern and compare:
+- Parameter count of sparse C3 vs. fully-connected C3
+- Training time and accuracy difference
+- Reconstruction of Table 1 from the original paper showing the connection pattern
+
+This is a historical accuracy exercise and demonstrates why modern architectures moved to fully-connected conv layers.
+</Callout>
+
+<Callout type="tip">
+**2. Add Grad-CAM Visualization for Error Analysis**
+
+After training, implement **Grad-CAM** (forward reference to lab-10) to visualize which regions of the input the model focuses on:
+- Generate Grad-CAM heatmaps for 3 **correctly classified** digits
+- Generate Grad-CAM heatmaps for 3 **incorrectly classified** digits
+- Analyze the error cases: do they correlate with ambiguous handwriting (e.g., confusing 4s and 9s)?
+
+Visualize the heatmaps overlaid on the original 28×28 digit images (crop out the padding) to see if incorrect predictions correspond to the model attending to the wrong features.
+</Callout>
+
+<Callout type="tip">
+**3. Benchmark Inference Latency Across Batch Sizes**
+
+Measure and plot inference latency for different batch sizes on CPU:
+```python
+batch_sizes = [1, 8, 32, 128, 256]
+throughput = []
+for bs in batch_sizes:
+    batch = X_test[:bs]
+    # Time model.predict(batch)
+    throughput.append(bs / elapsed_time)
+```
+Plot **batch_size vs. throughput (images/sec)**. The overhead of a tiny LeNet-5 should be visible: batch_size=1 will have much lower throughput than batch_size=32 due to NumPy/TensorFlow dispatch overhead.
+</Callout>
+
+<Callout type="tip">
+**4. Convert to TFLite and Benchmark Mobile Deployment**
+
+Convert the trained LeNet-5 to TensorFlow Lite and evaluate mobile suitability:
+- Convert to `.tflite` format using `tf.lite.TFLiteConverter`
+- Apply **INT8 quantization** and measure file size reduction
+- Benchmark quantized accuracy on MNIST test set (should lose <0.3%)
+- Measure CPU inference latency on mobile or emulator
+- Compare .tflite file size to full model size
+
+LeNet-5 is small enough that INT8 quantization typically causes minimal accuracy loss while dramatically reducing file size, making it ideal for edge deployment examples.
+</Callout>
+
 ---
 
 <a name="lab-34"></a>

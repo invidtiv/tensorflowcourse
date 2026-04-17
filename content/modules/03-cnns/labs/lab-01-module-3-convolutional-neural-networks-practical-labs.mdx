@@ -8,6 +8,8 @@ source: "lab-01-complete.md"
 ---
 # Module 3: Convolutional Neural Networks - Practical Labs
 
+Module 3 builds CNN intuition from the ground up: you start by implementing the convolution operation in pure NumPy (including backpropagation), then assemble classic and modern architectures (LeNet-5, ResNet), benchmark them against each other, and finally learn to *understand* what a trained network has learned through filter and feature-map visualization, Grad-CAM, and layerwise activation analysis. The second half of the module covers transfer learning (VGG16, ResNet50, EfficientNet) and data augmentation pipelines — the two techniques that matter most when training on small real-world datasets.
+
 ## Table of Contents
 1. [Lab 3.1: Convolution Operation from Scratch - Part 1](#lab-31)
 2. [Lab 3.2: Convolution Operation from Scratch - Part 2](#lab-32)
@@ -23,6 +25,91 @@ source: "lab-01-complete.md"
 12. [Lab 3.12: Fine-tuning Pretrained Models](#lab-312)
 13. [Lab 3.13: Basic Data Augmentation Pipeline](#lab-313)
 14. [Lab 3.14: Custom Data Augmentation Pipeline](#lab-314)
+
+---
+
+## Module Baseline Scaffold
+
+Run this cell before any lab to verify your environment and load the shared CIFAR-10 split used throughout the module.
+
+```python
+"""
+Module 3 – CNN Practical Labs: Environment Check & Shared Baseline
+Run this scaffold once before starting any individual lab.
+"""
+
+import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras.datasets import cifar10
+from tensorflow.keras.utils import to_categorical
+
+# TODO: Verify TensorFlow version is >= 2.10 to ensure Keras 3 compat
+print(f"TensorFlow {tf.__version__}")
+assert int(tf.__version__.split('.')[0]) >= 2, "TF >= 2.x required"
+
+# TODO: Load CIFAR-10 and apply standard normalization ([0, 1] range)
+(x_train, y_train), (x_test, y_test) = cifar10.load_data()
+x_train = x_train.astype('float32') / 255.0
+x_test  = x_test.astype('float32')  / 255.0
+
+# TODO: Convert integer labels to one-hot vectors for categorical_crossentropy
+y_train_oh = to_categorical(y_train, 10)
+y_test_oh  = to_categorical(y_test,  10)
+
+# TODO: Confirm shapes — these are used by labs 3.4 – 3.14
+assert x_train.shape == (50000, 32, 32, 3), f"Unexpected x_train shape: {x_train.shape}"
+assert x_test.shape  == (10000, 32, 32, 3), f"Unexpected x_test shape:  {x_test.shape}"
+print(f"x_train: {x_train.shape}  y_train: {y_train_oh.shape}")
+print(f"x_test:  {x_test.shape}   y_test:  {y_test_oh.shape}")
+
+# TODO: Check GPU availability — required for transfer learning labs (3.10–3.12)
+gpus = tf.config.list_physical_devices('GPU')
+print(f"GPUs detected: {len(gpus)}")
+if not gpus:
+    print("WARNING: No GPU found. Transfer learning labs will be slow on CPU.")
+
+print("✅ Environment check passed — ready for Module 3 labs")
+```
+
+---
+
+## Expected Output
+
+| Check | Expected value | Failure hint |
+|---|---|---|
+| TensorFlow version | `>= 2.10.x` | Upgrade with `pip install tensorflow --upgrade` |
+| `x_train.shape` | `(50000, 32, 32, 3)` | `cifar10.load_data()` failed or wrong dataset |
+| `x_test.shape` | `(10000, 32, 32, 3)` | Same as above |
+| `y_train_oh.shape` | `(50000, 10)` | `to_categorical` not applied; labels still shape `(50000, 1)` |
+| Pixel value range | `[0.0, 1.0]` | Missing `/ 255.0` normalization step |
+| GPU count | `>= 0` (warning if 0) | Expected for labs 3.1–3.9; needed for labs 3.10–3.12 |
+
+```python
+# Validation assertions for the baseline scaffold
+assert x_train.max() <= 1.0 and x_train.min() >= 0.0, "Pixel values out of [0, 1] range"
+assert y_train_oh.shape == (50000, 10), f"One-hot shape wrong: {y_train_oh.shape}"
+assert y_test_oh.shape == (10000, 10),  f"One-hot shape wrong: {y_test_oh.shape}"
+assert x_train.dtype == np.float32, f"Expected float32, got {x_train.dtype}"
+print("✅ All baseline assertions passed")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| `ValueError` on `to_categorical` with shape `(N, 1)` | `y_train` from `cifar10.load_data()` is shape `(50000, 1)` by default, not `(50000,)` | Flatten first: `y_train.flatten()` before passing to `to_categorical` |
+| Pixel values outside `[0, 1]` for later labs | Normalization done once then overwritten when reloading data in a new cell | Store normalized arrays as `x_train_norm`/`x_test_norm` or reload and normalize every time |
+| Transfer learning labs timeout on CPU | VGG16/ResNet50 feature extraction loops take 30–60 min on CPU without GPU | Use `tf.keras.applications` with `include_top=False` and cache bottleneck features to `.npy` files |
+| `ImportError: tensorflow_addons` for lab-15 | `tfa` is not installed in the default TF environment | Run `pip install tensorflow-addons` before lab-15, or use `tf.image` equivalents |
+| Shape mismatch when mixing MNIST and CIFAR-10 scaffolds | LeNet-5 labs use MNIST (28×28 grayscale); CIFAR-10 labs use 32×32 RGB — configs are not interchangeable | Always check `input_shape` in `model.build()` matches the dataset being used |
+
+## Stretch Goals
+
+1. **Profile the full module pipeline end-to-end** — time how long each lab takes on your hardware (CPU vs GPU). Build a table: lab name, dataset, #params, training time per epoch, final test accuracy. This gives you a concrete sense of the cost of each architectural choice before writing a single line of production code.
+2. **Build a shared `ModelRegistry` class** — implement a lightweight dictionary that maps architecture names (`"lenet"`, `"resnet20"`, `"vgg16_ft"`) to `tf.keras.Model` factories. Every lab in the module can then register its model, allowing you to run cross-lab accuracy comparisons with a single loop.
+3. **Automate the EO validation suite** — wrap each lab's assertion block into a `pytest` fixture that re-runs automatically when you change a hyperparameter. This turns the module into a regression harness: if a refactor breaks >2% accuracy on any lab, the test suite catches it immediately.
+4. **Extend to CIFAR-100 throughout** — swap `cifar10` for `cifar100` in every lab and track how each technique (ResNet blocks, transfer learning, augmentation) scales to a 100-class problem. Compare the accuracy-drop ratio across labs to understand which techniques are most sensitive to class count.
 
 ---
 

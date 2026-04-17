@@ -448,4 +448,118 @@ print("=" * 60)
 
 ---
 
+## Expected Output
+
+After running all sections of Lab 3.2, you should observe the following concrete outputs.
+
+### Section 2 — Conv2DLayer forward + backward pass
+
+With the default test configuration (`batch=2, H=W=8, C_in=3, C_out=4, kernel=3, stride=1, padding=1`):
+
+```
+CONVOLUTIONAL LAYER WITH LEARNABLE PARAMETERS
+============================================================
+Input shape: (2, 8, 8, 3)
+Layer config: 3 -> 4 channels, kernel=3x3
+
+Output shape: (2, 8, 8, 4)
+Expected output shape: (2, 8, 8, 4)
+
+Gradient shapes:
+  dX: (2, 8, 8, 3)
+  dW: (3, 3, 3, 4)
+  db: (4,)
+```
+
+**Shape invariants:**
+- `output.shape == (batch_size, H, W, C_out)` — padding=1 with kernel=3 preserves spatial dims.
+- `dX.shape == X_test.shape` — the gradient w.r.t. the input must match the input shape exactly.
+- `dW.shape == (kernel_size, kernel_size, C_in, C_out)` — same shape as the weight tensor.
+- `db.shape == (C_out,)` — one bias gradient per output channel.
+
+### Section 3 — Keras comparison
+
+When you copy your custom weights into the Keras layer (matching He init), both implementations should produce near-identical outputs:
+
+```
+COMPARISON WITH KERAS CONV2D
+============================================================
+Custom implementation output shape: (4, 28, 28, 8)
+Keras implementation output shape:  (4, 28, 28, 8)
+Max absolute difference: < 1e-5
+```
+
+A difference larger than `1e-4` usually means the weight layout differs between your implementation and Keras (Keras stores kernels as `(H, W, C_in, C_out)`, which matches our convention — but confirm the copy step is exact).
+
+### Section 5 — Parameter count analysis
+
+```
+PARAMETER COUNT ANALYSIS
+============================================================
+Standard Conv (256 -> 512, 3x3): 1,180,160 parameters
+Depthwise Separable Conv (256 -> 512): 721,664 parameters
+
+Parameter reduction: 38.8%
+```
+
+> **Note:** The `count_parameters(256, 256, 3)` call treats the depthwise stage as a full convolution (256→256 with 3×3). A *true* depthwise separable implementation uses one filter per input channel, giving `(3×3×1+1)×256 = 2,560` depthwise params + `(1×1×256+1)×512 = 131,584` pointwise params = **134,144 total** — an 88.6% reduction. See the Common Pitfalls section for how to fix this.
+
+### Section 6 — Grouped convolution
+
+```
+GROUPED CONVOLUTION (ResNeXt / Xception style)
+============================================================
+Input shape: (2, 14, 14, 64)
+Groups: 2
+Output shape: (2, 12, 12, 128)
+```
+
+The output spatial size is 12 = 14 − 3 + 1 (no padding, 3×3 kernel). Each group processes 32 input channels and produces 64 output channels; concatenating both groups gives 128 output channels.
+
+---
+
+## Common Pitfalls
+
+<Callout type="warning" title="Common Pitfalls">
+
+1. **Backward pass shape mismatch after padding removal** — `dX_padded` is initialized with `H + 2*padding`, so the slice `dX_padded[:, padding:-padding, padding:-padding, :]` works only when `padding > 0`. For `padding=0`, this slice would drop rows/columns. Guard with `if self.padding > 0` before slicing (already shown in the template above — make sure you don't remove it).
+
+2. **Stride > 1 in backward pass** — This lab's backward implementation assumes `stride=1`. With stride=2, `dout` is spatially compressed relative to the input; each `dout[b, i, j, c_out]` maps back to a `stride×stride` region starting at `(i*stride, j*stride)`. Skipping the stride multiplier gives gradient shapes that look correct but carry wrong values and will fail a numerical gradient check.
+
+3. **Depthwise separable parameter count is inflated** — The lab computes `count_parameters(256, 256, 3)` for the depthwise stage, which is a *standard* 256→256 convolution (590,080 params). A real depthwise conv uses **one filter per input channel**, so the count is `(kernel²×1 + 1) × C_in`. Fix:
+   ```python
+   # True depthwise separable
+   dw_params = count_parameters(1, C_in, kernel_size)   # per-channel filter × C_in channels
+   pw_params = count_parameters(C_in, C_out, 1)          # pointwise 1×1
+   true_sep_params = dw_params * C_in + pw_params - C_in # avoid double-counting bias
+   # Simpler: (k*k + 1)*C_in + (C_in + 1)*C_out
+   ```
+   With `C_in=256, C_out=512, k=3`: `(9+1)×256 + (256+1)×512 = 2,560 + 131,584 = 134,144` params — ~88.6% reduction, not 38.8%.
+
+4. **Numerical gradient check using float32** — NumPy's finite-difference gradient check is sensitive to floating-point precision. If your backward pass matches the forward pass analytically but differs by `> 1e-4` in the gradient check, switch the test tensors to `float64`. The He-initialized weights can produce large activations that saturate float32 precision during the perturbation `f(x+ε) - f(x-ε)`.
+
+5. **Grouped convolution assertion on divisibility** — `assert C_in % groups == 0` is correct but gives an unhelpful error. Check this explicitly:
+   ```python
+   if C_in % groups != 0 or C_out % groups != 0:
+       raise ValueError(f"C_in={C_in} and C_out={C_out} must both be divisible by groups={groups}")
+   ```
+
+</Callout>
+
+## Stretch Goals
+
+<Callout type="info" title="Stretch Goals">
+
+1. **Add a numerical gradient check** — Implement a finite-difference verification for the backward pass: for each weight `W[i,j,k,l]`, compute `(L(W + ε) − L(W − ε)) / (2ε)` and compare to `dW[i,j,k,l]`. A relative error < `1e-5` in float64 confirms your backprop is correct. This is the gold-standard sanity check before using any custom layer in training.
+
+2. **Fix the depthwise separable implementation** — Rewrite Section 5 to implement a true depthwise convolution: each input channel gets its own `3×3` filter (no cross-channel mixing). Then wire it to the existing pointwise step and confirm the parameter count drops to ~134K. Compare forward-pass outputs with `tf.keras.layers.DepthwiseConv2D` to verify correctness.
+
+3. **Transposed convolution (Exercise 1)** — Implement `conv_transpose_2d(X, W, stride=2)` that inverts the spatial downsampling of a strided convolution. The naive approach: insert `(stride−1)` zero rows/columns between spatial elements of `X`, then convolve with the *flipped* kernel. Verify that `conv_transpose(conv(X, W, stride=2), W, stride=2)` recovers an output with the same spatial size as the original `X` (up to border effects).
+
+4. **ASPP (Atrous Spatial Pyramid Pooling — Exercise 4)** — Run the same input through four dilated convolutions in parallel with dilation rates `[1, 6, 12, 18]`. Concatenate along the channel axis. Compute the effective receptive field for each branch using `calculate_receptive_field`. DeepLab v3 uses exactly this pattern for multi-scale context in semantic segmentation.
+
+5. **Performance profiling: NumPy vs TF** — Use `timeit` to benchmark your pure-NumPy `Conv2DLayer.forward` vs `tf.keras.layers.Conv2D` on inputs of size `(32, 64, 64, 3)` with 64 filters. Measure wall-clock time for 100 calls. You should see a 20–100× speedup from TF's optimized C++ kernels (even on CPU), growing to 500–2000× on GPU due to cuDNN's Winograd/FFT-based convolution.
+
+</Callout>
+
 <a name="lab-33"></a>

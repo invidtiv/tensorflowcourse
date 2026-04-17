@@ -370,4 +370,47 @@ print("=" * 60)
 
 ---
 
+## Expected Output
+
+| Visualization | Expected observation | Failure hint |
+|---|---|---|
+| Layer 1 filters (3×3 or 5×5) | Gabor-like patterns: oriented edges, color blobs, diagonal stripes | Random-looking filters: model not trained, or weights not loaded correctly |
+| Layer 1 feature maps (edge image) | Strong activations along object boundaries; flat regions near zero | Uniform bright maps: ReLU missing or normalization skipped before display |
+| Deep layer feature maps (layer 4+) | Sparse, high-level activations — most channels near zero for any given image | Dense activations everywhere: network too shallow or not fully converged |
+| Filter weight range (layer 1, VGG16) | `[-0.5, 0.5]` approximately; some filters show color-opponent patterns | Values in `[-0.01, 0.01]`: you loaded random weights (`weights=None`), not ImageNet pretrained |
+| Number of filters visualized (conv1_1) | 64 filters, arranged in 8×8 grid | Grid misaligned: `math.ceil(sqrt(n_filters))` needed for non-square grids |
+
+```python
+# Validation assertions for filter visualization
+import numpy as np
+
+conv1_weights = model.get_layer('block1_conv1').get_weights()[0]  # VGG16 layer name
+assert conv1_weights.shape == (3, 3, 3, 64), f"Unexpected filter shape: {conv1_weights.shape}"
+assert np.abs(conv1_weights).max() > 0.05, "Filters look uninitialized — load pretrained weights"
+assert np.abs(conv1_weights).max() < 5.0,  "Filter values suspiciously large — check weight loading"
+
+n_filters = conv1_weights.shape[-1]
+assert n_filters == 64, f"Expected 64 filters in conv1_1, got {n_filters}"
+print(f"✅ Filter shape: {conv1_weights.shape}  max weight: {np.abs(conv1_weights).max():.4f}")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| All feature maps look identical or blank | Visualization normalization clips all values to 0 when the min is negative | Normalize each map independently: `(fmap - fmap.min()) / (fmap.max() - fmap.min() + 1e-8)` |
+| Filter grid shows mostly gray squares | Filters have very small magnitude (random init) — no edge/color structure yet | Use a trained model (`weights='imagenet'`); filters only become interpretable after training |
+| `model.get_layer(name)` raises `ValueError` | VGG16 layer names vary by Keras version (`'block1_conv1'` vs `'conv1_1'`) | Print `[l.name for l in model.layers]` and match the actual name in your environment |
+| Feature maps of a deep layer are all-zero | ReLU killed all activations for this image in this channel — expected for specialized detectors | Normal behavior; visualize multiple images and look for channels that fire on object-specific features |
+| Visualization looks noisy/salt-and-pepper | Raw floating-point map displayed without clipping or normalization | Clip to `[0, 1]` after normalizing: `np.clip((fmap - fmap.min()) / range, 0, 1)` |
+
+## Stretch Goals
+
+1. **Maximum activation patches** — for each of the 64 layer-1 filters, find the 9 CIFAR-10 training patches (3×3 receptive field) that produce the highest activation. Display as a 9-patch mosaic per filter to understand what visual concept each filter detects most strongly.
+2. **Activation statistics across the dataset** — compute the mean and variance of each filter's activation across 1000 random training images. Identify "dead filters" (mean < 0.01 across all inputs) and "saturated filters" (mean > 0.9). What fraction of filters in layer 1 vs layer 4 are dead?
+3. **Filter similarity dendrogram** — flatten each filter to a vector, compute cosine similarity between all pairs in layer 1, and plot a hierarchical clustering dendrogram. Are there clusters of filters detecting the same edge orientation at different scales?
+4. **Activation maximization** — use gradient ascent in input space to find the image that maximally activates each filter: start from Gaussian noise and iteratively update pixels by `x += lr * ∂act/∂x`. Add total-variation regularization to keep the image smooth. Compare your synthesized patterns to the patches from stretch goal 1.
+
+---
+
 <a name="lab-38"></a>

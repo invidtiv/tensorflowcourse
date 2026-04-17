@@ -458,4 +458,53 @@ print("=" * 60)
 
 ---
 
+## Expected Output
+
+| Phase | Test accuracy (CIFAR-10) | Trainable params | Training time / epoch (T4 GPU) |
+|---|---|---|---|
+| Feature extraction only (frozen VGG16 + new head) | 70–76% | ~4.1M (head only) | 25–40 s |
+| Fine-tune last 2 conv blocks (unfreeze from block4_conv1) | 80–86% | ~9.2M | 45–70 s |
+| Full fine-tune (all layers) | 82–88% | ~138M | 90–150 s |
+| Training from scratch (same VGG-style architecture, random init) | 65–72% after 50 epochs | ~138M | 90–150 s |
+
+```python
+# Validation assertions for VGG16 transfer learning
+import tensorflow as tf
+
+# Phase 1: frozen base should have far fewer trainable params than total
+total_params = vgg_model.count_params()
+trainable_params = sum([tf.size(w).numpy() for w in vgg_model.trainable_weights])
+assert trainable_params < total_params * 0.05, \
+    f"Too many trainable params ({trainable_params:,}) — base not properly frozen"
+
+# Phase 2: accuracy must exceed training-from-scratch baseline
+_, feature_acc = vgg_model.evaluate(x_test, y_test_oh, verbose=0)
+assert feature_acc > 0.65, f"Feature extraction acc {feature_acc:.2%} too low"
+
+# Input preprocessing: VGG16 expects [0, 255] with per-channel mean subtraction
+sample = x_test[:1] * 255.0  # un-normalize before passing to preprocess_input
+preprocessed = tf.keras.applications.vgg16.preprocess_input(sample)
+assert preprocessed.numpy().min() < -50, "VGG16 preprocess_input should produce negative values"
+print(f"✅ Trainable params: {trainable_params:,} / {total_params:,}  Feature acc: {feature_acc:.2%}")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Frozen base with all BatchNorm layers still in train mode | `base.trainable = False` freezes weights but Keras still calls BN in training mode unless `training=False` is explicit | Pass `training=False` in the call: `base(inputs, training=False)` or use `model(inputs, training=False)` at inference |
+| VGG16 preprocessing mismatch — accuracy stuck at 10% | CIFAR-10 images normalized to `[0, 1]` but VGG16 `preprocess_input` expects `[0, 255]` with ImageNet mean subtraction | Un-normalize before `preprocess_input`: `tf.keras.applications.vgg16.preprocess_input(x * 255.0)` |
+| Learning rate too high when fine-tuning pretrained weights | Pretrained weights are close to a good local minimum; a large LR (e.g., 1e-3) destroys them in the first batch | Start fine-tuning with LR ≤ 1e-4; use `ReduceLROnPlateau` or a cosine decay schedule |
+| Forgetting to recompile after unfreezing layers | `model.compile()` must be called after changing `trainable` attributes — otherwise the optimizer uses the old computation graph with no gradients for unfrozen layers | Always call `model.compile(optimizer=..., loss=..., metrics=...)` immediately after unfreezing |
+| `include_top=False` but still including original classifier weights | Passing `include_top=True` loads the 1000-class ImageNet head, which then gets discarded — wastes time and may cause shape errors | Set `include_top=False` to load only the convolutional base; add your own Dense(10) classifier on top |
+
+## Stretch Goals
+
+1. **Layer-by-layer unfreezing (progressive fine-tuning)** — instead of unfreezing all of block4+5 at once, unfreeze one block per training phase (block5 → block4 → block3 → ...). Plot accuracy after each phase. Does progressive unfreezing reach higher final accuracy than single-step unfreezing with the same total epochs?
+2. **Bottleneck feature caching** — extract VGG16 block5_pool features for all 60k CIFAR-10 images once, save as `.npy`, then train only the Dense head from these cached features. Compare total training time vs. end-to-end fine-tuning. How many GPU-minutes does caching save across 30 experiments?
+3. **MixUp with transfer learning** — apply MixUp augmentation (`λ*x1 + (1-λ)*x2`, same for labels) during fine-tuning. Does MixUp improve generalization more for transfer learning (pretrained features) than for training-from-scratch? Plot learning curves for both conditions.
+4. **Cross-dataset transfer** — replace CIFAR-10 with Oxford Flowers 102 (102 classes, ~20 images/class). Does the accuracy gap between "frozen VGG16 + new head" and "train from scratch" grow larger for this smaller dataset? Quantify how many labeled images per class are needed before training from scratch matches transfer learning.
+
+---
+
 <a name="lab-311"></a>

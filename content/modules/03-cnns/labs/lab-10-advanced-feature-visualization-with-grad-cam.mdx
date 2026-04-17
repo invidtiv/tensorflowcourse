@@ -438,6 +438,81 @@ print("Lab 3.9 Complete!")
 print("=" * 60)
 ```
 
+## Validation Checkpoint
+
+Before moving on, verify your Grad-CAM implementation is numerically sane. Paste this cell at the end of the notebook:
+
+```python
+# --- Validation checks ---
+import numpy as np
+
+# 1. Heatmap must be in [0, 1] after ReLU + normalization
+heatmap = grad_cam.compute_heatmap(test_img_preprocessed)
+assert heatmap.min() >= 0.0, f"Heatmap has negative values: {heatmap.min()}"
+assert heatmap.max() <= 1.0 + 1e-6, f"Heatmap exceeds 1.0: {heatmap.max()}"
+
+# 2. Heatmap must not be all-zero (that would mean the target class has zero gradient w.r.t. the feature map — almost always a bug)
+assert heatmap.sum() > 1e-3, "Heatmap is all zeros — check target class index or conv layer name"
+
+# 3. Output spatial size should match the chosen conv layer's feature-map size BEFORE resizing
+target_layer = model.get_layer('block5_conv3')
+expected_h, expected_w = target_layer.output_shape[1:3]
+raw_hm = grad_cam._raw_heatmap if hasattr(grad_cam, '_raw_heatmap') else None
+if raw_hm is not None:
+    assert raw_hm.shape[:2] == (expected_h, expected_w), \
+        f"Raw heatmap shape {raw_hm.shape[:2]} != conv layer {(expected_h, expected_w)}"
+
+# 4. Different classes should yield meaningfully different heatmaps (cosine similarity < 0.95)
+hm_top = grad_cam.compute_heatmap(test_img_preprocessed, class_idx=np.argmax(model.predict(test_img_preprocessed)))
+hm_other = grad_cam.compute_heatmap(test_img_preprocessed, class_idx=(np.argmax(model.predict(test_img_preprocessed)) + 137) % 1000)
+cos = (hm_top.flatten() @ hm_other.flatten()) / (np.linalg.norm(hm_top) * np.linalg.norm(hm_other) + 1e-8)
+assert cos < 0.98, f"Heatmaps for different classes are nearly identical (cos={cos:.3f}) — gradient likely not class-specific"
+
+print("✅ All Grad-CAM validation checks passed")
+```
+
+## Expected Output
+
+When you run this lab, you should observe the following results:
+
+**For VGG16 with `block5_conv3`:**
+- Raw heatmap shape: **(14, 14)** — matching the spatial dimensions of VGG16's last convolutional layer.
+- Top-class prediction confidence: **> 0.8** for recognizable objects (or > 0.5 for synthetic test images).
+- Overlay visualization: hot regions (red/yellow in JET colormap) concentrated on the **main object body/head**, NOT scattered across the background.
+- Heatmap is relatively coarse due to the layer's receptive field, but semantically coherent.
+
+**For ResNet50 with `conv5_block3_out`:**
+- Raw heatmap shape: **(7, 7)** — smaller spatial dimensions due to ResNet50's deeper stride architecture.
+- Heatmap is **sharper and more localized** than VGG16's, with tighter focus on discriminative regions.
+- The smaller spatial size trades resolution for computational efficiency.
+
+**Validation Assertions:**
+- ✅ Heatmap values in range [0, 1] after ReLU and normalization.
+- ✅ Heatmap sum > 1e-3 (not all zeros — indicates gradients are flowing).
+- ✅ Raw heatmap spatial shape matches the target convolutional layer's output shape.
+- ✅ Different class indices produce meaningfully different heatmaps (cosine similarity < 0.98).
+
+**Common Failure Modes & How to Spot Them:**
+
+- **Heatmap is all zeros or uniform:** Gradient is `None` (you forgot `tape.watch(conv_output)` on a non-model output), OR you're using softmax probabilities instead of logits (gradients vanish after saturation).
+- **Heatmap highlights background instead of the object:** Wrong target layer selected — you picked an early conv layer (e.g., `block1_conv2`) which lacks semantic information. Always use the *last* convolutional layer before pooling.
+- **Heatmap shape mismatches image size before overlay:** This is expected — you must resize the heatmap to match the original image dimensions before visualization. The raw heatmap should match the conv layer's output shape.
+
+## Common Pitfalls
+
+1. **Picking the wrong target layer.** Grad-CAM is designed for the *last* convolutional layer (just before global pooling / flatten). Using an early conv layer gives a high-resolution but semantically meaningless heatmap; using a dense layer breaks the spatial interpretation entirely. For VGG16 use `block5_conv3`, for ResNet50 use `conv5_block3_out`.
+2. **Feeding unpreprocessed images.** VGG16/ResNet50 expect `preprocess_input` (BGR channel order and mean-subtraction for VGG). If you skip this, gradients are computed against out-of-distribution activations and heatmaps are noise.
+3. **Forgetting `tape.watch(conv_output)`.** When the feature map is a non-trainable intermediate tensor, `GradientTape` will silently return `None` for its gradient unless you either (a) capture it from a model whose output *is* that tensor, or (b) call `tape.watch(conv_output)` explicitly. A `None` gradient → `TypeError` or all-zero heatmap.
+4. **Using softmax probabilities instead of logits for the target score.** Once softmax saturates, gradients vanish and Grad-CAM produces flat heatmaps. Either extract the pre-softmax logit, or use the top-class probability from a model whose last layer has `activation=None` for visualization.
+5. **Resizing with the wrong interpolation.** Using `cv2.INTER_NEAREST` on a 14×14 heatmap upscaled to 224×224 produces blocky visualizations that misrepresent the underlying attention. Always use `cv2.INTER_CUBIC` or `INTER_LINEAR` for Grad-CAM overlays.
+
+## Stretch Goals
+
+1. **Score-CAM implementation (Exercise 1 formalized).** Replace gradients with masked forward passes: for each feature-map channel, upsample-and-threshold it into a soft mask, apply it to the input, and take the class score on that masked input as the channel's weight. Compare runtime vs Grad-CAM (Score-CAM is gradient-free but ~C× slower where C is the channel count).
+2. **Faithfulness metric.** Compute the *Average Drop* and *Increase in Confidence* metrics from the Grad-CAM++ paper: mask the input with the (normalized) heatmap and measure how the target-class probability changes. A good explanation should *drop* prediction confidence less when you keep the highlighted region.
+3. **Pointing game evaluation.** On a dataset with bounding-box annotations (e.g. ImageNet-Loc or COCO), check whether the argmax of each Grad-CAM heatmap falls inside the ground-truth box. Report accuracy for VGG16, ResNet50, and MobileNetV2.
+4. **Layer-wise attribution movie.** Generate Grad-CAMs for every conv layer in VGG16, stack them as frames, and save an MP4 showing how attention sharpens from low-level edges (block1) to semantic parts (block5). Useful for lecture slides.
+
 
 ---
 

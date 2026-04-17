@@ -389,4 +389,58 @@ print("=" * 60)
 
 ---
 
+## Expected Output
+
+| Layer | Feature map spatial size (32×32 input, VGG16) | Active channels (non-zero mean) | Visual character |
+|---|---|---|---|
+| block1_conv1 | 32 × 32 × 64 | ~60/64 (93%) | Edge detectors, color blobs |
+| block2_conv1 | 16 × 16 × 128 | ~110/128 (86%) | Texture and corner patterns |
+| block3_conv2 | 8 × 8 × 256 | ~200/256 (78%) | Object part detectors, increasingly sparse |
+| block4_conv2 | 4 × 4 × 512 | ~320/512 (63%) | High-level semantic features, very sparse |
+| block5_conv2 | 2 × 2 × 512 | ~200/512 (39%) | Highly abstract; most channels near zero for any one image |
+
+```python
+# Validation assertions for feature map extraction
+import numpy as np
+import tensorflow as tf
+
+# Build activation model extracting all conv layer outputs
+layer_names = [l.name for l in vgg.layers if 'conv' in l.name]
+assert len(layer_names) >= 13, f"Expected >= 13 conv layers in VGG16, got {len(layer_names)}"
+
+activation_model = tf.keras.Model(inputs=vgg.input,
+                                  outputs=[vgg.get_layer(n).output for n in layer_names])
+sample = x_test[:1]  # single image, shape (1, 32, 32, 3)
+activations = activation_model.predict(sample, verbose=0)
+
+# Spatial size should halve after each MaxPool block
+assert activations[0].shape[1] == 32, f"block1 spatial size should be 32, got {activations[0].shape[1]}"
+assert activations[4].shape[1] == 8,  f"block3 spatial size should be 8, got {activations[4].shape[1]}"
+
+# Late layers should be sparser than early layers
+early_active = np.mean(activations[0] > 0)
+late_active  = np.mean(activations[-1] > 0)
+assert late_active < early_active, "Deep layers should have fewer active units than shallow layers"
+print(f"✅ Early layer activity: {early_active:.1%}  Late layer activity: {late_active:.1%}")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| `InvalidArgumentError` when building multi-output model | Sharing a layer output node that was already used in the base model graph causes duplicate node references | Use `tf.keras.Model(inputs=base.input, outputs=[...])` on the *base* model directly, not a re-instantiated copy |
+| Feature maps look identical for early and late layers | All channels displayed at the same global color scale — small late-layer values appear blank | Normalize each feature map to `[0, 1]` independently before display; use `vmin/vmax=None` in `imshow` |
+| Memory error when extracting all 13 VGG16 conv layers at once | 13 output tensors × batch size × spatial dims × 512 channels exceeds RAM for large batches | Extract one image at a time (`batch_size=1`) or extract one layer group at a time |
+| VGG16 feature maps on 32×32 CIFAR images collapse to 1×1 after block5 | VGG16 was designed for 224×224 inputs; at 32×32 the spatial resolution reaches 1×1 after three pooling layers | Either up-sample input to ≥96×96, or stop extracting after block3 for 32×32 inputs |
+| `model.predict` returns all-zero activations for custom layer names | The layer name in the extraction list doesn't match what `model.layers` actually contains | Print `{l.name: l.output_shape for l in model.layers}` to get the exact layer name → shape mapping |
+
+## Stretch Goals
+
+1. **Layer-wise sparsity plot** — compute the fraction of zero-valued units in each conv layer's feature map across 500 test images. Plot sparsity vs. layer depth. Does sparsity increase monotonically, or are there "bottleneck" layers where it plateaus? Overlay the curve for a model trained on CIFAR-10 vs random weights to show that training drives organized sparsity.
+2. **Class-conditional feature map comparison** — extract block3_conv2 features for 5 images per class, compute the mean feature map per class, then compute pairwise cosine distance between class means. Which pairs of classes (e.g., cat vs dog) have the most similar feature maps, and does this match human visual similarity judgements?
+3. **Receptive field verification** — pick a single unit in block4_conv1 (4×4 spatial grid) and compute its theoretical receptive field. Then verify empirically: set all input pixels to zero except a moving 5×5 window and check which window positions cause the unit to activate. Does the empirical RF match the theoretical calculation?
+4. **t-SNE of bottleneck features** — extract the VGG16 `block5_pool` output (2×2×512 = 2048 dims) for all 10000 CIFAR-10 test images. Flatten and project to 2D with t-SNE. Plot with class-colored points. Are the 10 CIFAR-10 classes well-separated in this embedding, despite VGG never training on CIFAR-10?
+
+---
+
 <a name="lab-39"></a>

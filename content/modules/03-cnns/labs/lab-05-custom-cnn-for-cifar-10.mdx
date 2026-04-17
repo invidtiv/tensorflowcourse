@@ -476,12 +476,56 @@ print("✅ All per-class accuracies above 40%")
 ```
 </Callout>
 
+## Expected Output
+
+| Metric | Expected range | Failure hint |
+|---|---|---|
+| Test accuracy (no augmentation, 30 epochs) | 72–78% | Below 65%: check pixel normalization (`/255.0`) |
+| Test accuracy (with flip + translation aug) | 80–86% | No improvement: augmentation not applied to training data |
+| Train–test accuracy gap | 10–15% | Gap >20%: overfitting — add Dropout(0.3–0.5) and augmentation |
+| Total parameter count (3 conv blocks + GAP) | 200k–600k | >2M params: replace `Flatten→Dense(512)` with `GlobalAveragePooling2D` |
+| Per-class accuracy (weakest class) | >40% | Below 30%: label encoding mismatch — check `np.unique(y_train)` returns 0–9 |
+| Training time per epoch (Colab T4) | 15–30 s | >2 min/epoch: batch size too small or data not prefetched |
+
+```python
+# Validation assertions
+test_loss, test_acc = model.evaluate(x_test, y_test_oh, verbose=0)
+assert test_acc > 0.65, f"Test accuracy {test_acc:.2%} too low"
+train_loss, train_acc = model.evaluate(x_train[:5000], y_train_oh[:5000], verbose=0)
+assert train_acc - test_acc < 0.25, f"Overfit gap {train_acc - test_acc:.2%} too large"
+params = model.count_params()
+assert params < 3_000_000, f"Model has {params:,} params — likely Flatten→Dense issue"
+print(f"✅ test_acc={test_acc:.2%}  gap={train_acc-test_acc:.2%}  params={params:,}")
+```
+
+<Callout type="tip" title="Expected Output">
+After ~30 epochs on CIFAR-10 with a modest custom CNN (3 conv blocks + GAP + Dense(10)):
+
+- **Test accuracy**: 72–78% without augmentation, 80–86% with `RandomFlip` + `RandomTranslation`, 87–90% with Mixup/CutMix + cosine LR.
+- **Train accuracy**: 92–97% (higher than test — a ~10–15% gap is normal for CIFAR-10 without aggressive regularization).
+- **Parameter count**: 200k–600k for a reasonable hand-rolled CNN. If `model.summary()` reports >2M params, you are almost certainly using `Flatten() → Dense(512)` after the last conv — swap for `GlobalAveragePooling2D`.
+- **Loss curves**: smooth decay for both train and val in the first 5–10 epochs; val loss should plateau around epoch 15–20 before train loss does. A *rising* val loss with falling train loss after epoch ~8 is the signature of overfitting — add Dropout(0.3–0.5) in the dense block.
+- **Per-class accuracy**: expect lower numbers (55–70%) for visually similar classes — cat vs. dog, deer vs. horse, car vs. truck. Classes like "ship" and "frog" usually come in 10+ points higher.
+- **Training time**: 8–15 min for 30 epochs on a free Colab T4; 40–80 min on a modern laptop CPU.
+
+**Diagnostic tree if numbers are off:**
+
+- **Test acc < 50%** → pixel normalization missing (`/255.0`) or labels not one-hot for `categorical_crossentropy` (use `sparse_categorical_crossentropy` with integer labels instead).
+- **Train acc ~100%, test acc < 65%** → severe overfitting — add augmentation and Dropout before blaming the architecture.
+- **Loss goes to NaN** → lr too high for Adam (try 1e-3 → 1e-4) or un-clipped gradients after a bad batch.
+- **One class at ~0% accuracy** → label encoding mismatch (check `np.unique(y_train)` returns 0–9).
+</Callout>
+
+## Common Pitfalls
+
 <Callout type="warning" title="Common Pitfalls">
 - **Not normalizing pixel values** — CIFAR-10 images are uint8 [0, 255]. Forgetting `x_train = x_train.astype('float32') / 255.0` causes training to diverge or converge very slowly because gradients scale with input magnitude.
 - **Too many FC parameters after flattening** — A 32×32 image after several conv/pool layers can still produce a large flatten vector. Use Global Average Pooling instead of Flatten → Dense(512) to reduce parameters by 10–50×.
 - **No data augmentation** — CIFAR-10 has only 50K training images. Without augmentation (random flips, shifts, rotations), even a small CNN will overfit. `tf.keras.layers.RandomFlip` and `RandomTranslation` are the minimum.
 - **Learning rate too high for deep models** — Starting at lr=0.01 with Adam often works for shallow CNNs but diverges for deeper architectures. Try lr=0.001 or use a warmup schedule.
 </Callout>
+
+## Stretch Goals
 
 <Callout type="info" title="Stretch Goals">
 1. **Implement BatchNorm + ResNet-style skip connections** — Add skip connections to your custom CNN and compare training curves with the plain CNN. Does the skip-connected version train faster or reach higher accuracy?

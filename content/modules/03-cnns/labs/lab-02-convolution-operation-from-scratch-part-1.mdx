@@ -357,4 +357,78 @@ print("=" * 60)
 
 ---
 
+## Expected Output
+
+When you run the full notebook end-to-end on CPU (no GPU required for this
+NumPy-only lab), you should observe the following:
+
+- **Vertical edge detector on the 6×6 test image:** output shape `(4, 4)`,
+  with strongly positive values (~+30 range) along the transition column
+  and strongly negative values (~-30) on the opposite transition. Flat
+  regions should be exactly `0.0`.
+- **Horizontal edge detector:** output shape `(4, 4)`, with the sign
+  pattern rotated 90° relative to the vertical detector. Running both
+  kernels on the same input and taking `np.hypot(gx, gy)` should produce
+  a non-negative magnitude map that highlights both horizontal and
+  vertical transitions.
+- **Sobel-X on the diagonal test image:** non-zero response along the
+  diagonal, zero in the flat corners. The central-pixel magnitude should
+  be ≥ 2× any border response.
+- **Padding='same' vs 'valid':** with a 3×3 kernel on a 6×6 input,
+  `valid` produces a `(4, 4)` output and `same` produces a `(6, 6)`
+  output. Both should match this exactly — off-by-one errors are the
+  most common bug here.
+- **Max pooling (2×2, stride 2) on the 4×4 ramp:** output is
+  `[[6, 8], [14, 16]]`. **Average pooling** on the same input is
+  `[[3.5, 5.5], [11.5, 13.5]]`.
+- **Timing budget:** the full notebook (including the triple-nested
+  convolution loop over a 28×28 MNIST-like image) should complete in
+  **under 5 seconds** on a modern laptop CPU. If it takes >30 s,
+  your convolution loop is almost certainly O(N⁴·K²) with a Python
+  inner loop — acceptable for this teaching lab, but flag it and move
+  on; the vectorized version appears in lab-03 (part 2).
+
+## Common Pitfalls
+
+- **Output shape off-by-one.** The output dimension for a `valid`
+  convolution is `(H - K) // S + 1`, *not* `(H - K) / S`. Forgetting the
+  `+ 1` gives outputs that are one row/column too small and silently
+  corrupts downstream shape assumptions.
+- **Kernel flipping.** True mathematical convolution flips the kernel;
+  deep-learning "convolution" is actually cross-correlation (no flip).
+  This lab uses the cross-correlation convention — do not add a
+  `kernel[::-1, ::-1]` flip or your edge-detector signs will invert.
+- **Integer vs float dtype.** If your test image is `dtype=np.uint8`,
+  negative filter responses wrap around to large positive values
+  (e.g., `-30` becomes `226`). Always cast to `float32` before
+  convolving.
+- **`same` padding with even kernels.** The `(K - 1) // 2` padding
+  formula assumes an odd kernel size. For even-sized kernels you need
+  asymmetric padding (one extra row on the bottom, one extra column on
+  the right). Don't attempt even kernels in this lab — defer to the
+  TensorFlow layer, which handles this internally.
+- **Stride vs dilation confusion.** Stride skips *output* positions;
+  dilation skips *input* positions inside the kernel. They are not
+  interchangeable and produce different output shapes.
+
+## Stretch Goals
+
+- **Vectorize the inner loop.** Replace the triple `for` loop with a
+  single `np.einsum("ijkl,kl->ij", windows, kernel)` call after building
+  the sliding-window view with `np.lib.stride_tricks.sliding_window_view`.
+  Target: ≥50× speedup on the 28×28 MNIST-like image.
+- **Add a `groups` parameter** to your convolution function to support
+  grouped convolution (as used in ResNeXt and MobileNet). Verify that
+  `groups=in_channels` reproduces depthwise convolution.
+- **Implement `im2col` + `gemm`** as a second reference implementation
+  and confirm it produces bit-identical output to the sliding-window
+  version. This is how most real frameworks (including TensorFlow's
+  XLA path) actually dispatch convolution.
+- **Benchmark against `tf.nn.conv2d`** on the same input. Your
+  vectorized NumPy version should be within 5–10× of TensorFlow on
+  CPU; if it's faster than TF, you've made a mistake (most likely
+  shape broadcasting that's silently skipping work).
+
+---
+
 <a name="lab-32"></a>

@@ -475,6 +475,56 @@ print("Lab 3.12 Complete!")
 print("=" * 60)
 ```
 
+---
+
+## Expected Output
+
+| Strategy | CIFAR-10 test accuracy | Epochs to reach 85% | Notes |
+|---|---|---|---|
+| Classifier-only (frozen base, LR=1e-3) | 72–78% | N/A (baseline) | Fastest to train; ceiling limited by frozen features |
+| Stage-1 fine-tune (last block, LR=1e-4) | 82–87% | 15–20 | Large gain from adapting last conv block |
+| Stage-2 fine-tune (LR decay 0.1× per block) | 86–90% | 25–35 | Differential LRs protect early features |
+| Cyclic LR + progressive unfreezing | 87–91% | 20–30 | Cosine annealing cycles help escape local minima |
+| Full fine-tune (uniform LR=1e-5) | 84–89% | 40–60 | Slower convergence; risks overwriting early features |
+
+```python
+# Validation assertions for fine-tuning
+import tensorflow as tf
+
+# After stage-1 fine-tuning, accuracy must exceed frozen baseline
+_, stage1_acc = stage1_model.evaluate(x_test, y_test_oh, verbose=0)
+_, frozen_acc = frozen_model.evaluate(x_test, y_test_oh, verbose=0)
+assert stage1_acc > frozen_acc, \
+    f"Stage-1 fine-tune ({stage1_acc:.2%}) should exceed frozen baseline ({frozen_acc:.2%})"
+
+# Differential LR check: last-block LR must be > 10× first-block LR
+lr_ratios = [g['lr'] for g in optimizer.param_groups] if hasattr(optimizer, 'param_groups') else []
+if lr_ratios:
+    assert lr_ratios[-1] > lr_ratios[0] * 5, "Differential LR not applied correctly"
+
+# Fine-tuned model should use significantly more trainable parameters than frozen
+frozen_trainable = sum(tf.size(w).numpy() for w in frozen_model.trainable_weights)
+stage1_trainable = sum(tf.size(w).numpy() for w in stage1_model.trainable_weights)
+assert stage1_trainable > frozen_trainable * 2, "Unfreezing should increase trainable param count"
+print(f"✅ frozen acc: {frozen_acc:.2%}  stage1 acc: {stage1_acc:.2%}  gain: {stage1_acc-frozen_acc:.2%}")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Fine-tuning decreases accuracy below frozen baseline | LR too high when unfreezing — even one batch at LR=1e-3 can irreversibly corrupt pretrained features | Reduce fine-tuning LR to ≤ 1e-5 for already-trained backbone weights; use `ReduceLROnPlateau` as a safety net |
+| Progressive unfreezing shows no accuracy gain over single-step unfreezing | Same total epochs used for both; progressive unfreezing needs more epochs per stage | Give each stage ≥5 epochs before unfreezing the next block; use early stopping per stage |
+| BatchNorm layers running mean drifts during fine-tuning | When only a few layers are unfrozen, BN in frozen layers still updates its running statistics if `training=True` | Set `base.trainable = False` and pass `training=False` to the base call; frozen BN should use its saved ImageNet statistics |
+| Cosine LR restart conflicts with progressive unfreezing schedule | The LR restarts to `lr_max` right when a new block is unfrozen, which can be too aggressive for the newly thawed weights | Synchronize restart boundaries with unfreeze events, or use a separate small LR for newly unfrozen blocks |
+| Model diverges after knowledge distillation teacher comparison | Distillation loss mixed with cross-entropy loss at equal weight causes the soft-label term to dominate | Scale distillation loss by `(T^2 * α)` where `T` is temperature and `α ∈ [0.1, 0.5]`; start with `α=0.2, T=3` |
+
+## Stretch Goals
+
+1. **ULMFiT-style triangular LR** — implement Smith's (2017) 1-cycle policy: LR increases linearly from `lr/div` to `lr` for 30% of training, then decreases to `lr/div/100` over the remaining 70%. Apply to each fine-tuning stage. Compare final accuracy and training stability vs constant LR fine-tuning.
+2. **Layer-wise relevance propagation (LRP) comparison** — generate LRP attribution maps before and after each fine-tuning stage. Quantify how the attribution pattern shifts from ImageNet-salient regions (e.g., backgrounds) to CIFAR-10-salient regions (e.g., object foregrounds) as more layers are unfrozen.
+3. **Stochastic depth during fine-tuning** — randomly drop residual blocks with probability `p_l = l/L * 0.5` during training (where `l` is depth and `L` is total depth). This acts as a structured dropout for ResNet fine-tuning. Measure the effect on overfitting and compare to standard Dropout on the Dense head.
+4. **Task-arithmetic model merging** — fine-tune two ResNet50 models on CIFAR-10 and CIFAR-100 separately. Compute the "task vector" `τ = θ_finetuned - θ_pretrained` for each. Add `λ * τ_CIFAR10` to the CIFAR-100 model and measure accuracy on both tasks. Does task arithmetic transfer knowledge across datasets without catastrophic forgetting?
 
 ---
 

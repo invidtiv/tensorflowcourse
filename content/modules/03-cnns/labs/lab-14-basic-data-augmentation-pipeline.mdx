@@ -548,4 +548,54 @@ print("=" * 60)
 
 ---
 
+## Expected Output
+
+| Augmentation strategy | Test accuracy (CIFAR-10, 30 epochs) | Accuracy gain vs no augmentation |
+|---|---|---|
+| No augmentation (baseline) | 72–78% | — |
+| Horizontal flip only | 74–80% | +2–3% |
+| Flip + random translation (±10%) | 77–83% | +4–6% |
+| Flip + translation + rotation (±15°) | 79–84% | +5–7% |
+| Full basic pipeline (flip + shift + zoom + brightness) | 81–86% | +7–9% |
+
+```python
+# Validation assertions for augmentation pipeline
+import numpy as np
+import tensorflow as tf
+
+# Augmented batch should still be in valid pixel range
+augmented_batch = augmentation_layer(x_train[:32], training=True)
+assert augmented_batch.numpy().min() >= 0.0, "Augmented pixels below 0"
+assert augmented_batch.numpy().max() <= 1.0, "Augmented pixels above 1 — clipping needed"
+
+# Augmented and original images should differ (augmentation is stochastic)
+diff = np.abs(augmented_batch.numpy() - x_train[:32])
+assert diff.mean() > 0.01, "Augmented images identical to originals — augmentation not applied"
+
+# With augmentation, overfitting gap should shrink
+_, aug_acc  = aug_model.evaluate(x_test, y_test_oh, verbose=0)
+_, base_acc = base_model.evaluate(x_test, y_test_oh, verbose=0)
+assert aug_acc >= base_acc - 0.02, "Augmented model significantly worse — check aug is only on train set"
+print(f"✅ baseline: {base_acc:.2%}  augmented: {aug_acc:.2%}  pixel range: [{augmented_batch.numpy().min():.3f}, {augmented_batch.numpy().max():.3f}]")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Augmentation applied to validation/test set | `ImageDataGenerator` applied uniformly without separating train/val generators | Create two separate generators: one with augmentation for training, one with only normalization for validation |
+| Vertical flip applied to CIFAR-10 natural images | Vertical flip makes cars, horses, and planes appear upside-down — unnatural for the dataset | Stick to `horizontal_flip=True` only; vertical flip hurts accuracy on datasets with strong upright bias |
+| `random_rotation` with `fill_mode='constant'` leaves black corners | Default constant fill creates black borders that look like unnatural image artifacts | Use `fill_mode='reflect'` or `fill_mode='nearest'` to fill rotated borders with plausible pixel values |
+| Augmentation too aggressive causing underfitting | High rotation (>30°), large zoom (>0.3), strong brightness changes applied simultaneously overwhelm the model | Start with one augmentation at a time; validate that each individually improves val accuracy before combining |
+| `training=True` not passed to `tf.keras.Sequential` augmentation layer during inference | Keras preprocessing layers are stateless and always apply during inference if not wrapped in `training=True` guard | Wrap augmentation layers in a `training` argument: apply only when `model(x, training=True)` |
+
+## Stretch Goals
+
+1. **Augmentation ablation study** — train 5 models: baseline, +flip, +flip+shift, +flip+shift+zoom, +flip+shift+zoom+brightness. Plot final test accuracy for each. Identify the point of diminishing returns — does combining all augmentations help, or does the marginal gain from the 4th augmentation approach zero?
+2. **Test-Time Augmentation (TTA)** — at inference time, generate 10 augmented versions of each test image (random flip + crop), collect 10 softmax outputs, and average them. Compare TTA accuracy vs single-image accuracy. How much does TTA help for borderline predictions near the decision boundary?
+3. **Per-class augmentation tuning** — CIFAR-10 class "ship" benefits from vertical reflection (ships reflect on water), while "horse" does not. Implement a class-conditional augmentation strategy using a custom `tf.data` pipeline that selects different augmentation policies per class. Measure per-class accuracy improvement.
+4. **AutoAugment policy search (simplified)** — implement a grid search over 10 augmentation policies (combinations of 2 operations from {flip, crop, rotate, brightness, contrast, shear}) and train each for 10 epochs. Select the top policy and train for 30 epochs. How close does this simple search get to the original AutoAugment result (CIFAR-10 ~98.5%)?
+
+---
+
 <a name="lab-314"></a>

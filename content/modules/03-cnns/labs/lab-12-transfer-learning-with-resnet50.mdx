@@ -457,4 +457,57 @@ print("=" * 60)
 
 ---
 
+## Expected Output
+
+| Phase | Test accuracy (CIFAR-10) | Trainable params | Notes |
+|---|---|---|---|
+| Frozen ResNet50 + Dense head | 72–78% | ~2.1M (head only) | ResNet50 head smaller than VGG16 due to GAP layer |
+| Unfreeze last residual stage (conv5_block*) | 82–87% | ~8.5M | Skip connections improve gradient flow during fine-tuning |
+| Full fine-tune (all layers) | 85–90% | ~25.6M | Faster convergence than VGG16 fine-tune due to BN layers |
+| ResNet50 vs VGG16 (same fine-tune protocol) | ResNet: +2–5% over VGG | ResNet: 25.6M vs VGG: 138M | ResNet uses ~5.4× fewer params for equal or better accuracy |
+
+```python
+# Validation assertions for ResNet50 transfer learning
+import tensorflow as tf
+import numpy as np
+
+# Confirm ResNet50 parameter efficiency vs VGG16
+resnet_params = resnet_model.count_params()
+assert resnet_params < 50_000_000, f"ResNet50 should have ~25.6M total params, got {resnet_params:,}"
+
+# Frozen base check
+trainable = sum(tf.size(w).numpy() for w in resnet_model.trainable_weights)
+total = resnet_model.count_params()
+assert trainable < total * 0.10, f"Base not properly frozen: {trainable:,} / {total:,} trainable"
+
+# Accuracy check
+_, acc = resnet_model.evaluate(x_test, y_test_oh, verbose=0)
+assert acc > 0.65, f"ResNet50 feature extraction acc {acc:.2%} below threshold"
+
+# ResNet50 preprocessing: expects [0, 255] with ImageNet channel-wise mean subtraction
+sample_raw = x_test[:1] * 255.0
+preprocessed = tf.keras.applications.resnet50.preprocess_input(sample_raw)
+assert preprocessed.numpy().min() < -50, "ResNet50 preprocess_input should zero-center pixels"
+print(f"✅ ResNet50 params: {resnet_params:,}  frozen base  acc: {acc:.2%}")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| BatchNorm layers in ResNet50 still update statistics when base is frozen | `model.trainable = False` stops weight updates but Keras BN layers still accumulate running mean/variance unless `training=False` is passed | Set `base_model(inputs, training=False)` or wrap extraction in `tf.keras.backend.set_learning_phase(0)` during frozen-base training |
+| Fine-tuned ResNet no better than frozen baseline | Unfreezing the entire network at once with LR=1e-3 immediately destroys pretrained features in early layers | Unfreeze only the last residual stage (conv5_block*) first; use LR ≤ 1e-5 for unfrozen layers |
+| `preprocess_input` produces values far outside `[-128, 128]` | Passing already-normalized `[0, 1]` images to `resnet50.preprocess_input` instead of `[0, 255]` | Un-normalize: `resnet50.preprocess_input(x_test * 255.0)`, not `resnet50.preprocess_input(x_test)` |
+| Bottleneck output shape `(None, 1, 1, 2048)` instead of `(None, 2048)` | `include_top=False` without `GlobalAveragePooling2D` leaves the spatial dimensions; 32×32 CIFAR collapses to 1×1 | Add `layers.GlobalAveragePooling2D()` after the ResNet50 base before the Dense head |
+| ResNet50 worse than VGG16 for first 5 epochs of fine-tuning | ResNet's skip connections require the BN layers to be properly calibrated — they adapt more slowly after unfreezing | Train 3–5 extra epochs with BN in training mode before evaluating; use `model.fit(..., epochs=warmup_epochs)` with frozen BN, then unfreeze |
+
+## Stretch Goals
+
+1. **ResNet50 vs EfficientNetB0 accuracy/FLOPs Pareto** — add EfficientNetB0 (`tf.keras.applications.EfficientNetB0`) to the comparison. EfficientNetB0 has ~5.3M params vs ResNet50's 25.6M. Plot accuracy vs FLOPs (compute with `tf.profiler`) for all three models (VGG16, ResNet50, EfficientNetB0) on a single chart. Which sits on the Pareto frontier?
+2. **PCA of ResNet50 bottleneck features** — extract 2048-dim `avg_pool` features for all 10k test images. Apply PCA and project to 2D and 50D. Compare 2D t-SNE visualization with VGG16 block5_pool features from lab-09. Does ResNet's skip-connection architecture produce more linearly separable features?
+3. **Grad-CAM on fine-tuned ResNet50** — after full fine-tuning, generate Grad-CAM heatmaps for 5 correctly and 5 incorrectly classified CIFAR-10 images. Compare the spatial attention regions between the frozen-base model and the fully fine-tuned model. Do the heatmaps shift from ImageNet-relevant regions to CIFAR-10-relevant regions?
+4. **Layer Rotation (LR-Rate Layerwise Adaptation)** — implement LARS optimizer or manually assign per-layer learning rates: `lr_layer = base_lr * (||w|| / ||g||)` where `||w||` is weight norm and `||g||` is gradient norm. Compare convergence speed against a fixed LR of 1e-4 for fine-tuning the last 10 layers.
+
+---
+
 <a name="lab-312"></a>
