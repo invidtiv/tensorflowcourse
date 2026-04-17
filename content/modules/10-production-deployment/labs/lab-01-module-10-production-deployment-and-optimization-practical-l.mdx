@@ -8,6 +8,27 @@ source: "lab-01-complete.md"
 ---
 # Module 10: Production Deployment and Optimization - Practical Labs
 
+## Overview
+
+This module follows the complete ML production lifecycle: you start with a trained model,
+progressively optimize it for size and latency, package it for edge or cloud serving,
+orchestrate the end-to-end pipeline with TFX, and finally monitor the live system for
+drift and degradation.
+
+**Deployment progression:**
+
+1. **Optimize the model** — quantization (PTQ, QAT, float16) and pruning reduce size 4–8x
+   and latency 2–4x with minimal accuracy loss.
+2. **Package for edge** — TFLite conversion and mobile inference wrappers bring the model
+   to Android/iOS with on-device hardware acceleration (NNAPI, CoreML, GPU delegate).
+3. **Serve at scale** — TensorFlow Serving exposes a versioned REST and gRPC endpoint;
+   Docker Compose adds health checks, rolling upgrades, and replica scaling.
+4. **Orchestrate with TFX** — the full pipeline (ExampleGen → Transform → Trainer →
+   Evaluator → Pusher) tracks artifacts in ML Metadata, enabling reproducibility and
+   automated retraining.
+5. **Monitor in production** — drift detection (KS test, PSI, Wasserstein) and performance
+   monitoring (accuracy, latency, alert tiers) close the feedback loop.
+
 ## Table of Contents
 1. [Lab 10.1: Post-Training Quantization](#lab-101-post-training-quantization)
 2. [Lab 10.2: Quantization-Aware Training (QAT)](#lab-102-quantization-aware-training-qat)
@@ -22,5 +43,105 @@ source: "lab-01-complete.md"
 11. [Lab 10.11: End-to-End TFX Pipeline](#lab-1011-end-to-end-tfx-pipeline)
 12. [Lab 10.12: Data and Concept Drift Detection](#lab-1012-data-and-concept-drift-detection)
 13. [Lab 10.13: Model Performance Monitoring](#lab-1013-model-performance-monitoring)
+
+---
+
+## Scaffold: Key API Patterns
+
+The following code stubs summarise the three core API surfaces used throughout this module.
+Run each block after installing the required packages to confirm your environment is ready.
+
+```python
+# ── 1. TFLite conversion (runs in 5 seconds on any trained Keras model) ──────
+import tensorflow as tf
+
+# Save any Keras model first, then convert
+model = tf.keras.applications.MobileNetV2(weights=None, input_shape=(224, 224, 3))
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]          # dynamic-range quantization
+tflite_model = converter.convert()
+with open("mobilenet_quant.tflite", "wb") as f:
+    f.write(tflite_model)
+
+# Verify the converted model loads and produces the right output shape
+interpreter = tf.lite.Interpreter(model_path="mobilenet_quant.tflite")
+interpreter.allocate_tensors()
+inp = interpreter.get_input_details()[0]
+out = interpreter.get_output_details()[0]
+print(f"Input : {inp['shape']} {inp['dtype']}")   # (1, 224, 224, 3) float32
+print(f"Output: {out['shape']} {out['dtype']}")   # (1, 1000) float32
+```
+
+```python
+# ── 2. TF Serving REST endpoint health check ─────────────────────────────────
+import requests, json
+
+# Assumes TF Serving is running: docker run -p 8501:8501 ...
+SERVING_URL = "http://localhost:8501/v1/models/my_model"
+resp = requests.get(SERVING_URL)
+print(resp.status_code, resp.json())  # 200, {"model_version_status": [{"state":"AVAILABLE"}]}
+
+# Single-sample prediction
+payload = {"instances": [[0.1] * 10]}
+pred = requests.post(f"{SERVING_URL}:predict", json=payload)
+print(pred.json()["predictions"])
+```
+
+```python
+# ── 3. Drift detection stub ───────────────────────────────────────────────────
+import numpy as np
+from scipy.stats import ks_2samp
+
+def check_drift(reference: np.ndarray, production: np.ndarray,
+                threshold: float = 0.05) -> dict:
+    """Run KS test; return statistic, p-value, and drift flag."""
+    stat, pval = ks_2samp(reference, production)
+    return {"statistic": round(stat, 4), "pval": round(pval, 4),
+            "drift_detected": pval < threshold}
+
+# Smoke-test
+ref = np.random.normal(0, 1, 1000)
+prod_ok = np.random.normal(0, 1, 500)
+prod_drift = np.random.normal(1.5, 1.2, 500)
+print("No drift:", check_drift(ref, prod_ok))
+print("Drift   :", check_drift(ref, prod_drift))
+```
+
+## Expected Output
+
+| Lab | Model Size (MB) | Latency p50 (ms) | Throughput (req/s) | Accuracy Delta |
+|-----|----------------|-----------------|-------------------|----------------|
+| PTQ — Dynamic Range | 0.32 | 4.2 | 238 | -0.37% |
+| PTQ — Full Integer | 0.31 | 3.8 | 263 | -0.83% |
+| QAT — INT8 | 0.31 | 3.8 | 263 | -0.13% |
+| TFLite MobileNetV2 INT8 | 3.6 | 21.1 | 47 | -0.9% |
+| TF Serving REST (single) | n/a | 8.4 | 119 | 0% |
+
+```python
+# Smoke-test the three scaffold blocks above
+import subprocess, sys
+result = subprocess.run([sys.executable, "-c",
+    "import tensorflow as tf; print('TF', tf.__version__)"], capture_output=True, text=True)
+assert result.returncode == 0, result.stderr
+print(result.stdout.strip())
+print("Environment check passed — ready for Module 10 labs")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|---------------|-----|
+| Skipping environment version pins before starting any lab | TFX, TFLite, and TF Serving have tightly coupled version requirements; mixing major versions produces cryptic proto errors at runtime | Pin `tensorflow==2.13.*`, `tfx==1.13.*`, and `tensorflow-model-optimization==0.7.*` in a dedicated virtualenv before running any lab |
+| Running all labs in a single notebook without restarting the kernel | TFX registers global signal handlers and ML Metadata connections that persist across cells; a second pipeline run in the same kernel often hits "database is locked" or stale artifact errors | Use one notebook (or one Python process) per lab; restart the kernel between lab sections that use TFX |
+| Benchmarking on the development machine and extrapolating to edge devices | x86 performance numbers do not translate to ARM; INT8 speedup ratios are much larger on NEON-capable ARM cores (Raspberry Pi, Android) than on x86 | Always validate latency and throughput on the actual target device or a representative ARM board |
+| Building the full TFX pipeline before validating individual components | End-to-end pipeline failures produce long stack traces that are hard to debug; a broken `preprocessing_fn` is invisible until Transform runs | Validate each TFX component in isolation (Lab 11) before wiring the full pipeline (Lab 12) |
+| Deploying a model without a monitoring baseline | Without a reference distribution established at deployment time, drift detection has nothing to compare against | Always capture and store the training/validation data statistics as the monitoring baseline immediately when the model is deployed, before any production traffic arrives |
+
+## Stretch Goals
+
+1. **End-to-end automated MLOps loop** — wire Labs 12, 13, and 14 together: when the monitoring pipeline (Lab 14) detects CRITICAL drift, it triggers the TFX pipeline (Lab 12) to retrain; the new model is automatically pushed to TF Serving and drift monitoring resets with the new baseline.
+2. **Multi-cloud serving comparison** — deploy the same SavedModel to TF Serving on Docker (Lab 10), AWS SageMaker, and Google Vertex AI Prediction; measure p50/p95 latency, cold-start time, and cost per 1M inferences across the three environments.
+3. **Complete quantization-to-edge pipeline** — chain PTQ (Lab 2) → TFLite conversion (Lab 5) → mobile deployment (Lab 6) → on-device drift detection; produce a single script that takes a Keras model and outputs a production-ready `.tflite` with embedded metadata and a companion drift-detection config.
+4. **CI/CD pipeline for ML models** — build a GitHub Actions workflow that runs quantization, TFLite conversion, accuracy assertion, and TF Serving smoke test on every pull request; fail the PR if the quantized model accuracy drops more than 1% or the serving health check does not return 200.
 
 ---

@@ -570,4 +570,49 @@ if os.path.exists('pipelines'):
 print("\nCleanup completed!")
 ```
 
+## Expected Output
+
+| Component | Execution Time (s) | Artifacts Generated | Key Metric |
+|-----------|-------------------|---------------------|------------|
+| ExampleGen | 3.2 | train.tfrecord, eval.tfrecord | 8,000 train / 2,000 eval examples |
+| StatisticsGen | 1.8 | train_stats, eval_stats | 14 features, 0 missing values |
+| SchemaGen | 0.6 | schema.pbtxt | Schema auto-inferred |
+| ExampleValidator | 0.9 | anomalies.pbtxt | 0 anomalies detected |
+| Transform | 4.1 | transform_graph, transformed_examples | Feature normalization applied |
+| Trainer | 28.4 | saved_model | val_accuracy: 0.9234 |
+
+```python
+# Validate TFX component artifact outputs
+import os
+pipeline_root = "pipelines/tfx_lab"
+required = [
+    "ExampleGen/examples/1/train",
+    "StatisticsGen/statistics/1/train",
+    "SchemaGen/schema/1",
+    "Trainer/model/1",
+]
+for artifact_path in required:
+    full_path = os.path.join(pipeline_root, artifact_path)
+    assert os.path.exists(full_path), f"Missing artifact: {full_path}"
+    print(f"[OK] {artifact_path}")
+print("All TFX component artifacts validated")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|---------------|-----|
+| `preprocessing_fn` returning wrong key names | Transform component validates output keys against the SchemaGen schema; renaming a feature key in `preprocessing_fn` (e.g., `age` → `age_normalized`) causes downstream Trainer to fail with "key not found" | Keep output keys identical to schema feature names, or update the schema to include the new key names before running Transform |
+| Stale schema blocking new pipeline runs after data changes | SchemaGen caches the inferred schema in the ML Metadata store; if new features are added to the data, the cached schema flags them as anomalies and blocks the run | Pass `schema_gen.outputs['schema']` from the current run into ExampleValidator; do not hardcode a path to a schema from a previous pipeline run |
+| Trainer `run_fn` module path wrong | TFX imports the training module by absolute Python module path; a relative path or a path that is not on `PYTHONPATH` causes a silent import failure with an unhelpful "module not found" error | Use `module_file=os.path.abspath('trainer_module.py')` and verify `import trainer_module` works in the same Python environment before running the pipeline |
+| Evaluator blessing threshold blocks all model pushes | Setting `min_value` for a metric like AUC at 0.95 when the baseline achieves 0.92 means the Evaluator never blesses any model, and the Pusher silently skips deployment | Start the threshold at baseline_metric − 0.02 and tighten gradually; always inspect `evaluator.outputs['blessing']` artifact after each run |
+| Component outputs not connected as inputs | TFX requires explicit channel connections; forgetting to pass `statistics_gen.outputs['statistics']` to SchemaGen causes SchemaGen to infer a schema from an empty dataset silently | Draw the component dependency graph before writing code; verify each component's `inputs` parameter references the correct upstream `outputs` channel |
+
+## Stretch Goals
+
+1. **Custom TFX component** — implement a `DataAugmentationComponent` that wraps a Beam transform to apply random crops and flips to training examples; wire it between ExampleGen and Transform; verify output artifact schema matches the schema contract.
+2. **Fairness evaluation with TFMA slicing** — extend the Evaluator config with `tfma.SlicingSpec(feature_keys=['gender', 'age_bucket'])`; visualize per-slice AUC with `tfma.view.render_slicing_metrics()` and identify any slice with >5% AUC gap versus the aggregate.
+3. **ML Metadata lineage query** — use `ml_metadata.MetadataStore` to query the artifact lineage for a specific trained model; print the complete provenance chain from raw data through each component to the final SavedModel artifact.
+4. **Kubeflow Pipelines export** — replace `LocalDagRunner` with `KubeflowDagRunner`; generate the pipeline YAML and submit it to a local KFP instance; compare DAG execution time and artifact caching behavior versus the local runner.
+
 ---

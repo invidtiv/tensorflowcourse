@@ -409,4 +409,52 @@ for f in ['baseline.tflite', 'pruned_model.tflite',
 print("\nCleanup completed!")
 ```
 
+## Expected Output
+
+| Metric | Baseline (FP32) | Pruned 50% | Clustered 32 | Pruned+Quantized |
+|--------|----------------|-----------|--------------|-----------------|
+| Model size (MB) | 1.82 | 1.76 | 0.48 | 0.46 |
+| Latency (ms/inference) | 9.4 | 8.1 | 4.2 | 3.1 |
+| Throughput (req/s) | 106 | 123 | 238 | 323 |
+| Memory footprint (MB) | 6.8 | 6.1 | 2.9 | 2.7 |
+| Accuracy delta vs FP32 | — | -0.3% | -0.7% | -1.2% |
+
+```python
+# Validate optimization pipeline
+import tensorflow as tf, numpy as np
+models = {
+    "Pruned": "pruned_model.tflite",
+    "Clustered": "clustered_model.tflite",
+    "Combined": "combined_optimized.tflite",
+}
+for name, path in models.items():
+    interp = tf.lite.Interpreter(model_path=path)
+    interp.allocate_tensors()
+    inp = interp.get_input_details()[0]
+    out = interp.get_output_details()[0]
+    dummy = np.zeros(inp['shape'], dtype=np.float32)
+    interp.set_tensor(inp['index'], dummy)
+    interp.invoke()
+    pred = interp.get_tensor(out['index'])
+    print(f"{name}: output shape {pred.shape} — OK")
+print("All optimization validation checks passed")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|---------------|-----|
+| Pruning without sparsity-aware fine-tuning | Magnitude pruning zeros weights but the remaining weights were never retrained to compensate; accuracy drops proportionally to sparsity level | Always follow pruning with ≥2 epochs of fine-tuning at low LR; use `tfmot.sparsity.keras.UpdatePruningStep` callback during fine-tuning |
+| Weight clustering applied to BatchNorm layers | Clustering quantises the scale/shift parameters of BN layers, which are already very small and sensitive, causing disproportionate accuracy loss | Exclude BN layers from clustering with `tfmot.clustering.keras.cluster_weights(model, exclude_layers=[...])` |
+| Applying pruning after quantization | Quantization-aware training reorders graph nodes; applying pruning masks afterward is undefined behavior in TF-MOT and silently produces wrong shapes | Always prune first, fine-tune, strip pruning wrappers (`strip_pruning`), then apply QAT or PTQ |
+| Using too few clusters for convolutional kernels | Setting `number_of_clusters` too low (e.g., 8) for large Conv2D kernels destroys representational capacity; the model shrinks on disk but accuracy collapses | Use 32–64 clusters for Conv2D weight tensors; verify accuracy on a validation split before committing the clustered model |
+| NNAPI/GPU delegate failing on clustered models | The NNAPI and GPU delegates require dense weight formats; clustered weights stored as centroid lookup tables require an extra decompression step not supported by all delegates | Run `tf.lite.experimental.Analyzer.analyze()` on the clustered `.tflite` to confirm the delegate-compatibility report before shipping |
+
+## Stretch Goals
+
+1. **Prune + cluster + quantize combined Pareto sweep** — apply sparsity at [30%, 50%, 70%], then cluster at [16, 32, 64] centroids, then apply INT8 quantization; plot the resulting accuracy/size/latency Pareto front to find the optimal operating point for a 5 MB budget.
+2. **Structured pruning with channel removal** — use `tfmot.sparsity.keras.prune_low_magnitude` with `ConstantSparsity` on entire convolutional filters; verify that pruned channels are actually removed (not just zeroed) in the TFLite graph using the FlatBuffer schema reader.
+3. **Knowledge distillation as an alternative** — train a student model that is 5x smaller than the pruned baseline, supervised by the teacher's logits; compare the student vs. the pruned+quantized model at the same size on accuracy and latency.
+4. **Benchmark on-device with TFLite benchmark tool** — use the official `benchmark_model` binary (Android/Linux) with `--use_nnapi=true` and `--use_gpu=true` flags on the combined optimized model; compare p50/p95/p99 latency to the Python-side measurements to quantify the host-overhead gap.
+
 ---

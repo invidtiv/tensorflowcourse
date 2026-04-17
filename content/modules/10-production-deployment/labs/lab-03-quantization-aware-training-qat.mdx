@@ -356,4 +356,21 @@ Post-Training Quantization     102.4        0.9780       0.0045
 QAT Quantization               102.4        0.9812       0.0013
 ```
 
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|---------------|-----|
+| Using a learning rate identical to baseline training | QAT fine-tuning with a high LR (e.g., 1e-3) causes the fake-quant nodes to destabilize weights that were already converged, erasing the accuracy advantage | Set the QAT fine-tuning LR to 1/10–1/100 of the original LR (typically 1e-4 to 1e-5) |
+| Applying `quantize_model()` before training the baseline | QAT wraps a fully-trained model; applying it to an untrained model forces the network to simultaneously learn weights and calibrate quantization ranges, which converges poorly | Always train the float baseline to convergence first, then wrap with `tfmot.quantization.keras.quantize_model()` |
+| Forgetting `strip_pruning()` before QAT when combining with pruning | Pruning wrappers left in the graph confuse the QAT fake-quant insertion and produce duplicate quantization nodes around pruned kernels | Call `tfmot.sparsity.keras.strip_pruning(pruned_model)` before passing to `quantize_model()` |
+| Comparing QAT accuracy against the float model before TFLite conversion | The QAT model evaluated with `model.evaluate()` is still float (fake-quant nodes simulate rounding but don't actually reduce precision); it can appear slightly worse than baseline even when the deployed int8 model is better | Always convert to `.tflite` and evaluate via `tf.lite.Interpreter` to get the true deployed accuracy |
+| Selective quantization missing `quantize_scope()` context | Using `quantize_annotate_layer()` without wrapping the model reconstruction in `quantize_scope()` causes deserialization failures when loading the model from disk | Wrap any `clone_model` call with `with tfmot.quantization.keras.quantize_scope():` to register the custom objects |
+
+## Stretch Goals
+
+1. **QAT + knowledge distillation** — fine-tune the QAT model using the FP32 teacher's soft targets (temperature-scaled softmax) in addition to the hard labels. Measure the accuracy recovery on a task where vanilla PTQ loses >2 pp.
+2. **Layer-sensitivity analysis** — disable QAT on each layer individually and record the accuracy drop per layer; use this map to identify which layers most benefit from staying in float16 in a mixed-precision deployment.
+3. **Canary deployment via TF Serving model versions** — serve the FP32 model as version 1 and the QAT int8 as version 2 in the same TF Serving instance; route 10% of requests to v2 and compare latency and accuracy metrics.
+4. **Edge TPU compilation of QAT output** — run `edgetpu_compiler` on the QAT int8 `.tflite` and compare the percentage of ops mapped to the Edge TPU versus an equivalent PTQ model; QAT typically achieves higher on-chip utilization.
+
 ---

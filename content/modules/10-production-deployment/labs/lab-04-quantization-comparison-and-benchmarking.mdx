@@ -443,4 +443,21 @@ QAT                  128.12       75.0%           0.8921       3.30
 ------------------------------------------------------------------------------------------
 ```
 
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|---------------|-----|
+| Benchmarking on the host CPU instead of the target device | TFLite is optimized for ARM SIMD (NEON/SVE); x86 benchmarks show different speedup ratios (often worse for INT8 than NEON-native devices) and mislead deployment decisions | Always benchmark on the actual target hardware or a representative ARM board (Raspberry Pi, Android phone) |
+| Using `time.time()` around a single invoke call | A single call includes Python GIL acquisition, tensor copy, and OS scheduling jitter; results are noisy and non-comparable across runs | Warm up with ≥10 calls, then average over ≥100 timed calls; use `time.perf_counter()` for sub-millisecond resolution |
+| Reporting only top-1 accuracy for the comparison | On Fashion-MNIST/CIFAR-10 top-1 accuracy can appear stable while confusion between similar classes (shirt vs. coat) increases; quantization often hurts boundary classes disproportionately | Also compute per-class F1 and a confusion-matrix delta between FP32 and each quantized variant |
+| Treating Dynamic Range and Full Integer as equivalent in size | Both produce ~4x file-size reduction, but Full Integer also quantizes activations, yielding additional runtime-memory savings and making it the only option for Edge TPU / microcontroller deployment | Explicitly report runtime arena size (use `tf.lite.experimental.Analyzer`) alongside file size |
+| Comparing models with different calibration set distributions | If the representative dataset for INT8 calibration is drawn from a different domain than the test set, the reported accuracy drop is artificially inflated or deflated, making the comparison invalid | Draw calibration samples from the same held-out split as the evaluation set, with class balance matching the expected deployment distribution |
+
+## Stretch Goals
+
+1. **A/B testing infrastructure** — deploy the FP32 and QAT int8 models as versioned endpoints in TF Serving; build a thin A/B router that splits traffic 50/50 and logs per-variant latency and prediction distribution to compare production performance.
+2. **Pruning + quantization combined sweep** — apply structured pruning at [30%, 50%, 70%] sparsity, then apply dynamic-range quantization to each pruned variant; plot the accuracy/size/latency Pareto front to find the optimal operating point.
+3. **Shadow mode evaluation** — serve the FP32 model in production and route every request to the INT8 model in the background (shadow mode); compare prediction agreement rate and latency without exposing users to any INT8 risk.
+4. **SageMaker/Vertex AI benchmarking** — deploy all five model variants to a managed endpoint (SageMaker or Vertex AI Prediction) and compare the cloud cost per 1M inferences, factoring in instance type, batch size, and model size.
+
 ---

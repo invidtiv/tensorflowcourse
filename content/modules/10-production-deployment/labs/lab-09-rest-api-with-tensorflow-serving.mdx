@@ -604,4 +604,39 @@ for f in ['flask_app.py', 'load_test.py']:
 print("\nCleanup completed!")
 ```
 
+## Expected Output
+
+| Metric | Single Request | Batch (32) | Concurrent (10 clients) |
+|--------|---------------|-----------|------------------------|
+| Latency p50 (ms) | 8.4 | 14.2 | 11.7 |
+| Latency p95 (ms) | 12.1 | 19.8 | 24.3 |
+| Throughput (req/s) | 119 | 2,254 | 856 |
+| Memory footprint (MB) | 312 | 318 | 315 |
+| HTTP 200 success rate | 100% | 100% | 99.8% |
+
+```bash
+# Validate TF Serving REST endpoint
+curl -s -X POST http://localhost:8501/v1/models/serving_model:predict \
+  -H "Content-Type: application/json" \
+  -d '{"instances": [[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]]}' \
+| python3 -c "import sys, json; r=json.load(sys.stdin); assert 'predictions' in r, 'Missing predictions key'; print('REST API OK — classes:', len(r['predictions'][0]))"
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|---------------|-----|
+| Wrong JSON input key (`inputs` vs `instances`) | TF Serving REST accepts both `instances` (row format) and `inputs` (column format) but mixing them returns a 400 with a cryptic "Field 'instances' is missing" error | Use `instances` for simple array inputs and `inputs` for named-input models; check the SavedModel signature with `saved_model_cli show --dir . --all` |
+| Sending float64 (Python default) instead of float32 | `json.dumps(list(numpy_array))` serializes float64 values; TF Serving silently accepts them but adds an implicit cast that adds ~2 ms per request on large payloads | Cast arrays with `.astype(np.float32).tolist()` before JSON serialization |
+| No connection pooling in the client | Creating a new HTTP connection per request pays TCP handshake + TLS overhead (5–15 ms); at 100 req/s this dominates the serving latency | Use `requests.Session()` or `httpx.Client()` with keep-alive so connections are reused across requests |
+| Batch size not tuned for the serving instance | Default TF Serving serves each request as batch-of-1; if GPU is available, throughput is dominated by batch overhead and p99 latency spikes under load | Enable dynamic batching in `batching_parameters.txt` with `max_batch_size`, `batch_timeout_micros`, and `max_enqueued_batches` tuned to your hardware |
+| Flask wrapper blocking on synchronous requests | A single-threaded Flask app wrapping TF Serving saturates at ~80 req/s even when TF Serving can handle 500+ req/s | Use `gunicorn --workers 4 --worker-class gevent` or replace Flask with FastAPI + uvicorn for async request handling |
+
+## Stretch Goals
+
+1. **gRPC client for low-latency inference** — implement the same predict call using `grpc` and `tensorflow-serving-api`; send 1000 requests over both REST and gRPC, record p50/p95/p99 latency histograms, and quantify the serialization overhead difference for a 1 KB vs 1 MB payload.
+2. **Async batch client with asyncio** — rewrite the load test using `aiohttp` with a semaphore-bounded concurrency of 50; compare throughput and CPU utilization against the synchronous `requests` version.
+3. **A/B testing infrastructure** — deploy two model versions behind an nginx upstream; write a Lua snippet that randomly routes 20% of `/predict` traffic to v2 and logs version, latency, and prediction confidence to a PostgreSQL table for offline analysis.
+4. **Shadow mode serving** — forward every production request to the current model synchronously and to a candidate model asynchronously (fire-and-forget); compare prediction agreement rate and latency distribution to validate the candidate before promoting it.
+
 ---

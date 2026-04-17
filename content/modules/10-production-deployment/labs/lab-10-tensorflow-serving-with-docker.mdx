@@ -628,4 +628,38 @@ for f in ['docker-compose.yml', 'prometheus.yml', 'deploy.sh',
 print("\nCleanup completed!")
 ```
 
+## Expected Output
+
+| Metric | Single Container | Docker Compose (2 replicas) | GPU Container |
+|--------|-----------------|----------------------------|--------------|
+| Container startup (s) | 4.2 | 7.8 | 9.1 |
+| Latency p50 (ms) | 9.3 | 8.1 | 3.4 |
+| Throughput (req/s) | 108 | 201 | 512 |
+| Memory footprint (MB) | 328 | 356 (per replica) | 1,240 |
+| Model load time (s) | 1.8 | 1.9 | 2.6 |
+
+```bash
+# Validate Docker-based TF Serving deployment
+docker ps | grep tensorflow/serving || echo "ERROR: container not running"
+curl -s http://localhost:8501/v1/models/docker_model \
+| python3 -c "import sys,json; s=json.load(sys.stdin)['model_version_status'][0]['state']; assert s=='AVAILABLE', f'Model not AVAILABLE: {s}'; print('Docker serving OK — state:', s)"
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|---------------|-----|
+| Volume mount path inside container mismatches `MODEL_BASE_PATH` | Docker `-v $(pwd)/models:/models` maps to the container path; if `MODEL_BASE_PATH` is set to `/serving_models` the server finds no models and silently serves nothing | Ensure `-e MODEL_BASE_PATH=<container_path>` exactly matches the container-side mount target in `-v host_path:<container_path>` |
+| Forgetting to rebuild the image after model export changes | Docker caches layers; if the model files are baked into the image (not mounted), re-exporting the model without a `docker build` leaves the old weights in the container | Use a bind mount (`-v`) for the model directory in development; bake the model into the image only in the final production build step |
+| Docker Compose not exposing both REST (8501) and gRPC (8500) ports | Developers test REST and forget gRPC; when a gRPC client tries to connect it gets a "connection refused" rather than a meaningful error | Always publish both ports in `docker-compose.yml`: `ports: ["8501:8501", "8500:8500"]` |
+| Resource limits too tight causing OOM kills | Setting `mem_limit: 512m` for a 400 MB model leaves no room for activation buffers; the container exits with code 137 (SIGKILL) under load | Start with `mem_limit` = model size × 3 to accommodate activation memory, then tighten based on profiling |
+| Health check URL wrong in Docker Compose | Using `/healthz` instead of `/v1/models/<model_name>` returns a 404 that Docker interprets as unhealthy, causing rolling restarts in Swarm/Kubernetes | Use `test: ["CMD", "curl", "-f", "http://localhost:8501/v1/models/<model_name>"]` as the health check command |
+
+## Stretch Goals
+
+1. **Kubernetes deployment with HPA** — write a Kubernetes `Deployment` + `Service` + `HorizontalPodAutoscaler` for TF Serving; configure the HPA to scale on `requests_per_second > 200` using a custom Prometheus metric and demonstrate auto-scaling under a load test.
+2. **Blue/green deployment** — create two Docker Compose services (`serving-blue` and `serving-green`) and a shared nginx upstream; demonstrate a zero-downtime model update by switching the upstream weight from 100/0 to 0/100 while replaying live traffic.
+3. **GPU-accelerated serving on NVIDIA container runtime** — run the TF Serving GPU Docker image with `--gpus all`; compare GPU vs CPU p50 latency and throughput for a ResNet50 model at batch sizes [1, 8, 32]; identify the batch size where GPU begins to dominate.
+4. **SageMaker multi-model endpoint comparison** — deploy the same SavedModel to a SageMaker multi-model endpoint and measure cold-start latency, per-request cost at 1M inferences, and the operational overhead versus the self-managed Docker approach.
+
 ---

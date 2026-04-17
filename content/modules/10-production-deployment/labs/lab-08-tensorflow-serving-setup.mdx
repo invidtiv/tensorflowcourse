@@ -399,4 +399,80 @@ for f in ['docker-compose.yml']:
 print("\nCleanup completed!")
 ```
 
+## Expected Output
+
+```
+Saving model v1 to models/my_model/1/ ... ok
+Saving model v2 to models/my_model/2/ ... ok
+Starting TF Serving (docker run -p 8501:8501 -v $(pwd)/models:/models ...) ... ok
+GET http://localhost:8501/v1/models/my_model → {"model_version_status":[{"version":"2","state":"AVAILABLE"}]}
+POST http://localhost:8501/v1/models/my_model:predict → 200 OK (latency ≈ 8–14 ms)
+```
+
+Key observation: after both versions are written, TF Serving's default
+`Latest` version policy auto-switches to version 2 within a few seconds
+without a server restart — this is the whole point of the versioned
+directory layout, and it is visible in the server logs as a
+`Successfully loaded servable version` line.
+
+<Callout type="warning" title="Common Pitfalls">
+
+1. **Wrong directory layout.** TF Serving expects
+   `models/<model_name>/<integer_version>/saved_model.pb`. A nested
+   `models/my_model/v1/` or `models/my_model/1.0/` is silently ignored and
+   the model shows as "not found" even though the file is on disk.
+2. **Forgetting `MODEL_NAME` / `MODEL_BASE_PATH` env vars** when running the
+   Docker image — the server starts but serves nothing, and the health
+   endpoint returns an empty model list.
+3. **Port collision on 8501.** Other tools frequently grab 8501; the
+   container starts but connections silently route elsewhere. Always verify
+   with `docker ps` and `curl`.
+4. **Model config version-policy confusion.** `Latest { num_versions: 2 }`
+   keeps the two newest versions loaded simultaneously; `Specific` pins an
+   exact version. Using `Latest` when you meant `Specific` can cause
+   surprising rollouts after any retraining job.
+5. **REST vs gRPC port mismatch.** REST defaults to 8501, gRPC to 8500.
+   Forgetting to publish 8500 while developing a gRPC client looks like a
+   handshake failure rather than a port-not-published error.
+6. **Saving to a `path` that already contains files from a previous run.**
+   TF Serving will load a mix of old and new assets silently; always remove
+   the target directory before re-exporting.
+
+</Callout>
+
+<Callout type="tip" title="Stretch Goals">
+
+1. **Canary rollout via `ModelConfig`**: load v1 and v2 simultaneously with
+   a `Specific` policy, then route 10% of traffic to v2 from a thin reverse
+   proxy (nginx or Envoy) and compare latencies and error rates side-by-side.
+2. **Add a warmup request**: ship a `warmup_requests` asset with the
+   SavedModel so the first production prediction doesn't pay the lazy-init
+   latency cost.
+3. **Expose Prometheus metrics**: enable `--monitoring_config_file` with
+   `prometheus_config { enable: true, path: "/monitoring/prometheus/metrics" }`
+   and scrape into a local Grafana dashboard — foundation for the Phase 6
+   monitoring demo.
+4. **Benchmark REST vs gRPC**: send 1000 identical predict requests over
+   both transports and measure p50/p95/p99 — gRPC should win by 2–5× on
+   small payloads.
+
+</Callout>
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|---------------|-----|
+| Wrong versioned directory layout | TF Serving expects `models/<model_name>/<integer_version>/saved_model.pb`; paths like `v1/` or `1.0/` are silently ignored and the model shows as "not found" | Use only integer version numbers as directory names: `models/my_model/1/`, `models/my_model/2/` |
+| Missing `MODEL_NAME` / `MODEL_BASE_PATH` env vars in Docker | The container starts without error but serves nothing; the `/v1/models` health endpoint returns an empty list | Always pass `-e MODEL_NAME=my_model -e MODEL_BASE_PATH=/models` when running the TF Serving Docker image |
+| Port 8501 already in use | Other local services frequently bind 8501; the Docker container starts but `curl` silently routes elsewhere with no obvious error | Verify with `docker ps` and `curl http://localhost:8501/v1/models/my_model` before any client code runs |
+| `Latest` version policy causing unintended rollouts | `Latest { num_versions: 2 }` auto-loads every newly written version directory; a failed training run that writes a version directory triggers a silent rollout | Use `Specific` version policy in `model_config_list` for production; reserve `Latest` only for staging environments |
+| Saving to a directory that still contains a previous export | TF Serving loads a mixture of old and new assets without warning, causing random prediction behavior that is extremely hard to debug | Always delete or version-stamp the target SavedModel directory before re-exporting; use `shutil.rmtree` in the export script |
+
+## Stretch Goals
+
+1. **Canary rollout via `ModelConfig`** — load v1 and v2 simultaneously with a `Specific` policy, then route 10% of traffic to v2 from a thin nginx or Envoy reverse proxy; compare per-version latency and error rates side-by-side.
+2. **Warmup requests** — ship a `warmup_requests` SavedModel asset so the first production prediction does not pay the lazy-initialization latency cost; verify by measuring first-request latency before and after adding the warmup file.
+3. **Prometheus + Grafana monitoring** — enable `--monitoring_config_file` with `prometheus_config { enable: true }` and scrape metrics into a local Grafana dashboard; create an alert on `request_latency_p99 > 50ms`.
+4. **REST vs gRPC latency benchmark** — send 1000 identical predict requests over both transports and measure p50/p95/p99 latency; gRPC should outperform REST by 2–5x on small input payloads due to protobuf serialization efficiency.
+
 ---

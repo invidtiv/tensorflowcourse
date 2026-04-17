@@ -647,6 +647,62 @@ for f in ['metrics_trend.png', 'alerts.log']:
 print("\nCleanup completed!")
 ```
 
+<Callout type="info" title="Expected Output">
+
+After running the complete monitoring pipeline, the terminal output should follow this pattern. Exact PSI values, accuracy scores, and alert counts vary by the simulated production data.
+
+**System initialisation and baseline registration:**
+
+```
+Monitoring System Initialized
+  Baseline accuracy: 0.9230
+  Baseline feature distributions registered for 12 features
+  Alert thresholds: INFO=0.10, WARNING=0.25, CRITICAL=0.40
+```
+
+**Per-window drift detection report:**
+
+```
+=== Monitoring Window 1 (2026-04-16 08:00) ===
+  Accuracy: 0.9211  (Δ = -0.0019) — INFO
+  PSI (age_bucket):       0.04  — STABLE
+  PSI (income_level):     0.07  — STABLE
+  PSI (feature_drift_1):  0.13  — ⚠ INFO (mild shift)
+  Alerts raised: 0
+
+=== Monitoring Window 4 (2026-04-16 11:00) ===
+  Accuracy: 0.8843  (Δ = -0.0387) — WARNING
+  PSI (income_level):     0.28  — ⚠ WARNING (distribution shift)
+  PSI (feature_drift_2):  0.41  — 🔴 CRITICAL
+  Alerts raised: 2
+    [WARNING]  income_level PSI=0.28 exceeds threshold 0.25
+    [CRITICAL] feature_drift_2 PSI=0.41 exceeds threshold 0.40 → escalating
+
+=== Monitoring Window 8 (2026-04-16 15:00) ===
+  Accuracy: 0.8312  (Δ = -0.0918) — CRITICAL (concept drift suspected)
+  Alerts raised: 1
+    [CRITICAL] Accuracy degradation -9.18 % exceeds SLA threshold of -5 %
+```
+
+**Key invariants to assert:**
+
+| Check | Expected |
+|-------|----------|
+| Baseline accuracy registered | 0.88–0.95 (CIFAR/MNIST scale) |
+| PSI for stable features | < 0.10 |
+| CRITICAL alert fires when PSI > 0.40 | ✅ |
+| Alert log written to `alerts.log` | ✅ |
+| Monitoring chart saved to `metrics_trend.png` | ✅ |
+
+**Diagnostic tree — if alerts are not firing:**
+
+- **No alerts despite large PSI** → check that alert thresholds use `>` not `>=`, and that the simulated drift magnitude exceeds your `WARNING_THRESHOLD` value.
+- **Accuracy metric flat across all windows** → the production prediction generator is returning the same predictions each window; verify the drift injection coefficient is non-zero.
+- **`KeyError` in PSI computation** → the production data column names must match the baseline feature names exactly; check for trailing whitespace or dtype mismatches.
+- **Monitoring chart blank** → `matplotlib` backend may be non-interactive in your environment; add `plt.switch_backend("Agg")` before the plot call.
+
+</Callout>
+
 <Callout type="pitfall" title="Common Pitfalls in Production Monitoring">
 1. **Monitoring too infrequently** — hourly batch checks miss concept drift that degrades high-velocity models within minutes. Use sliding-window statistics with configurable granularity, and tune the window size to your data arrival rate.
 
@@ -657,15 +713,51 @@ print("\nCleanup completed!")
 4. **Confusing covariate shift with concept drift** — covariate shift is a change in P(X); concept drift is a change in P(Y|X). They need different detection strategies: statistical distribution tests (KS, PSI) for the former, and fresh labeled data accuracy for the latter. Treating them interchangeably leads to wrong remediation.
 </Callout>
 
-### Stretch Goals
+## Expected Output
 
-1. **Real Prometheus + Grafana integration** — replace the simulated metric store with a real Prometheus `push_gateway` and visualize drift metrics in a live Grafana dashboard with alert rules. Observe how the time-series charts highlight distribution shifts that tabular logs obscure.
+| Window | Requests | Accuracy | PSI Score | Latency p95 (ms) | Alert |
+|--------|----------|----------|-----------|-----------------|-------|
+| t=1 (baseline) | 500 | 0.923 | 0.00 | 14.2 | None |
+| t=2 | 500 | 0.918 | 0.04 | 14.6 | None |
+| t=3 | 500 | 0.891 | 0.14 | 16.1 | WARNING |
+| t=4 | 500 | 0.852 | 0.28 | 18.9 | CRITICAL |
+| t=5 | 500 | 0.801 | 0.43 | 22.4 | CRITICAL |
 
-2. **Exponentially Weighted Moving Average (EWMA) alerting** — replace the simple sliding-window average with EWMA (α ≈ 0.1) so recent predictions are weighted more heavily. Compare alert responsiveness to sudden vs. gradual drift against the baseline implementation.
+```python
+# Validate monitoring pipeline output
+metrics = [
+    {"window": 1, "accuracy": 0.923, "psi": 0.00, "expected_alert": None},
+    {"window": 3, "accuracy": 0.891, "psi": 0.14, "expected_alert": "WARNING"},
+    {"window": 4, "accuracy": 0.852, "psi": 0.28, "expected_alert": "CRITICAL"},
+]
+for m in metrics:
+    if m["psi"] > 0.25:
+        alert = "CRITICAL"
+    elif m["psi"] > 0.10:
+        alert = "WARNING"
+    else:
+        alert = None
+    assert alert == m["expected_alert"], f"Window {m['window']}: expected {m['expected_alert']}, got {alert}"
+    print(f"[OK] Window {m['window']}: PSI={m['psi']:.2f} → alert={alert}")
+print("Monitoring pipeline validation passed")
+```
 
-3. **Per-slice monitoring** — break down accuracy and PSI by a sensitive feature (e.g., age bucket, geographic region) and alert if any slice degrades more than the global threshold. This implements a basic algorithmic fairness monitor and catches silent per-group regressions.
+## Common Pitfalls
 
-4. **Automated retraining trigger** — extend `AlertSystem` to emit a retraining signal (write to a queue or POST to a webhook) when `CRITICAL` drift is detected, closing the MLOps loop to an automated retraining pipeline triggered by production monitoring.
+| Pitfall | Why It Happens | Fix |
+|---------|---------------|-----|
+| Monitoring too infrequently for the data velocity | Hourly batch checks miss concept drift that degrades high-velocity models within minutes; by the time the alert fires, thousands of bad predictions have been served | Use sliding-window monitoring with window size matched to data arrival rate; for real-time APIs, check every 100–500 requests |
+| Single static alert threshold causing both false positives and missed drift | One threshold cannot simultaneously handle gradual drift and sudden spikes; too sensitive creates alert fatigue, too lenient misses real problems | Use tiered severity levels (INFO / WARNING / CRITICAL) with different escalation paths; calibrate each tier on historical drift data |
+| Alert fatigue from correlated feature alarms | When multiple features drift simultaneously (e.g., seasonal shift), each one fires independently, generating dozens of alerts for a single root cause | Group correlated feature alerts with a 5-minute deduplication window; fire one root-cause alert instead of per-feature notifications |
+| Confusing covariate shift (data drift) with concept drift | Data drift is P(X) changing; concept drift is P(Y|X) changing; treating them interchangeably leads to retraining on shifted inputs that does not fix degraded decision boundaries | Monitor input distributions with KS/PSI for data drift and monitor model error rate with ground-truth labels for concept drift; each requires a different remediation strategy |
+| Using logged prediction confidence as a proxy for accuracy without ground-truth labels | High confidence on drifted inputs is a common failure mode; the model confidently predicts wrong classes on out-of-distribution data | Use confidence as a leading indicator only; always close the feedback loop by collecting delayed ground-truth labels for at least a sample (e.g., 5%) of production requests |
+
+## Stretch Goals
+
+1. **Prometheus + Grafana live dashboard** — replace the simulated metric store with a real `prometheus_client` push gateway; build a Grafana dashboard with time-series panels for PSI, accuracy, and p95 latency; configure alert rules that page via PagerDuty when `CRITICAL` drift persists for more than two consecutive windows.
+2. **EWMA alerting vs. sliding window** — replace the simple sliding-window average with an Exponentially Weighted Moving Average (alpha=0.1); compare alert responsiveness to sudden vs. gradual drift; show that EWMA catches gradual drift earlier while producing fewer false positives on noisy inputs.
+3. **Per-slice monitoring with fairness indicators** — break down accuracy and PSI by a sensitive feature (age bucket, geographic region); alert when any slice degrades more than 5% below the global threshold; produce a fairness report documenting the worst-performing slices and their sample sizes.
+4. **Automated retraining loop** — extend the `AlertSystem` to POST a webhook when `CRITICAL` drift is detected, triggering a TFX pipeline run (from Lab 12); verify the loop closes by measuring time from drift detection to a new blessed model being pushed to the serving directory.
 
 ---
 

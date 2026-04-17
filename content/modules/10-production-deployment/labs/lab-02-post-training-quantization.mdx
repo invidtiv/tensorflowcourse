@@ -397,6 +397,66 @@ Full Integer                   0.31         3.80           0.6152
 Float16                        0.63         5.10           0.6221
 ```
 
+<Callout type="warning" title="Common Pitfalls">
+
+- **Representative dataset too small or non-representative.** Full-integer
+  quantization calibrates activation ranges from the representative dataset.
+  Using only 10–50 samples, or samples drawn from a single class, produces
+  narrow/biased ranges and visible accuracy drops (>2–3 pp). Target **100–500
+  samples** that mirror the real input distribution.
+- **Forgetting `inference_input_type` / `inference_output_type` = `int8`.**
+  Omitting these leaves a float32 I/O wrapper around the int8 graph. The
+  model still runs, but edge runtimes (Coral, microcontrollers, int8-only
+  NPUs) will refuse to load it — or silently add a float↔int8 cast that
+  erases the latency win.
+- **Benchmarking with `model(x)` / eager Python.** Inference timing on the
+  original `tf.keras` model vs. the `.tflite` interpreter is apples-to-
+  oranges. Always benchmark via `tf.lite.Interpreter` + `invoke()` and warm
+  up at least 10 runs before measuring.
+- **Dropout / BatchNorm left in training mode.** Convert from an inference-
+  mode model (or call `model(x, training=False)` at the export step).
+  Training-mode BN statistics cause post-conversion accuracy to collapse
+  even though the float model tests fine.
+- **Comparing file size instead of RAM footprint.** The `.tflite` file is
+  smaller, but runtime RAM also depends on activation tensors. Quoting
+  only file size can mislead — always report both.
+
+</Callout>
+
+<Callout type="success" title="Stretch Goals">
+
+1. **Selective layer quantization** — quantize only the conv backbone and
+   keep the final `Dense` head in float16. Compare accuracy vs. full-int8.
+2. **Per-channel vs. per-tensor quantization** — rerun the integer path
+   with `target_spec.supported_ops = [INT8]` and measure the accuracy gap
+   on a deeper model (ResNet50).
+3. **Mixed int8/float fallback** — add unsupported ops to the
+   `supported_types` set and observe the graph partitioning in the
+   converter log.
+4. **Hardware delegate sweep** — run the int8 model on the XNNPACK, GPU,
+   and NNAPI delegates (where available) and report a latency table.
+5. **Calibration ablation** — plot accuracy vs. calibration-set size at
+   [10, 50, 100, 500, 2000] samples to find the knee point for this task.
+
+</Callout>
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|---------------|-----|
+| Calibration set too small (<50 samples) | Full-integer quantization computes activation min/max from the representative dataset; too few samples yields biased ranges and >3 pp accuracy drop | Use 100–500 samples that mirror the real input distribution |
+| Missing `inference_input_type = tf.int8` | Without it, the model retains a float32 I/O wrapper; edge runtimes (Coral, int8-only NPUs) refuse to load or silently add a costly cast | Set both `inference_input_type` and `inference_output_type` to `tf.int8` for fully integer graphs |
+| Benchmarking with `model.predict()` instead of the TFLite interpreter | `model.predict()` includes Python dispatch overhead and TF graph overhead absent in the TFLite runtime, making comparisons meaningless | Always benchmark via `tf.lite.Interpreter` + `invoke()`, with ≥10 warm-up calls before timing |
+| BatchNorm/Dropout left in training mode at export | Training-mode BatchNorm uses batch statistics instead of moving averages, causing post-conversion accuracy collapse | Build the export model with `model(x, training=False)` or call `model.trainable = False` before conversion |
+| Reporting file size only, ignoring runtime memory | The `.tflite` file is compact but activation buffers can still dominate RAM on microcontrollers | Profile with `tf.lite.experimental.Analyzer.analyze()` and report both disk size and peak arena size |
+
+## Stretch Goals
+
+1. **Knowledge distillation + int8 quantization** — train a compact student model supervised by the FP32 teacher's softmax logits, then apply full-integer quantization. Compare accuracy vs. a directly quantized teacher at the same parameter count.
+2. **Pruning then quantization pipeline** — use TensorFlow Model Optimization Toolkit to prune 50% of Conv2D weights, retrain for sparsity recovery, then apply dynamic-range quantization. Report the combined size reduction and latency improvement over quantization alone.
+3. **Calibration set size ablation** — run full-integer conversion at calibration-set sizes [10, 50, 100, 500, 2000] and plot accuracy vs. set size to find the knee point for CIFAR-10.
+4. **Hardware delegate benchmark** — deploy the int8 `.tflite` on XNNPACK, GPU, and NNAPI delegates (where available) and produce a p50/p95 latency table comparing each delegate.
+
 ## Additional Exercises
 
 1. **Exercise 1**: Apply quantization to a larger model (ResNet50) and compare results

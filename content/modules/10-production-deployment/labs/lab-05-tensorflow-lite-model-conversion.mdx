@@ -360,3 +360,89 @@ print("\nCleanup completed!")
 ```
 
 ---
+
+<Callout type="info" title="Expected Output">
+
+After running all the conversion pipelines in this lab you should observe:
+
+- **Baseline Keras `.tflite` size:** roughly **4×** smaller than the parent `.h5` / `SavedModel` directory. Small MLPs land in the tens of KB; a MobileNetV2-class model lands around **~9–14 MB** pre-optimization.
+- **Dynamic-range quantization:** another **~3.8–4×** size drop versus the float32 `.tflite`, with typically **<1 %** top-1 accuracy loss on classification tasks.
+- **Full-integer (INT8) quantization:** same size drop as dynamic-range but **2–4× faster** on ARM CPUs and **required** for Edge TPU / Hexagon DSP deployment.
+- **Float16 quantization:** exactly **2×** size drop, essentially **zero** accuracy loss, and measurably faster on mobile GPU delegates.
+- **Inference parity check:** the mean absolute difference between Keras and TFLite float outputs on the same input batch should be **< 1e-5**. Anything larger indicates either a representative-dataset bug or an unsupported op silently falling back to CPU.
+
+If any of the above is off, work through this diagnostic tree:
+
+- **TFLite size is identical to the Keras file →** optimization flags were never attached. Check that `converter.optimizations = [tf.lite.Optimize.DEFAULT]` is set *before* `converter.convert()`.
+- **Accuracy drop > 5 % after INT8 quantization →** representative dataset too small (fewer than ~100 batches) or not representative of the real input distribution. Rebuild it from held-out training data.
+- **Conversion fails with `Some ops are not supported`  →** either the op needs `converter.target_spec.supported_ops = [TFLITE_BUILTINS, SELECT_TF_OPS]` (then accept the runtime-size cost), or you need to refactor the layer (e.g., replace `tf.strided_slice` with a `Lambda` wrapper).
+- **`Invalid argument: tensorflow/lite/... NOT_EQUAL`  at interpreter load →** the `.tflite` was serialized against a newer TFLite runtime than the device has. Pin the converter and the target runtime to the same minor version.
+
+</Callout>
+
+<Callout type="warning" title="Common Pitfalls">
+
+1. **Forgetting `tf.function` input signatures.** When converting from a Keras model that uses `@tf.function(input_signature=...)`, omitting the signature lets TFLite pick `None` batch dims and bake a non-reusable shape into the flatbuffer. Always supply a concrete `TensorSpec` for each input.
+2. **Using the training-mode model for conversion.** Call `model.trainable = False` (or rebuild from the saved artifact) before handing it to the converter; BatchNorm moving statistics otherwise get captured in training mode and cause divergence at inference time.
+3. **Representative dataset from a generator that ends after one pass.** Once exhausted the converter silently proceeds with fewer samples than you think, yielding unstable calibration. Wrap the generator with `itertools.cycle` or materialize a list of sample arrays.
+4. **INT8 quantization of a model with a softmax *inside* the graph.** The post-softmax range [0, 1] confuses min/max calibration; either move the softmax to the consumer or use per-channel quantization on the final dense layer.
+5. **`converter.inference_input_type = tf.uint8` without matching dequant on device.** When the device pipeline still feeds float32 RGB in [0, 1], the model receives raw bytes and predictions degrade silently. Keep input/output types as float32 unless the mobile/Edge TPU pipeline explicitly handles the quantized I/O.
+6. **Using `SELECT_TF_OPS` without sizing the binary.** Each TF op pulled in inflates the TFLite runtime by several MB on device. Audit the final op list with the TFLite Model Analyzer before shipping — you may be able to rewrite one offending op rather than link the full Flex delegate.
+7. **Not cleaning up intermediate `.tflite` artifacts on repeat runs.** Subsequent benchmark cells will happily read a stale file (especially after a crashed quantization) and report misleading numbers. Always `os.remove()` before re-emitting, or write to a run-stamped directory.
+8. **Evaluating accuracy on training data.** The conversion pipeline is tempting to smoke-test against a handful of training examples, which hides quantization-induced regressions. Always reserve a held-out eval batch and compare Keras ↔ TFLite top-k on it.
+9. **Ignoring delegate availability.** `Interpreter(model_path)` falls back to the CPU delegate by default. To benchmark the device path, construct with `tf.lite.Interpreter(model_path, experimental_delegates=[...])` and assert the delegate actually loaded — otherwise you are measuring CPU, not NNAPI / GPU / Hexagon.
+
+</Callout>
+
+<Callout type="success" title="Stretch Goals">
+
+- **Convert a Hugging Face transformer** (e.g., DistilBERT) to TFLite with `SELECT_TF_OPS` and measure the size/latency trade-off versus the FP16 variant.
+- **Per-channel quantization:** set `converter._experimental_disable_per_channel = False` (TF 2.14+) and compare calibration stability on a convolutional backbone.
+- **Post-training 4-bit weight-only quantization** for LLM-style models via TF-MOT's experimental API; report size reduction and inference quality.
+- **Automate a CI gate:** write a pytest that asserts the converted `.tflite` is within 1 % of the Keras model on a held-out batch, so regressions fail the build.
+- **Edge TPU compilation:** run `edgetpu_compiler model_int8.tflite` and read the compiler's `ops mapped to Edge TPU` summary. Ops that fall back to CPU are the first refactoring target.
+- **Measure cold-start latency:** include interpreter construction and tensor allocation in the wall-clock budget — on low-end Android this dominates the first-inference number reported in tutorials.
+
+</Callout>
+
+## Expected Output
+
+| Metric | Baseline (FP32) | Dynamic Range | Full Integer (INT8) | Float16 |
+|--------|----------------|---------------|---------------------|---------|
+| Model size (MB) | 9.4 | 2.4 | 2.3 | 4.7 |
+| Latency (ms/inference) | 18.2 | 7.8 | 6.1 | 9.3 |
+| Throughput (req/s) | 55 | 128 | 164 | 107 |
+| Peak RAM (MB) | 24.1 | 8.3 | 7.6 | 12.5 |
+| Accuracy delta vs FP32 | — | -0.4% | -0.9% | -0.1% |
+
+```python
+# Validate conversion parity
+import tensorflow as tf, numpy as np
+interpreter = tf.lite.Interpreter(model_path="model_int8.tflite")
+interpreter.allocate_tensors()
+inp = interpreter.get_input_details()[0]
+out = interpreter.get_output_details()[0]
+sample = np.random.rand(1, 224, 224, 3).astype(np.float32)
+interpreter.set_tensor(inp['index'], sample)
+interpreter.invoke()
+pred = interpreter.get_tensor(out['index'])
+assert pred.shape[-1] == 1000, "Output classes mismatch"
+print("Conversion validation passed")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|---------------|-----|
+| `tf.function` input signature missing batch dimension | Without a concrete `TensorSpec`, the converter infers a dynamic batch but bakes `None` dims that some edge runtimes reject | Always specify `input_signature=[tf.TensorSpec(shape=[1, H, W, C], dtype=tf.float32)]` for single-image inference |
+| Model converted from training mode (BatchNorm uses batch stats) | `model.trainable` defaults to `True`; training-mode BN captures batch statistics instead of moving averages, causing divergent outputs after conversion | Set `model.trainable = False` or rebuild from a SavedModel artifact before passing to `TFLiteConverter` |
+| Representative dataset generator exhausted after one pass | `TFLiteConverter` calls the generator once; a generator that exhausts silently produces fewer calibration batches than expected | Wrap the generator in `itertools.cycle()` or yield from a pre-materialized list |
+| `SELECT_TF_OPS` included without accounting for binary size | Each additional TF op pulled in inflates the on-device runtime by several MB | Audit the final op list with `tf.lite.experimental.Analyzer.analyze()` and refactor the offending op before shipping |
+| Evaluating conversion quality on training data | Quantization regressions hide on training data due to overfitting; the held-out set is the only honest signal | Always reserve a separate eval batch and compare Keras vs. TFLite top-k accuracy on it |
+
+## Stretch Goals
+
+1. **DistilBERT TFLite conversion** — convert a Hugging Face DistilBERT SavedModel to TFLite using `SELECT_TF_OPS`; compare model size (MB), first-token latency (ms), and throughput (tokens/s) against the FP16 variant.
+2. **CI accuracy gate** — write a pytest fixture that converts the model as part of the test, runs it on a 500-sample held-out split, and asserts the TFLite top-1 accuracy is within 1% of the Keras baseline; fail the build on regression.
+3. **Edge TPU compilation pipeline** — automate `edgetpu_compiler model_int8.tflite` in a Makefile target; parse the compiler log to count ops mapped vs. falling back to CPU; report the on-chip utilization percentage.
+4. **Cold-start latency profiling** — time interpreter construction + `allocate_tensors()` separately from `invoke()`; on a Raspberry Pi 4, show that cold-start often exceeds steady-state inference by 5–10x and propose a warm-instance pool strategy.

@@ -629,4 +629,48 @@ for f in ['drift_visualization.png', 'drift_trend.png']:
 print("\nCleanup completed!")
 ```
 
+## Expected Output
+
+| Metric | No Drift | Moderate Drift | Severe Drift |
+|--------|----------|---------------|-------------|
+| KS statistic (feature 0) | 0.04 | 0.18 | 0.41 |
+| KS p-value | 0.92 | 0.03 | <0.001 |
+| PSI score | 0.02 | 0.12 | 0.31 |
+| Wasserstein distance | 0.08 | 0.47 | 1.83 |
+| Drift detected (threshold 0.05) | No | Yes | Yes |
+
+```python
+# Validate drift detection pipeline
+import numpy as np
+from scipy.stats import ks_2samp
+
+# Reference distribution (training data)
+reference = np.random.normal(0, 1, 1000)
+# Production data with drift
+drifted = np.random.normal(1.5, 1.2, 500)
+
+stat, pval = ks_2samp(reference, drifted)
+drift_detected = pval < 0.05
+print(f"KS statistic: {stat:.4f}, p-value: {pval:.6f}")
+assert drift_detected, "Expected drift to be detected for shifted distribution"
+print(f"Drift detected: {drift_detected} — validation passed")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|---------------|-----|
+| Using too small a production window for drift tests | KS test and PSI require sufficient samples to achieve statistical power; a window of <50 samples inflates false-negative rates and misses real drift | Use a minimum window size of 200–500 samples; calculate required sample size with a power analysis (e.g., `statsmodels.stats.power`) before setting thresholds |
+| Setting a fixed drift threshold without calibrating for the feature | A universal p-value threshold (e.g., 0.05) is too sensitive for high-cardinality categorical features and too lenient for continuous features with known seasonal patterns | Calibrate per-feature thresholds on historical data using a rolling baseline; use Bonferroni correction when monitoring many features simultaneously |
+| Conflating data drift with concept drift | Data drift (input distribution shift) does not always degrade model performance; concept drift (label-conditional shift) may occur even without data drift | Monitor both input feature distributions (data drift) and model output/error distributions (concept drift) independently; track prediction confidence histograms as a leading indicator of concept drift |
+| Re-training on every detected drift event | Frequent retraining on minor drift consumes compute budget and may cause the model to overfit to transient distribution shifts (e.g., weekly seasonality) | Use a two-stage trigger: alert on drift detection, retrain only when drift is sustained over N consecutive windows or when model performance degrades below a threshold |
+| Comparing against a stale reference distribution | If the reference is from initial deployment and months of gradual drift have accumulated, new batches compare against an outdated baseline and the drift magnitude is overestimated | Use a sliding reference window (e.g., the most recent 7-day baseline) or update the reference periodically; store reference distributions in a versioned artifact store |
+
+## Stretch Goals
+
+1. **Multivariate drift detection with Maximum Mean Discrepancy (MMD)** — implement MMD using a Gaussian kernel over the full feature vector; compare its detection power against per-feature KS tests on a dataset with correlated feature drift that individual KS tests miss individually but MMD catches.
+2. **Automated retraining trigger pipeline** — integrate drift detection into the TFX pipeline from Lab 12; when PSI > 0.2 on any feature, automatically trigger a new pipeline run, retrain the model, and push if it passes the Evaluator blessing threshold.
+3. **Drift dashboard with Grafana + Prometheus** — export per-feature drift statistics as Prometheus gauges (using `prometheus_client`); build a Grafana dashboard with time-series panels for PSI and Wasserstein distance, and configure an alert when any feature exceeds the threshold.
+4. **Canary drift monitoring** — route 10% of production traffic through a new model version (canary) while monitoring the distribution of canary vs. baseline predictions; alert when the KL divergence between the two prediction distributions exceeds 0.1, indicating the canary behaves unexpectedly on current production data.
+
 ---

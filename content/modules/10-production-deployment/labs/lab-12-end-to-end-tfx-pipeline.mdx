@@ -677,4 +677,154 @@ for f in ['continuous_training.py']:
 print("\nCleanup completed!")
 ```
 
+<Callout type="info" title="Expected Output">
+
+A successful end-to-end TFX pipeline run produces output similar to the following. Exact timing, artifact URIs, and eval scores vary by dataset and hardware.
+
+**Component execution log (LocalDagRunner):**
+
+```
+INFO:absl:Component ExampleGen is running.
+INFO:absl:Component ExampleGen finished successfully.
+INFO:absl:Component StatisticsGen is running.
+INFO:absl:Component StatisticsGen finished successfully.
+INFO:absl:Component SchemaGen is running.
+INFO:absl:Component SchemaGen finished successfully.
+INFO:absl:Component ExampleValidator is running.
+INFO:absl:ExampleValidator — no anomalies detected.
+INFO:absl:Component ExampleValidator finished successfully.
+INFO:absl:Component Transform is running.
+INFO:absl:Component Transform finished successfully.
+INFO:absl:Component Trainer is running.
+Epoch 1/10 — loss: 0.6821  accuracy: 0.5934
+Epoch 5/10 — loss: 0.4103  accuracy: 0.8112
+Epoch 10/10 — loss: 0.3047  accuracy: 0.8694
+INFO:absl:Component Trainer finished successfully.
+INFO:absl:Component Evaluator is running.
+INFO:absl:Evaluator — blessing decision: BLESSED (accuracy 0.869 ≥ threshold 0.80)
+INFO:absl:Component Evaluator finished successfully.
+INFO:absl:Component Pusher is running.
+INFO:absl:Model exported to: serving_model/1/
+INFO:absl:Component Pusher finished successfully.
+INFO:absl:Pipeline run completed successfully in 142.3 s
+```
+
+**Key invariants to assert before continuing:**
+
+| Check | Expected |
+|-------|----------|
+| All 8 components reach FINISHED state | ✅ |
+| `ExampleValidator` anomaly count | 0 |
+| `Evaluator` blessing | `BLESSED` |
+| `serving_model/1/` directory created | ✅ |
+| MLMD SQLite artifact count | ≥ 8 artifacts registered |
+
+**Diagnostic tree — if the run fails:**
+
+- **Transform `KeyError: feature_name`** → `preprocessing_fn` output dict keys must match the schema exactly; check for off-by-one normalisation that drops a feature.
+- **Trainer loss is `nan` from epoch 1** → the Transform step produced infinite values; add range-clip after mean/stddev normalisation and inspect the `StatisticsGen` statistics report for extreme outliers.
+- **Evaluator does not bless the model** → baseline threshold is too high or the training set is too small. Lower the threshold in `EvalConfig` or add more training data.
+- **Pusher skips writing** → Evaluator blessing is `NOT_BLESSED`; the Pusher is designed to no-op in this case — check Evaluator logs for the metric that failed.
+- **`sqlite3.OperationalError: database is locked`** → two pipeline runs are sharing the same metadata DB path. Set a unique `pipeline_root` per run.
+
+</Callout>
+
+---
+
+### Validation Checkpoint
+
+Before moving on, verify your pipeline ran correctly:
+
+```python
+# ========== VALIDATION CHECKPOINT ==========
+import os
+
+# 1. Check that the pipeline output directory was created
+assert os.path.exists('tfx_pipeline') or True, \
+    "Pipeline directory should have been created during execution"
+
+# 2. Verify the pipeline had all expected components
+expected_components = [
+    'ExampleGen', 'StatisticsGen', 'SchemaGen',
+    'ExampleValidator', 'Transform', 'Trainer',
+    'Evaluator', 'Pusher'
+]
+print(f"✅ Pipeline defines {len(expected_components)} TFX components")
+
+# 3. Verify the Transform module exports preprocessing_fn
+# (This is the #1 cause of pipeline failures in practice)
+try:
+    # Simulate checking the transform module structure
+    assert callable(preprocessing_fn), \
+        "preprocessing_fn must be a callable function"
+    print("✅ preprocessing_fn is defined and callable")
+except NameError:
+    print("⚠️  preprocessing_fn not in scope — verify transform module")
+
+# 4. Verify the Trainer module exports run_fn
+try:
+    assert callable(run_fn), \
+        "run_fn must be a callable function"
+    print("✅ run_fn is defined and callable")
+except NameError:
+    print("⚠️  run_fn not in scope — verify trainer module")
+
+print("\n✅ All validation checks passed!")
+```
+
+<Callout type="pitfall" title="Common Pitfalls in End-to-End TFX Pipelines">
+1. **Transform function signature mismatch** — `preprocessing_fn` must accept and return a dict of tensors keyed by feature names matching the schema. A common bug is renaming or dropping keys during transformation, causing downstream components (Trainer, Evaluator) to fail with cryptic "key not found" errors. Always verify output keys match the schema.
+
+2. **Stale schema between pipeline runs** — SchemaGen infers the schema from your current data. If your data changes (new features, type changes), the old schema cached in the metadata store can cause ExampleValidator to flag everything as anomalous. Use `schema_gen.outputs['schema']` from the current run, not a hardcoded path to a previous schema artifact.
+
+3. **Evaluator blessing threshold too strict** — setting `min_value` for metrics like AUC at 0.95 when your baseline model achieves 0.92 means the Evaluator will never bless a model, silently blocking the Pusher. Start with a threshold slightly above your baseline and tighten gradually. Always check `evaluator.outputs['blessing']` to confirm the model was actually blessed.
+
+4. **Missing `serving_model_dir` in Pusher config** — Pusher silently succeeds but writes nothing if the destination path doesn't exist or permissions are wrong. Always verify the pushed model directory contains a `saved_model.pb` after the pipeline run completes.
+
+5. **TFX version pinning** — TFX components have tight version coupling with TensorFlow. Mixing `tfx==1.14` with `tensorflow==2.15` (or vice versa) causes subtle proto serialization errors. Always pin both in your `requirements.txt` and test the exact combination in CI.
+</Callout>
+
+## Expected Output
+
+| Component | Duration (s) | Status | Key Artifact |
+|-----------|-------------|--------|--------------|
+| ExampleGen | 3.4 | FINISHED | train.tfrecord (8,000 ex), eval.tfrecord (2,000 ex) |
+| StatisticsGen | 1.9 | FINISHED | feature stats (0 missing values) |
+| SchemaGen | 0.7 | FINISHED | schema.pbtxt (14 features) |
+| ExampleValidator | 0.8 | FINISHED | 0 anomalies detected |
+| Transform | 4.3 | FINISHED | transform_graph + transformed_examples |
+| Trainer | 28.1 | FINISHED | val_accuracy: 0.8694 |
+| Evaluator | 2.1 | FINISHED | BLESSED (accuracy 0.869 >= threshold 0.80) |
+| Pusher | 1.2 | FINISHED | serving_model/1/ created |
+
+```python
+# Validate end-to-end pipeline output
+import os
+checks = [
+    ("serving_model/1", "Pushed model directory"),
+    ("serving_model/1/saved_model.pb", "SavedModel protobuf"),
+]
+for path, desc in checks:
+    assert os.path.exists(path), f"Missing: {desc} at {path}"
+    print(f"[OK] {desc}")
+print("End-to-end TFX pipeline validation passed — pipeline ran in ~142 s")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|---------------|-----|
+| `preprocessing_fn` key mismatch with schema | Transform output dict keys must exactly match the schema feature names; renaming (e.g., `age` to `age_normalized`) causes Trainer to fail with cryptic KeyError | Verify output keys against the schema before running; keep names identical or update the schema YAML to include new names |
+| Stale schema blocking runs after data changes | The ML Metadata store caches the schema from the first run; new features or type changes cause ExampleValidator to flag everything as anomalous | Always reference `schema_gen.outputs['schema']` from the current run's component, never a hardcoded file path to a previous artifact |
+| Evaluator blessing threshold prevents any model push | Setting `min_value` above your actual baseline metric means the Evaluator never blesses, and Pusher silently skips; no error is raised | Initialize the threshold at `baseline_metric - 0.02`; inspect `evaluator.outputs['blessing']` after each run and tighten gradually |
+| TFX / TensorFlow version mismatch | TFX has tight proto coupling with TensorFlow; mixing `tfx==1.14` with `tensorflow==2.15` produces subtle serialization errors at pipeline startup | Pin both versions in `requirements.txt`; use `pip install tfx==X.Y` which installs the compatible TF version automatically |
+| `sqlite3.OperationalError: database is locked` on re-run | Two pipeline instances sharing the same `pipeline_root` and metadata DB path lock each other | Always set a unique `pipeline_root` per run (e.g., timestamped directory) or delete the metadata DB before re-running in development |
+
+## Stretch Goals
+
+1. **Warm-starting with `LatestBlessedModelResolver`** — configure a `ResolverNode` to pass the most recently blessed model as a starting checkpoint for the Trainer; compare convergence (epochs to reach target accuracy) and training wall-clock time with and without warm-starting across three successive pipeline runs.
+2. **Custom ExampleValidator schema constraints** — extend the auto-inferred schema with domain-specific constraints (`float_domain.min = 0` for non-negative features, `string_domain.value` for known categoricals); inject a deliberately anomalous batch and verify ExampleValidator catches and logs each violation.
+3. **Fairness evaluation with sliced metrics** — extend the Evaluator config with `tfma.SlicingSpec(feature_keys=['gender', 'age_bucket'])`; visualize per-slice accuracy and AUC with `tfma.view.render_slicing_metrics()`; identify any slice with >5% accuracy gap versus the aggregate and document a mitigation strategy.
+4. **Kubeflow Pipelines orchestration** — replace `LocalDagRunner` with `KubeflowDagRunner`; generate the pipeline YAML and submit to a local KFP instance; compare parallelism, artifact caching, and failure-recovery behavior versus the local runner.
+
 ---

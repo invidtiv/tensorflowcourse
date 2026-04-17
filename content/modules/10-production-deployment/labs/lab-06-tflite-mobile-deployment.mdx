@@ -494,4 +494,49 @@ if os.path.exists('mobile_classifier'):
 print("\nCleanup completed!")
 ```
 
+## Expected Output
+
+| Metric | MobileNetV2 FP32 | MobileNetV2 INT8 | Custom Tiny INT8 |
+|--------|-----------------|-----------------|-----------------|
+| Model size (MB) | 13.8 | 3.6 | 0.8 |
+| Latency on ARM (ms) | 52.4 | 21.1 | 8.7 |
+| Throughput (frames/s) | 19 | 47 | 115 |
+| Peak RAM (MB) | 38.2 | 14.9 | 5.3 |
+| Top-1 accuracy (ImageNet subset) | 71.8% | 70.9% | 68.4% |
+
+```python
+# Validate mobile inference wrapper
+import numpy as np, tensorflow as tf
+interp = tf.lite.Interpreter(model_path="mobile_classifier.tflite")
+interp.allocate_tensors()
+inp_detail = interp.get_input_details()[0]
+out_detail = interp.get_output_details()[0]
+# Simulate a 224x224 RGB frame
+frame = np.random.randint(0, 255, (1, 224, 224, 3)).astype(np.float32) / 255.0
+interp.set_tensor(inp_detail['index'], frame)
+interp.invoke()
+probs = interp.get_tensor(out_detail['index'])
+assert probs.shape == (1, 1000), f"Unexpected output shape: {probs.shape}"
+assert abs(probs.sum() - 1.0) < 1e-3, "Output is not a valid probability distribution"
+print(f"Top-1 class: {np.argmax(probs)}, confidence: {probs.max():.3f}")
+print("Mobile inference wrapper validation passed")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---------|---------------|-----|
+| Not warming up the interpreter before timing | The first `invoke()` call pays JIT compilation and memory allocation costs on Android/iOS, inflating the reported latency by 3–5x | Run ≥10 warm-up invocations before recording timing; report steady-state latency separately from cold-start |
+| Preprocessing mismatch between training and on-device pipelines | Training typically normalises pixels to [-1, 1] or [0, 1] while on-device camera frames arrive as uint8 [0, 255]; feeding raw bytes to a float model produces near-random predictions | Embed a preprocessing `tf.keras.layers.Rescaling` layer inside the model before conversion so normalisation is part of the graph |
+| NNAPI delegate not available on the test device | NNAPI requires Android API level 27+ and a compatible Neural Networks HAL implementation; missing it silently falls back to CPU without error | Always check `interpreter.get_delegates()` after construction and log which delegate is active; gate NNAPI on `Build.VERSION.SDK_INT >= 27` |
+| Using `num_threads` larger than physical cores | Over-subscribing threads on a mobile SoC triggers thermal throttling within seconds, making sustained-inference benchmarks misleading | Set `num_threads` to the number of performance cores (typically 4 on modern SoCs); use `InterpreterOptions.set_cpu_affinity` on Android for big-core pinning |
+| Ignoring metadata for on-device label decoding | Deploying a `.tflite` without label metadata requires the host app to maintain a separate label file that can fall out of sync with model versions | Use `tflite_support.metadata_writers` to embed the label map and normalisation parameters inside the `.tflite` file as FlatBuffers metadata |
+
+## Stretch Goals
+
+1. **CoreML delegate benchmarking on iOS** — convert the MobileNetV2 INT8 model to run on the CoreML delegate via TFLite's `CoreMLDelegate`; compare latency and power consumption (using Xcode Instruments) against the CPU baseline on an iPhone 14.
+2. **Flutter inference pipeline** — integrate the `.tflite` model into a Flutter app using `tflite_flutter`; implement a live camera preview that shows real-time classification results at ≥30 fps and gracefully degrades to a lower frame rate on low-end devices.
+3. **Model metadata and OOTB Android task library** — add NormalizationOptions and label metadata to the `.tflite` using `tflite_support`; replace the custom Java interpreter code with the TFLite Task Library `ImageClassifier` and compare code size and latency.
+4. **Canary rollout via Firebase Remote Config** — ship both FP32 and INT8 models in the APK and use Firebase Remote Config to gate which model is loaded at runtime; implement A/B logging of per-variant latency and accuracy to roll out the INT8 model with data-driven confidence.
+
 ---
