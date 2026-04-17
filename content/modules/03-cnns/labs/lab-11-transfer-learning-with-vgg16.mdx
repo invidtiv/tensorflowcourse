@@ -462,7 +462,7 @@ print("=" * 60)
 
 | Phase | Test accuracy (CIFAR-10) | Trainable params | Training time / epoch (T4 GPU) |
 |---|---|---|---|
-| Feature extraction only (frozen VGG16 + new head) | 70–76% | ~4.1M (head only) | 25–40 s |
+| Feature extraction only (frozen VGG16 + new head) | 70–76% | ~166k (head only: GAP→Dense(256)→Dense(128)→Dense(10)) | 25–40 s |
 | Fine-tune last 2 conv blocks (unfreeze from block4_conv1) | 80–86% | ~9.2M | 45–70 s |
 | Full fine-tune (all layers) | 82–88% | ~138M | 90–150 s |
 | Training from scratch (same VGG-style architecture, random init) | 65–72% after 50 epochs | ~138M | 90–150 s |

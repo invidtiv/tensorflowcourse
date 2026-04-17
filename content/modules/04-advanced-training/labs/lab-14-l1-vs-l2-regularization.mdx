@@ -138,7 +138,7 @@ visualize_regularization_results(results)
 | None (baseline) | — | ~72–74 % | ~0 % | 0.0 |
 | L2 | 1e-4 | ~77–79 % | ~0 % | ~0.02–0.05 |
 | L2 | 1e-3 | ~75–77 % | ~0 % | ~0.10–0.25 |
-| L1 | 1e-4 | ~75–77 % | ~15–25 % | ~0.03–0.08 |
+| L1 | 1e-4 | ~75–77 % | ~15–25 % (threshold `\|w\| < 1e-4`, after 50 epochs) | ~0.03–0.08 |
 | Elastic Net (L1=1e-4, L2=1e-4) | mixed | ~77–80 % | ~10–18 % | ~0.04–0.12 |
 
 ```python
