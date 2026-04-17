@@ -1,5 +1,5 @@
 ---
-title: "Object Detection Labs Overview"
+title: "Object Detection Systems - Practical Labs Overview"
 module: 6
 labNumber: 1
 difficulty: "medium"
@@ -8,18 +8,204 @@ source: "lab-01-complete.md"
 ---
 # Module 6: Object Detection Systems - Practical Labs
 
+## Overview
+
+This module walks through the full object detection pipeline — from raw pixels to evaluated mAP scores — using TensorFlow 2.x. Each lab builds on the previous one, following the architecture stack that underpins modern detectors like YOLOv8 and EfficientDet:
+
+```
+Image → Backbone (FPN) → Anchor Generation → Box Regression + Classification
+      → NMS Post-Processing → mAP Evaluation
+```
+
+The twelve labs below map to five conceptual stages:
+
+1. **IoU Metrics (Labs 2–3)** — foundation for box matching, loss functions, and NMS scoring
+2. **Anchor Design (Labs 4–5)** — multi-scale anchor generation and FPN-level assignment
+3. **NMS Variants (Labs 6–7)** — suppressing duplicate detections at inference
+4. **YOLO End-to-End (Labs 8–10)** — head architecture, training, and post-processing
+5. **TF OD API (Labs 11–13)** — production pipeline, custom training, and mAP evaluation
+
 ## Table of Contents
-1. [Lab 6.1: IoU Calculation Fundamentals](#lab-61-iou-calculation-fundamentals)
-2. [Lab 6.2: Advanced IoU Metrics (GIoU, DIoU, CIoU)](#lab-62-advanced-iou-metrics)
-3. [Lab 6.3: Anchor Box Generation](#lab-63-anchor-box-generation)
-4. [Lab 6.4: Multi-Scale Feature Pyramid Anchors](#lab-64-multi-scale-feature-pyramid-anchors)
-5. [Lab 6.5: Non-Maximum Suppression (NMS)](#lab-65-non-maximum-suppression)
-6. [Lab 6.6: Soft-NMS and Advanced Variants](#lab-66-soft-nms-and-advanced-variants)
-7. [Lab 6.7: YOLO Detection Head Architecture](#lab-67-yolo-detection-head-architecture)
-8. [Lab 6.8: Complete YOLO Training Pipeline](#lab-68-complete-yolo-training-pipeline)
-9. [Lab 6.9: YOLO Inference and Post-Processing](#lab-69-yolo-inference-and-post-processing)
-10. [Lab 6.10: TensorFlow Object Detection API Setup](#lab-610-tensorflow-object-detection-api-setup)
-11. [Lab 6.11: Custom Detector Training with TF OD API](#lab-611-custom-detector-training)
-12. [Lab 6.12: mAP Evaluation and Model Optimization](#lab-612-map-evaluation-and-optimization)
+
+1. [Lab 6.1: IoU Calculation Fundamentals](#lab-62-iou-calculation-fundamentals)
+2. [Lab 6.2: Advanced IoU Metrics (GIoU, DIoU, CIoU)](#lab-63-advanced-iou-metrics-giou-diou-ciou)
+3. [Lab 6.3: Anchor Box Generation](#lab-64-anchor-box-generation)
+4. [Lab 6.4: Multi-Scale Feature Pyramid Anchors](#lab-65-multi-scale-feature-pyramid-anchors)
+5. [Lab 6.5: Non-Maximum Suppression (NMS)](#lab-66-non-maximum-suppression-nms)
+6. [Lab 6.6: Soft-NMS and Advanced Variants](#lab-67-soft-nms-and-advanced-variants)
+7. [Lab 6.7: YOLO Detection Head Architecture](#lab-68-yolo-detection-head-architecture)
+8. [Lab 6.8: Complete YOLO Training Pipeline](#lab-69-complete-yolo-training-pipeline)
+9. [Lab 6.9: YOLO Inference and Post-Processing](#lab-610-yolo-inference-and-post-processing)
+10. [Lab 6.10: TensorFlow Object Detection API Setup](#lab-611-tensorflow-object-detection-api-setup)
+11. [Lab 6.11: Custom Detector Training with TF OD API](#lab-612-custom-detector-training-with-tf-od-api)
+12. [Lab 6.12: mAP Evaluation and Model Optimization](#lab-613-map-evaluation-and-model-optimization)
+
+---
+
+## Scaffold: Module 6 End-to-End Skeleton
+
+The following skeleton ties together all labs into a single runnable script. Fill in each `# TODO` section as you complete the corresponding lab.
+
+```python
+"""
+Module 6: Object Detection Systems — End-to-End Scaffold
+Run this script after completing all labs to validate the full pipeline.
+"""
+
+import tensorflow as tf
+import numpy as np
+from typing import List, Tuple, Dict
+
+# ---------------------------------------------------------------------------
+# Stage 1: Load a sample image
+# ---------------------------------------------------------------------------
+def load_sample_image(path: str = None) -> tf.Tensor:
+    """Load and preprocess an image for detection (416×416, normalised)."""
+    if path is None:
+        # TODO: replace with real image loading (Lab 6.10)
+        image = tf.random.uniform([1, 416, 416, 3], dtype=tf.float32)
+    else:
+        raw = tf.io.read_file(path)
+        image = tf.image.decode_jpeg(raw, channels=3)
+        image = tf.image.resize(image, [416, 416]) / 255.0
+        image = tf.expand_dims(image, 0)
+    return image
+
+
+# ---------------------------------------------------------------------------
+# Stage 2: Anchor generation (Labs 6.3–6.4)
+# ---------------------------------------------------------------------------
+def generate_anchors(image_size: int = 416,
+                     strides: List[int] = [8, 16, 32]) -> tf.Tensor:
+    """Generate FPN anchors at three scales.  Returns shape [N, 4] xyxy."""
+    # TODO: implement full FPN anchor generator from Lab 6.4
+    anchors_per_level = []
+    for stride in strides:
+        grid = image_size // stride
+        # Placeholder: single 1:1 anchor per cell
+        cx = (tf.cast(tf.range(grid), tf.float32) + 0.5) * stride
+        cy = (tf.cast(tf.range(grid), tf.float32) + 0.5) * stride
+        cx, cy = tf.meshgrid(cx, cy)
+        cx, cy = tf.reshape(cx, [-1]), tf.reshape(cy, [-1])
+        half = stride * 2.0
+        boxes = tf.stack([cx - half, cy - half, cx + half, cy + half], axis=-1)
+        anchors_per_level.append(boxes)
+    return tf.concat(anchors_per_level, axis=0)
+
+
+# ---------------------------------------------------------------------------
+# Stage 3: NMS post-processing (Labs 6.5–6.6)
+# ---------------------------------------------------------------------------
+def apply_nms(boxes: tf.Tensor,
+              scores: tf.Tensor,
+              iou_threshold: float = 0.45,
+              score_threshold: float = 0.25,
+              max_detections: int = 100) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+    """Apply NMS and return (boxes, scores, indices).  Uses tf.image.nms."""
+    # TODO: replace with Soft-NMS or DIoU-NMS from Lab 6.6
+    selected = tf.image.non_max_suppression(
+        boxes, scores,
+        max_output_size=max_detections,
+        iou_threshold=iou_threshold,
+        score_threshold=score_threshold
+    )
+    return tf.gather(boxes, selected), tf.gather(scores, selected), selected
+
+
+# ---------------------------------------------------------------------------
+# Stage 4: YOLO inference stub (Labs 6.7–6.9)
+# ---------------------------------------------------------------------------
+def yolo_forward(image: tf.Tensor,
+                 num_classes: int = 80) -> Dict[str, tf.Tensor]:
+    """
+    Stub forward pass — returns raw head outputs at three scales.
+    TODO: replace with trained YOLOModel from Lab 6.8 and Lab 6.9.
+    """
+    batch = tf.shape(image)[0]
+    # Three scale heads: 52×52, 26×26, 13×13
+    out_large  = tf.random.uniform([batch, 52, 52, 3 * (5 + num_classes)])
+    out_medium = tf.random.uniform([batch, 26, 26, 3 * (5 + num_classes)])
+    out_small  = tf.random.uniform([batch, 13, 13, 3 * (5 + num_classes)])
+    return {"large": out_large, "medium": out_medium, "small": out_small}
+
+
+# ---------------------------------------------------------------------------
+# Stage 5: mAP evaluation stub (Lab 6.12)
+# ---------------------------------------------------------------------------
+def evaluate_map(predictions: List[Dict],
+                 ground_truths: List[Dict],
+                 iou_threshold: float = 0.5) -> float:
+    """Compute mAP@iou_threshold.  TODO: wire in full mAP from Lab 6.12."""
+    # Placeholder — returns 0.0 until real implementation is added
+    return 0.0
+
+
+# ---------------------------------------------------------------------------
+# Main: run the scaffold
+# ---------------------------------------------------------------------------
+if __name__ == "__main__":
+    print("Module 6 — End-to-End Detection Scaffold")
+    print("=" * 60)
+
+    image = load_sample_image()
+    print(f"Image tensor shape : {image.shape}")
+
+    anchors = generate_anchors()
+    print(f"Total anchors       : {len(anchors)}")
+
+    head_outputs = yolo_forward(image)
+    for scale, t in head_outputs.items():
+        print(f"Head ({scale:6s}) shape: {t.shape}")
+
+    # Dummy boxes / scores for NMS demo
+    dummy_boxes  = tf.random.uniform([200, 4])
+    dummy_scores = tf.random.uniform([200])
+    kept_boxes, kept_scores, _ = apply_nms(dummy_boxes, dummy_scores)
+    print(f"Boxes after NMS     : {len(kept_boxes)}")
+
+    map_score = evaluate_map([], [])
+    print(f"mAP (stub)          : {map_score:.4f}")
+    print("=" * 60)
+    print("Complete each TODO to turn this stub into a real pipeline.")
+```
+
+---
+
+## Expected Output
+
+| Metric | Stub Value | After All Labs |
+|---|---|---|
+| Image tensor shape | `(1, 416, 416, 3)` | `(1, 416, 416, 3)` |
+| Total anchors (3 scales, 1 anchor/cell) | 11 934 | ~75 600 (full FPN) |
+| Head large shape | `(1, 52, 52, 255)` | real model output |
+| Head medium shape | `(1, 26, 26, 255)` | real model output |
+| Head small shape | `(1, 13, 13, 255)` | real model output |
+| Boxes after NMS | ≤ 100 | varies by image |
+| mAP@0.5 (stub) | 0.0000 | ≥ 0.45 on COCO val |
+
+```python
+# Validation assertion (run after completing all labs)
+assert image.shape == (1, 416, 416, 3), "Image shape mismatch"
+assert anchors.shape[1] == 4, "Anchors must be [N, 4] xyxy"
+assert len(kept_boxes) <= 100, "NMS must cap at max_detections=100"
+print("Scaffold assertions passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Anchor units mismatch (pixel vs. normalised) | TF OD API normalises boxes to [0, 1]; YOLO uses pixel coords | Pick one coordinate space for the whole pipeline and convert at the boundary |
+| `# TODO` stubs left in production code | Scaffold was treated as final | Replace every `# TODO` section with real implementations before evaluation |
+| NMS threshold set too low (< 0.3) | Suppresses correct detections of adjacent objects (e.g. crowd scenes) | Use 0.45–0.5 for standard evaluation; tune per dataset |
+| Grid-cell ambiguity at stride boundaries | Objects near the border of two feature-map cells get assigned to the wrong cell | Use the YOLO centroid assignment rule: assign to the cell containing the box centre |
+| mAP evaluated at wrong IoU threshold | COCO uses mAP@[0.5:0.95]; Pascal VOC uses mAP@0.5 — mixing gives incomparable numbers | Always state the IoU threshold and match it to the benchmark standard |
+
+## Stretch Goals
+
+1. Replace the stub `generate_anchors` with the full k-means IoU-based anchor optimiser from Lab 6.4 and report the mean IoU improvement over the uniform stride-2 anchors used here.
+2. Swap the `tf.image.non_max_suppression` call with the DIoU-NMS implementation from Lab 6.7 and measure precision/recall change on COCO minival (500 images).
+3. Wire in a real YOLOv8-nano backbone (TFLite or ONNX via `tf.lite.Interpreter`) for the `yolo_forward` stub and benchmark inference latency on CPU vs. GPU.
+4. Extend `evaluate_map` to compute COCO-style mAP@[0.5:0.05:0.95] using the pycocotools API and compare to the stub's placeholder return value.
 
 ---

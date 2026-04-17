@@ -627,6 +627,48 @@ if __name__ == "__main__":
 
 ---
 
+## Expected Output
+
+| Metric | Expected Value |
+|---|---|
+| mAP@0.5 (Pascal VOC 11-point) | ≥ 0.50 on COCO val (YOLOv3) |
+| mAP@[0.5:0.95] (COCO primary metric) | ≥ 0.30 for a trained YOLOv3 |
+| AP for large objects (area > 96²) | typically 10–15% higher than small AP |
+| AP for small objects (area < 32²) | typically the lowest per-category AP |
+| Precision-Recall AUC (per class) | in [0, 1]; AP = area under PR curve |
+| INT8 quantisation mAP drop | typically < 1% mAP@0.5 for post-training quantisation |
+
+```python
+# Validation assertions
+assert 0.0 <= map_score <= 1.0, f"mAP must be in [0, 1], got {map_score}"
+# Per-class AP sanity: no class AP should exceed 1.0
+for cls_id, ap in class_results['APs'].items():
+    assert 0.0 <= ap <= 1.0, f"Class {cls_id} AP={ap:.4f} out of range"
+# mAP is the mean of per-class APs
+computed_map = sum(class_results['APs'].values()) / len(class_results['APs'])
+assert abs(computed_map - map_score) < 1e-4, "mAP != mean of per-class APs"
+print("mAP evaluation assertions passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| mAP@0.5 vs. mAP@[0.5:0.95] confusion | VOC uses a single IoU threshold (0.5); COCO averages over 10 thresholds (0.5, 0.55, …, 0.95) — the COCO primary metric is ~2× harder | Always state which mAP definition you are using; never compare COCO mAP@[0.5:0.95] directly to VOC mAP@0.5 |
+| 11-point vs. interpolated AP | The old 11-point interpolation underestimates AP on flat PR curves; COCO uses 101-point all-point interpolation | Use `np.trapz` on the full precision-recall array for the COCO-style area; only use 11-point for VOC compatibility |
+| Duplicate GT matching (greedy vs. optimal) | If two predicted boxes both match the same GT box, only the highest-scoring one is a TP; the second is a FP | Mark each GT box as matched at most once (greedy by score), not per prediction independently |
+| Small-object AP artificially low due to strict NMS | Setting `iou_threshold = 0.5` for NMS can over-suppress small boxes that only partially overlap the GT | Evaluate with `iou_threshold = 0.5` for NMS but ensure GT IoU matching threshold is also 0.5 and not confused with NMS threshold |
+| Quantisation calibration on wrong dataset | Calibrating INT8 quantisation on the test set leaks distribution information and gives over-optimistic mAP estimates | Use a separate held-out calibration set (typically 100–500 representative training images, not validation or test) |
+
+## Stretch Goals
+
+1. Implement COCO-style mAP@[0.5:0.05:0.95] using the official `pycocotools` API (`COCOeval`) and verify that your pure-NumPy implementation matches it to within 0.1% mAP on the COCO val2017 5k subset.
+2. Apply pseudo-labelling for semi-supervised detection: train a base detector on 10% of COCO, generate pseudo-labels on the unlabelled 90%, filter by confidence ≥ 0.8, and measure the mAP improvement after retraining on the combined set.
+3. Profile quantisation degradation across IoU thresholds by plotting mAP@T for T in {0.5, 0.6, 0.7, 0.8, 0.9} for the float32 and INT8 models — identify the IoU threshold at which quantisation causes the largest mAP drop.
+4. Implement the TIDE error analysis framework (Bolya et al. 2020) to decompose mAP errors into classification, localisation, duplicate, background, missed, and other categories, and identify the dominant error type for your trained detector.
+
+---
+
 # Summary and Additional Resources
 
 ## Module 6 Summary

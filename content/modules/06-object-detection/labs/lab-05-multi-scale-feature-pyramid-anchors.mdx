@@ -488,3 +488,43 @@ if __name__ == "__main__":
 ```
 
 ---
+
+## Expected Output
+
+| Metric | Expected Value |
+|---|---|
+| P3 anchor count (stride 8, 640 px input) | 57 600 (80×80 grid × 9 anchors) |
+| P4 anchor count (stride 16) | 14 400 (40×40 × 9) |
+| P5 anchor count (stride 32) | 3 600 (20×20 × 9) |
+| Total FPN anchors (P3+P4+P5) | 75 600 |
+| Positive anchor matches (IoU ≥ 0.5) | ≥ 1 per GT box |
+| Box targets shape | `[75600, 4]` (tx, ty, tw, th) |
+
+```python
+# Validation assertions
+total_anchors = sum(
+    (640 // s) ** 2 * 9 for s in [8, 16, 32]
+)
+assert total_anchors == 75600, f"Expected 75600 anchors, got {total_anchors}"
+assert box_targets.shape == (75600, 4), "Box targets shape mismatch"
+print("FPN anchor assertions passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Anchor count explosion with small strides | Adding a P2 level (stride 4) increases anchors to 345 600 — 5× GPU memory overhead | Only add P2 when detecting objects smaller than 32 px; profile memory first |
+| FPN level assignment off-by-one | `floor(log2(sqrt(area) / 224))` uses 224 as reference; using 256 shifts all assignments one level down | Match the exact FPN level formula to your backbone (ResNet uses 224, EfficientNet uses different values) |
+| Positive/negative ratio imbalance | Only ~1% of 75 600 anchors match a GT box at IoU ≥ 0.5 | Apply hard negative mining or focal loss; do not train on all negatives simultaneously |
+| Ignoring anchors that cross image boundaries | Edge-straddling anchors produce out-of-range regression targets during training | Set `valid_flags` to zero for anchors whose corners fall outside `[0, image_size]` |
+| Stale anchor cache after image resize | Anchors are precomputed for one resolution; resizing the image without regenerating anchors misaligns the grid | Regenerate or verify anchor shapes whenever `image_size` changes |
+
+## Stretch Goals
+
+1. Implement the PANet (Path Aggregation Network) bottom-up path augmentation on top of the standard FPN and compare anchor recall@0.5 on COCO minival against the vanilla FPN baseline.
+2. Add a P6 and P7 level (strides 64 and 128) as used in RetinaNet and measure the change in recall for objects larger than 300 px in the COCO large-object split.
+3. Implement ATSS (Adaptive Training Sample Selection, Zhang et al. 2020) anchor assignment — select top-k candidates per FPN level based on centre distance, then use the dynamic IoU threshold — and compare against the fixed 0.5 threshold used here.
+4. Replace anchor-based assignment with an anchor-free FCOS-style centerness map: for each foreground pixel predict `(l, r, t, b)` distances to the GT box edges, compute centerness = `sqrt(min(l,r)/max(l,r) * min(t,b)/max(t,b))`, and compare mAP to the anchor-based approach.
+
+---

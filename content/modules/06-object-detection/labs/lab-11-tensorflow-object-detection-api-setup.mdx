@@ -387,3 +387,43 @@ if __name__ == "__main__":
 ```
 
 ---
+
+## Expected Output
+
+| Metric | Expected Value |
+|---|---|
+| API installation status | `object_detection` importable without errors |
+| Model zoo models available | 40+ in TF2 detection model zoo |
+| SSD MobileNet V2 download size | ~23 MB (frozen graph) |
+| SSD MobileNet V2 inference latency (CPU) | ~30–60 ms per image |
+| `num_detections` from pre-trained model | varies by image (typically 3–20 for COCO objects) |
+| Detection boxes shape | `(1, 100, 4)` — top 100 candidates before thresholding |
+
+```python
+# Validation assertions
+assert 'detection_boxes' in dummy_detections, "Output must contain detection_boxes"
+assert 'detection_scores' in dummy_detections, "Output must contain detection_scores"
+assert dummy_detections['detection_boxes'].shape[-1] == 4, "Boxes must be [N, 4]"
+# Scores must be in [0, 1]
+assert (dummy_detections['detection_scores'] <= 1.0).all(), "Scores exceed 1.0"
+print("TF OD API output assertions passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Protobuf version conflict at import | TF OD API requires `protobuf < 4.0`; newer TensorFlow installs protobuf 4.x by default | Pin `protobuf==3.20.*` in your requirements; run `pip install protobuf==3.20.3` before installing TF OD API |
+| `tf.gfile` deprecation errors | Legacy TF1 code in older TF OD API versions uses `tf.gfile` which was removed in TF2 | Use TF OD API `>= 0.1.0` (tf2 branch) or apply the `tf.io.gfile` compatibility shim |
+| Model zoo checkpoint vs. SavedModel confusion | The zoo provides both frozen graphs and SavedModels; loading a `.ckpt` path with `tf.saved_model.load` fails silently | Always point `load_tf_od_model` to the `saved_model/` subdirectory, not the checkpoint root |
+| Input image dtype mismatch | TF OD API models expect `uint8` tensors in [0, 255]; passing float32 in [0, 1] produces near-zero confidence scores | Cast the input: `tf.cast(image * 255, tf.uint8)` before passing to the model |
+| Pipeline config `.config` file missing | Training and evaluation both require the pipeline config; forgetting to include it in the job directory causes silent config-not-found errors | Always copy `pipeline.config` alongside the checkpoint when moving models between directories |
+
+## Stretch Goals
+
+1. Download three models from the TF2 Detection Model Zoo (SSD MobileNet V2, EfficientDet D0, Faster R-CNN ResNet50) and benchmark their latency vs. mAP@0.5 trade-off on 50 COCO validation images, plotting a latency-mAP Pareto curve.
+2. Convert the SSD MobileNet V2 SavedModel to TFLite (float16 quantised) using `tf.lite.TFLiteConverter.from_saved_model` and measure the size reduction and mAP@0.5 degradation on the same 50 images.
+3. Run the TF OD API model on a video stream using `cv2.VideoCapture` and measure real-time FPS; add a sliding-window temporal smoother that averages detection boxes over 3 consecutive frames to reduce jitter.
+4. Explore the TF OD API DETR (DEtection TRansformer) model if available in the zoo, or implement a simplified cross-attention matching step, and compare the anchor-free DETR approach to the SSD anchor-based baseline on a 10-class PASCAL VOC subset.
+
+---

@@ -411,3 +411,45 @@ if __name__ == "__main__":
 ```
 
 ---
+
+## Expected Output
+
+| Metric | Expected Value |
+|---|---|
+| Raw predictions (3 scales combined) | 10 647 boxes per image |
+| After confidence threshold (0.25) | ~200–500 boxes (image-dependent) |
+| After NMS (IoU threshold 0.45) | ~10–50 final detections |
+| Inference latency (CPU, float32, 416×416) | ~300–800 ms |
+| Inference latency (GPU, float32, 416×416) | ~15–40 ms |
+| mAP@0.5 (COCO val, trained model) | ≥ 0.45 for YOLOv3 |
+
+```python
+# Validation assertions
+raw_box_count = 13*13*3 + 26*26*3 + 52*52*3  # = 10647
+assert raw_box_count == 10647, "Total raw prediction count mismatch"
+# After NMS, detections should be bounded
+assert len(detections) <= 100, "NMS must limit final detections"
+# Scores must be in [0, 1]
+if len(detections) > 0:
+    assert all(0 <= d[4] <= 1 for d in detections), "Confidence out of [0, 1]"
+print("YOLO inference assertions passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Confidence score = objectness × class probability double-counted | Some implementations multiply objectness and class scores twice (once in decoder, once in filter) | Apply the product `obj_score * class_score` exactly once, in the decoder step |
+| Input image not letterboxed before inference | Resizing without letterboxing distorts aspect ratios, misaligning predicted box coordinates with the original image | Use letterbox padding to preserve aspect ratio; record the pad offsets to unscale detections correctly |
+| Predicted box coordinates outside [0, 1] after decoding | Sigmoid on tx/ty is relative to the cell; adding the cell offset without dividing by grid size gives pixel-space coords | Divide `(sigmoid(tx) + cell_x) / grid_size` to get normalised coordinates in [0, 1] |
+| NMS applied before class score filtering | Running NMS on all 10 647 boxes (before thresholding) is 100× slower than filtering first | Always filter by score threshold before NMS; only pass boxes above `conf_threshold` to the NMS step |
+| Multi-class NMS run globally instead of per-class | A person box at IoU=0.6 with a car box would be incorrectly suppressed if NMS ignores class labels | Run `tf.image.combined_non_max_suppression` or loop NMS per class label |
+
+## Stretch Goals
+
+1. Implement letterbox preprocessing with pad-offset tracking so that bounding boxes are correctly projected back to the original image resolution after inference, and verify with a ground-truth COCO annotation.
+2. Add Test-Time Augmentation (TTA): run inference on the original image, its horizontal flip, and two rescaled versions (0.83× and 1.2×), then fuse predictions using Weighted Boxes Fusion (WBF) and measure mAP improvement on COCO val.
+3. Export the inference pipeline to TensorFlow SavedModel format with a concrete `tf.function` signature that accepts a `uint8` image tensor and returns `(boxes, scores, classes, num_detections)`, verifying numerical equivalence with the eager-mode output.
+4. Profile the post-processing pipeline using `tf.profiler` to identify the bottleneck (decoding vs. NMS vs. class filtering) and optimise the slowest step using `tf.vectorized_map` or a custom CUDA kernel via `tf.py_function`.
+
+---

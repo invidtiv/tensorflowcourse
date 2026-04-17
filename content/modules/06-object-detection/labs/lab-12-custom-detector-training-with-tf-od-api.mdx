@@ -14,6 +14,58 @@ source: "lab-01-complete.md"
 - Train a custom object detector
 - Export trained model
 
+## Expected Output
+
+**Dataset preparation** (Section 1 — TFRecord creation):
+```
+Total images: 100
+Train split: 80 images  →  train.record  (written, ~12–15 MB for 640 px images)
+Val split:   20 images  →  val.record    (~3–4 MB)
+Verifying 5 training examples:
+  Example 0: image_id=0001, boxes=3, classes=[person, car, dog]
+  ...
+TFRecord creation complete.
+```
+
+**Pipeline configuration** (Section 2 — pipeline.config):
+Key fields that must be set (confirm these lines are non-default in your config):
+- `num_classes`: matches your label map (e.g., 3 for person/car/dog)
+- `fine_tune_checkpoint`: absolute path to the pre-trained checkpoint (`.ckpt-0`)
+- `fine_tune_checkpoint_type`: `"detection"` (not `"classification"`)
+- `batch_size`: 4–8 for local GPU (≥32 GB RAM), 2 for CPU
+- `train_input_reader.input_path` / `eval_input_reader.input_path`: paths to your `.record` files
+
+**Training output** (Section 3 — training loop, 1 000 steps):
+```
+Step 100: loss = 2.45  lr = 0.0133
+Step 200: loss = 1.87  lr = 0.0267
+...
+Step 1000: loss = 0.62  lr = 0.04
+Checkpoint saved: model.ckpt-1000
+```
+*Total time: ~15–25 min on CPU (8-core), ~2–4 min on a single GPU (RTX 3060+).*
+
+**Evaluation** (Section 4 — COCO metrics on val split, 1 000 steps):
+
+| Metric | Expected range | Notes |
+|--------|---------------|-------|
+| mAP@[0.5:0.95] | 0.10–0.30 | 1 000 steps is under-trained; expect significant improvement by 5 000+ |
+| mAP@0.5 | 0.25–0.55 | IoU@0.5 is lenient — visible recall even early |
+| AR@1 | 0.05–0.15 | Average Recall, 1 detection/image |
+| AR@100 | 0.20–0.40 | More detections allowed |
+
+**Export** (Section 5 — SavedModel):
+```
+Exporting inference graph...
+Converted 1 variables to const ops.
+SavedModel written to: exported_model/saved_model/saved_model.pb
+```
+Inference call on a test image should return:
+- `detection_boxes`: shape `(1, 100, 4)` — top-100 proposals
+- `detection_scores`: shape `(1, 100)` — confidence scores
+- `detection_classes`: shape `(1, 100)` — class indices (1-indexed)
+- `num_detections`: shape `(1,)` — number of valid (score > threshold) detections
+
 ## Complete Implementation
 
 ```python
@@ -625,6 +677,8 @@ if steps_match:
 print("All validation checks passed!")
 ```
 
+## Common Pitfalls
+
 <Callout type="pitfall" title="Common Pitfalls">
 - **Wrong label map IDs**: Label map IDs must start at 1, not 0. ID 0 is reserved for the background class in the TF OD API. Starting at 0 silently shifts all your class predictions by one.
 - **Mismatched paths in pipeline.config**: The `fine_tune_checkpoint`, `label_map_path`, and `input_path` fields are absolute paths. If you move your project directory, training fails with cryptic `NotFoundError` messages. Use relative paths or a script that patches them at runtime.
@@ -632,6 +686,8 @@ print("All validation checks passed!")
 - **TFRecord field name mismatch**: The TF OD API expects specific field names (`image/encoded`, `image/object/bbox/xmin`, etc.). Custom TFRecord generation scripts often use different names, causing silent data loading failures where the model trains on images with no annotations.
 - **Batch size too large for GPU memory**: The default configs from the model zoo assume multi-GPU setups. Reduce `batch_size` in `train_config` to 2–4 for single-GPU training, or you'll get OOM errors.
 </Callout>
+
+## Stretch Goals
 
 <Callout type="tip" title="Stretch Goals">
 - **End-to-end fine-tuning on a real dataset**: Download a small subset of Open Images v7, convert annotations to TFRecord, and fine-tune an EfficientDet-D0 or SSD MobileNet v2 for 5000 steps. Evaluate with `object_detection.metrics.coco_tools`.

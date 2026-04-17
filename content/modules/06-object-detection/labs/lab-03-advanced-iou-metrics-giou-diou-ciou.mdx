@@ -523,4 +523,34 @@ Different Aspect Ratios          0.1429    -0.0408    -0.0408    -0.1735
 2. **DIoU**: Penalizes based on center distance, good for convergence
 3. **CIoU**: Best overall, considers overlap, distance, and aspect ratio
 
+## Common Pitfalls
+
+<Callout type="warning" title="Common Pitfalls">
+
+- **Loss sign confusion:** the *metric* ranges from -1 to 1 (higher is better), but the *loss* is `1 - GIoU` (lower is better). Mixing them flips the gradient and silently makes training diverge.
+- **Enclosing-box degeneracy in GIoU:** when the two boxes are already aligned, `C − union` can be very small and the `(C − union) / C` penalty term vanishes, so GIoU collapses back to plain IoU. That's fine — don't "fix" it.
+- **CIoU's `α` coupling:** CIoU's `α = v / ((1 − IoU) + v)` is explicitly detached from the graph in the reference paper. If you don't wrap it in `tf.stop_gradient`, you get a double-counting gradient on the aspect-ratio term and training becomes unstable.
+- **Atan numerical edges:** CIoU's `v` uses `arctan(w/h)` — when a box collapses to zero height (e.g. badly clipped predictions), you divide by zero. Clamp `h` and `w` to at least 1e-7 before the `atan`.
+- **Anchor-free vs anchor-based regression:** GIoU/DIoU/CIoU gradients look great on matched pairs, but for anchor-free heads that regress distances to edges (FCOS), you want the loss computed on the resulting boxes after decoding — not on the raw deltas.
+
+</Callout>
+
+## Stretch Goals
+
+<Callout type="tip" title="Stretch Goals">
+
+### Exercise 1: Batched GIoU/DIoU/CIoU
+Re-derive each metric as an N×M pairwise matrix (anchors × ground-truths) and benchmark against a Python-loop reference on 1 000 random boxes.
+
+### Exercise 2: EIoU and SIoU
+Implement EIoU (Efficient IoU) and SIoU (angle-aware IoU) from the 2022-2023 literature and compare on the lab's test set.
+
+### Exercise 3: Gradient Sanity Test
+Pick a non-overlapping pair and use `tf.GradientTape` to compare the gradient w.r.t. the predicted box for plain IoU, GIoU, DIoU and CIoU. Confirm IoU has zero gradient and the others do not.
+
+### Exercise 4: Drop-in for YOLOv5/v8 Loss
+Swap CIoU into the lab-09 YOLO training pipeline and measure mAP on a small COCO subset relative to the stock IoU loss.
+
+</Callout>
+
 ---

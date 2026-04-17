@@ -475,3 +475,98 @@ if __name__ == "__main__":
 ```
 
 ---
+
+## Validation Checkpoint
+
+Run these five assertions to catch the most common NMS correctness failures before they contaminate mAP evaluation.
+
+```python
+import numpy as np
+import tensorflow as tf
+
+def validate_nms(nms_fn):
+    # 1. Monotonic score ordering — kept detections must be in descending score order.
+    boxes = tf.constant([[0, 0, 10, 10], [1, 1, 11, 11], [50, 50, 60, 60]], dtype=tf.float32)
+    scores = tf.constant([0.9, 0.8, 0.95], dtype=tf.float32)
+    keep = nms_fn(boxes, scores, iou_threshold=0.5).numpy()
+    kept_scores = scores.numpy()[keep]
+    assert np.all(np.diff(kept_scores) <= 0), f"NMS output not score-sorted: {kept_scores}"
+
+    # 2. Disjoint boxes must ALL survive (no spurious suppression).
+    disjoint = tf.constant([[0, 0, 10, 10], [20, 20, 30, 30], [40, 40, 50, 50]], dtype=tf.float32)
+    ds = tf.constant([0.9, 0.8, 0.7], dtype=tf.float32)
+    keep = nms_fn(disjoint, ds, iou_threshold=0.5).numpy()
+    assert len(keep) == 3, f"Disjoint boxes suppressed: kept {len(keep)}/3"
+
+    # 3. Identical boxes — exactly one (the highest-scoring) must survive.
+    dup = tf.constant([[0, 0, 10, 10]] * 5, dtype=tf.float32)
+    dup_s = tf.constant([0.9, 0.8, 0.7, 0.6, 0.5], dtype=tf.float32)
+    keep = nms_fn(dup, dup_s, iou_threshold=0.5).numpy()
+    assert len(keep) == 1 and keep[0] == 0, f"Duplicate handling failed: {keep}"
+
+    # 4. Threshold boundary — IoU == threshold must SUPPRESS (strict >=), not keep.
+    # [0,0,10,10] and [0,0,10,20] → IoU = 100/200 = exactly 0.5.
+    b = tf.constant([[0, 0, 10, 10], [0, 0, 10, 20]], dtype=tf.float32)
+    s = tf.constant([0.9, 0.8], dtype=tf.float32)
+    keep = nms_fn(b, s, iou_threshold=0.5).numpy()
+    assert len(keep) == 1, f"Boundary IoU handling inconsistent: kept {len(keep)}"
+
+    # 5. Empty input must not crash and must return an empty tensor.
+    empty_b = tf.zeros((0, 4), dtype=tf.float32)
+    empty_s = tf.zeros((0,), dtype=tf.float32)
+    keep = nms_fn(empty_b, empty_s, iou_threshold=0.5).numpy()
+    assert len(keep) == 0, "Empty input produced non-empty output"
+
+    print("✅ All 5 NMS assertions passed")
+
+validate_nms(nms_tensorflow)
+```
+
+---
+
+## Expected Output
+
+<Callout type="info" title="Expected Output">
+
+**Hand-rolled NMS on the 5-box toy set** should suppress the 3 overlapping boxes to **2 survivors** at `iou_threshold=0.5` (the two top-scoring boxes from disjoint clusters). Final kept-score range **0.88–0.95**; any run that returns fewer than 2 or more than 3 boxes indicates an off-by-one in the argsort or the "keep" mask.
+
+**`tf.image.non_max_suppression` parity check** — for the same 5-box input, both implementations MUST return the same indices (up to order). If they disagree, the usual culprit is box format: the TF op expects `[y1, x1, y2, x2]`, not `[x1, y1, x2, y2]`.
+
+**Wall-clock on a 10,000-box synthetic benchmark (Colab T4, batch of 1):**
+
+| Implementation | Latency (ms) | Notes |
+| -------------- | ------------ | ----- |
+| Python loop NMS (`nms_python`) | 180–260 | O(N²) sequential; dominated by interpreter overhead |
+| TF op (`tf.image.non_max_suppression`) | 2–4 | XLA-fused, single GPU kernel |
+| Batched TF op (`combined_non_max_suppression`, batch=32) | 6–12 | Per-image amortized < 0.5 ms |
+
+**Red flags & diagnostic tree:**
+
+- Latency &gt; 20 ms on the TF op → you forgot to move tensors to GPU, or the op fell back to CPU because `max_output_size` is a Python int inside a `tf.function`.
+- Python impl faster than TF op → you benchmarked `max_output_size=5` (trivial input); re-run with `max_output_size=1000` and 10k candidates before claiming a win.
+- `combined_non_max_suppression` drops all boxes → `score_threshold` defaults to `float('-inf')` but you passed `0.0` while your scores are in `[-1, 1]` (logits). Apply sigmoid/softmax first.
+- Survivors change run-to-run with identical input → you're running NMS before sorting, or your sort key is `tf.argsort(scores)` (ascending) instead of descending. Use `direction='DESCENDING'`.
+- Per-class NMS returns more boxes than global NMS but mAP drops → you're double-counting boxes across classes at the eval step; use class-agnostic accounting for mAP@IoU even when inference runs per-class.
+
+</Callout>
+
+---
+
+## Common Pitfalls
+
+1. **Running global NMS instead of per-class NMS.** If two classes overlap (e.g., *person* and *backpack* on the same region), global NMS arbitrarily drops one. Always suppress **within class** unless the taxonomy is mutually exclusive.
+2. **Filtering by score threshold AFTER sorting.** Low-score boxes still bloat the IoU matrix and wall-clock time. Correct order: `scores > score_thresh` → sort → NMS. Typical 5–20× speedup on dense outputs.
+3. **Skipping `tf.image.combined_non_max_suppression` for batched inference.** Hand-rolled per-image loops defeat XLA fusion; on 32-image × 25k-detection batches you lose an order of magnitude. Use the batched op and set `clip_boxes` explicitly.
+4. **Inconsistent box format (xyxy vs yxyx vs cxcywh).** `tf.image.non_max_suppression` expects `[y1, x1, y2, x2]`. Silent failures look like "NMS suppresses everything" or "nothing" because every IoU computes to ~0 or ~1. Add a format assertion at the head of your pipeline.
+5. **Coupling the NMS IoU threshold to the training assignment IoU.** They are decoupled concerns: training assignment (often 0.5–0.7) has nothing to do with inference NMS threshold (often 0.45–0.6). Tune NMS against validation mAP, not training loss.
+
+---
+
+## Stretch Goals
+
+1. **Matrix / parallel NMS (Solovyev 2021):** Replace the O(N²) sequential loop with an IoU-matrix + iterative suppression-mask formulation. Implement in pure TF with `tf.while_loop` and benchmark against `tf.image.non_max_suppression` on 10k boxes.
+2. **Weighted Boxes Fusion (WBF, Solovyev 2019):** Instead of keeping the highest-scoring box, *merge* overlaps via score-weighted coordinate averaging. Compare mAP@0.5:0.95 vs NMS and Soft-NMS on the same detector — WBF typically wins by 1–3 mAP on ensembled outputs.
+3. **Cluster-NMS (Zheng 2020):** Fully parallel variant that eliminates the sequential dependency. Verify ≤4 iterations converge on COCO-scale inputs.
+4. **Confluence suppression (Shepley 2020):** Score-independent alternative using normalized proximity. On crowded-pedestrian scenes it can recover 2–5 mAP that NMS drops — report the failure mode on sparse scenes.
+
+---

@@ -445,12 +445,51 @@ assert all(math.isfinite(l) for l in loss_history), (
 print("All validation checks passed!")
 ```
 
+## Expected Output
+
+<Callout type="success" title="Expected Output">
+After running the complete YOLO training pipeline on the synthetic dataset for ~20 epochs with the defaults in this lab, you should see roughly:
+
+```text
+======================================================================
+Epoch 1/20  |  total=42.31  box=18.04  obj=19.88  cls=4.39  |  lr=1.0e-04
+Epoch 5/20  |  total=17.85  box= 7.62  obj= 8.51  cls=1.72  |  lr=1.0e-04
+Epoch 10/20 |  total= 9.47  box= 4.08  obj= 4.31  cls=1.08  |  lr=1.0e-04
+Epoch 15/20 |  total= 6.12  box= 2.71  obj= 2.61  cls=0.80  |  lr=5.0e-05
+Epoch 20/20 |  total= 4.78  box= 2.14  obj= 1.98  cls=0.66  |  lr=5.0e-05
+
+Number of output scales: 3
+  Scale P3: (N, 52, 52, 75)
+  Scale P4: (N, 26, 26, 75)
+  Scale P5: (N, 13, 13, 75)
+======================================================================
+Lab 6.8 Complete!
+======================================================================
+All validation checks passed!
+```
+
+Key shape signatures you should observe before training starts:
+
+- `len(predictions) == 3` — three detection heads at strides 8, 16, 32 (P3/P4/P5).
+- Each head's last dim = `num_anchors * (5 + num_classes)`; with 3 anchors and 20 classes that is `3 * 25 = 75`.
+- Total loss should drop by **~8-10x** over 20 epochs on synthetic data. On a real dataset (VOC/COCO) expect a slower drop and a final loss in the 3-6 range after 50+ epochs.
+
+**Red flags:**
+- Loss stuck above ~30 after epoch 5 — check coordinate conversion (sigmoid on `tx,ty`, exp on `tw,th`) or objectness target assignment.
+- `cls` loss collapses to 0 while `obj` loss stays high — class probabilities are being computed for empty cells; mask them with the objectness target before `sparse_categorical_crossentropy`.
+- `NaN` at epoch 1 — unclipped gradients combined with large initial box predictions; clip global norm to 10.0 and verify IoU denominator is `max(union, 1e-7)`.
+</Callout>
+
+## Common Pitfalls
+
 <Callout type="pitfall" title="Common Pitfalls">
 - **Coordinate format mismatch**: YOLO predicts (cx, cy, w, h) relative to grid cells, but IoU computation requires (x1, y1, x2, y2) absolute coordinates. Forgetting to convert between formats causes silently wrong loss values.
 - **Objectness target leakage**: The objectness target should be the IoU between the predicted box and matched ground-truth (or binary 0/1). Using the class label as objectness confuses the model.
 - **No-object cells dominating the loss**: In a 13×13 grid with 3 anchors, you have 507 cells but typically only 1–5 contain objects. Weight the object loss higher (e.g., `lambda_obj=5`) or the model learns to predict "no object" everywhere.
 - **Forgetting sigmoid on tx, ty**: The cell offsets must be passed through sigmoid to constrain them to [0, 1] within the cell. Without this, predictions can "escape" their assigned grid cell, causing training instability.
 </Callout>
+
+## Stretch Goals
 
 <Callout type="tip" title="Stretch Goals">
 - **Real dataset**: Replace the synthetic data generator with VOC 2012 or COCO-mini and add proper data augmentation (mosaic, random crop, color jitter).

@@ -473,3 +473,47 @@ if __name__ == "__main__":
 ```
 
 ---
+
+## Expected Output
+
+| Metric | Expected Value |
+|---|---|
+| Backbone output channels (P3/P4/P5) | 256 / 512 / 1024 |
+| Detection head output shape (large scale) | `(batch, 52, 52, 255)` for 80 classes |
+| Detection head output shape (medium scale) | `(batch, 26, 26, 255)` |
+| Detection head output shape (small scale) | `(batch, 13, 13, 255)` |
+| Total predictions per image (3 anchors × 3 scales) | 10 647 |
+| Parameter count (YOLOv3-tiny-style) | ~8–15 M |
+
+```python
+# Validation assertions
+batch_size = 1
+num_classes = 80
+anchors_per_cell = 3
+outputs_per_anchor = 5 + num_classes  # tx, ty, tw, th, obj + classes
+
+for scale, grid_size in [("large", 52), ("medium", 26), ("small", 13)]:
+    expected_channels = anchors_per_cell * outputs_per_anchor
+    assert outputs[scale].shape == (batch_size, grid_size, grid_size, expected_channels), \
+        f"Head {scale} shape mismatch"
+print("YOLO head shape assertions passed.")
+```
+
+## Common Pitfalls
+
+| Pitfall | Why It Happens | Fix |
+|---|---|---|
+| Anchor mismatch between training and inference | Anchors are hardcoded in the head but not saved with the model weights | Save anchor values in the model config (e.g., a JSON sidecar) and load them at inference time |
+| Grid-cell assignment ambiguity for large objects | Objects spanning multiple grid cells are assigned to the cell containing their centre — but the centre may shift after augmentation | Apply random crop augmentation carefully; re-compute GT assignments after each crop, not before |
+| Objectness loss weight imbalance | The ratio of background cells to foreground cells is ~99:1; unweighted BCE floods gradients from negatives | Apply focal loss or weight the objectness BCE by foreground/background ratio (typical: λ_noobj = 0.5) |
+| Sigmoid vs. softmax for multi-label classes | Using softmax forces mutually exclusive class predictions; an object can only belong to one class | Use independent sigmoid per class for multi-label detection (person + cyclist); only use softmax for single-label datasets |
+| Feature upsampling artefacts in the neck | Nearest-neighbour upsampling (used in YOLOv3 neck) creates checkerboard artefacts that corrupt small-object features | Use bilinear upsampling or transposed convolutions with kernel_size=2, stride=2 to avoid the artefact |
+
+## Stretch Goals
+
+1. Replace the simple CSP-style neck with a BiFPN (Weighted Bi-directional Feature Pyramid Network) from EfficientDet and compare mAP@0.5 on PASCAL VOC against the vanilla FPN neck.
+2. Implement decoupled detection heads (as in YOLOX): separate the classification and box regression branches into two independent 3×3 conv towers and measure the training convergence speed versus coupled heads.
+3. Add a fourth detection scale (P2, stride 4, 104×104 grid) for tiny-object detection and evaluate recall@0.5 on the VisDrone drone-view dataset where objects are often < 16 px.
+4. Quantise the detection head to INT8 using `tf.lite.TFLiteConverter` with representative dataset calibration and report the latency improvement and mAP degradation on COCO val.
+
+---

@@ -473,15 +473,34 @@ All IoU tests passed!
 ============================================================
 ```
 
-## Challenge Exercises
+## Common Pitfalls
+
+<Callout type="warning" title="Common Pitfalls">
+
+- **Zero-area denominator:** when two boxes don't overlap, both `intersection` and one of the areas can be zero. Always clamp the denominator with `tf.maximum(union, 1e-9)` before dividing, otherwise you'll get `NaN` gradients that silently poison training.
+- **Coordinate format mismatch:** mixing `(x_min, y_min, x_max, y_max)` with `(cx, cy, w, h)` is the #1 cause of "my IoU is 0 everywhere." Add an assertion that `x_max >= x_min` and `y_max >= y_min` at the top of the function.
+- **Normalized vs pixel coordinates:** TF OD API stores boxes normalized to `[0, 1]`, while COCO annotations are pixel-space. Mixing them gives plausible-looking but wrong IoUs.
+- **Off-by-one on half-open intervals:** if your boxes are defined on pixel grids, the width is `x_max - x_min + 1` (not `x_max - x_min`). Pick one convention module-wide and stick with it.
+- **Broadcasting bugs in batch IoU:** when computing the N×M IoU matrix, forgetting to `expand_dims` on one set gives a shape error at best and silently broadcasts the wrong pairing at worst. Always print the intermediate shape once during debugging.
+
+</Callout>
+
+## Stretch Goals
+
+<Callout type="tip" title="Stretch Goals">
 
 ### Exercise 1: IoU with Different Aspect Ratios
-Implement IoU calculation for boxes with extreme aspect ratios (very wide or very tall).
+Implement IoU calculation for boxes with extreme aspect ratios (very wide or very tall). Verify your implementation stays numerically stable for 1-pixel-tall boxes.
 
 ### Exercise 2: Weighted IoU
-Create a weighted IoU function that considers confidence scores.
+Create a weighted IoU function that considers confidence scores — useful as a soft matching score during label assignment.
 
 ### Exercise 3: IoU for Rotated Boxes
-Extend the implementation to handle rotated bounding boxes.
+Extend the implementation to handle rotated bounding boxes. Hint: use the Shapely library for the reference implementation, then re-derive a differentiable approximation for training.
+
+### Exercise 4: GIoU / DIoU / CIoU
+Extend your IoU to the three generalized variants covered in lab-03 and compare gradient behaviour on non-overlapping box pairs (where plain IoU has zero gradient).
+
+</Callout>
 
 ---

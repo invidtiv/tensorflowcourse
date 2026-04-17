@@ -593,3 +593,27 @@ Optimized Anchors (width, height):
 ```
 
 ---
+
+## Common Pitfalls
+
+## ⚠️ Common Pitfalls
+
+1. **Aspect ratio as width/height vs. height/width** — the formula `width = s·√r, height = s/√r` defines `r = width/height`. If your dataset labels bounding boxes in COCO format `[x, y, w, h]`, verify the convention before computing IoU-based matches. An inverted aspect ratio will make tall anchors match wide ground-truth boxes, silently degrading recall at training time.
+
+2. **Anchor scale units** — scales in the formula are expressed in *pixels* relative to the input image (not the feature map). At a stride of 16, an anchor of scale 32 px covers only 2×2 feature cells. If you define scales as feature-map units, multiply by stride before computing IoU with pixel-space ground truth; otherwise your assignment logic will never match small objects.
+
+3. **k-means on IoU, not Euclidean distance** — standard k-means uses Euclidean distance, which penalizes large-anchor dissimilarity too heavily and ignores shape overlap. YOLO v2 (Redmon & Farhadi 2017) showed that clustering on `1 − IoU(box, centroid)` yields anchors that better match the actual object distribution. Use `distance = 1 - iou` in your clustering loop; the code above does this correctly — verify you didn't accidentally swap it back to L2.
+
+4. **Too many anchors → memory explosion** — the multi-scale section shows 57 600 + 14 400 + 3 600 = 75 600 anchors for a 640 px image. Storing these as float32 with 4 coordinates = 1.2 M floats × 4 bytes ≈ 4.8 MB per image per batch. For batch size 8 that is ~38 MB *before* the feature maps. Profile peak GPU memory before scaling to 1280 px inputs.
+
+5. **Not filtering anchors that cross image boundaries during training** — anchors that straddle the image edge produce regression targets with negative or >1 normalized coordinates. Most implementations clip-and-ignore these during training but include them at inference. Confirm `valid_flags` logic is symmetric between your training and inference pipelines; a mismatch causes a detectable drop in edge-of-frame recall.
+
+## Stretch Goals
+
+## 🚀 Stretch Goals
+
+- **IoU-based k-means on a real dataset**: run the clustering on the COCO 2017 training set bounding-box distribution (80 K+ instances) and compare the resulting 9 anchors to the YOLOv3 defaults (`(10,13), (16,30), (33,23), (30,61), (62,45), (59,119), (116,90), (156,198), (373,326)`). Compute mean IoU of your clusters vs. the defaults on the COCO validation split.
+- **Adaptive anchor assignment (ATSS)**: implement the Adaptive Training Sample Selection heuristic (Zhang et al. 2020) — assign anchors based on mean + std of IoU within the top-k nearest anchors per FPN level. Compare recall@0.5 vs. the fixed-IoU threshold (0.5) baseline used here.
+- **Anchor-free baseline**: implement a simple FCOS-style centerness map (Tian et al. 2019) that predicts `(l, r, t, b)` distances from each pixel to the GT box boundary. Compare anchor-based vs. anchor-free mAP on PASCAL VOC mini.
+
+---
