@@ -16,6 +16,13 @@
   ],
   "icon": "brain",
   "color": "#00d4ff",
+  "keyTakeaways": [
+    "Gradient descent = iteratively step against the loss gradient to minimize a cost function",
+    "Learning rate controls step size; too large diverges, too small stalls — schedule or tune it",
+    "tf.GradientTape records forward ops for reverse-mode autodiff; use tf.Variable or tape.watch() for non-variables",
+    "NumPy broadcasting extends dimensions of size 1 to match the other operand — shapes must be compatible",
+    "The deep learning revolution was fueled by large datasets (ImageNet), GPUs, and algorithmic advances (ReLU, batch norm)"
+  ],
   "videoId": "aircAruvnKk",
   "transcriptUrl": "/videos/transcripts/01-intro-deep-learning-en.vtt",
   "videoCaptions": [

@@ -18,6 +18,13 @@
   ],
   "icon": "zap",
   "color": "#f59e0b",
+  "keyTakeaways": [
+    "Adam = momentum (1st moment) + RMSprop adaptive rates (2nd moment) with bias correction — works well out-of-the-box",
+    "Nesterov Accelerated Gradient evaluates the gradient at the look-ahead position, giving better convergence than vanilla momentum",
+    "LR schedules (cosine decay, warm restarts, one-cycle) outperform a fixed LR — start warm, decay to near-zero",
+    "Mixed precision (float16 compute + float32 master weights) gives ~2-3x speedup on modern GPUs with minimal accuracy loss",
+    "tf.data pipelines with prefetch + cache + parallel map eliminate I/O bottlenecks and keep the GPU fed"
+  ],
   "videoId": "IHZwWFHWa-w",
   "transcriptUrl": "/videos/transcripts/04-advanced-training-en.vtt",
   "videoCaptions": [

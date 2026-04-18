@@ -4,6 +4,7 @@ import Breadcrumb from "@/components/layout/Breadcrumb";
 import Button from "@/components/ui/Button";
 import Link from "next/link";
 import TheoryContentRenderer from "../../theory/TheoryContentRenderer";
+import LabAttemptTracker from "./LabAttemptTracker";
 
 interface PageProps {
   params: Promise<{ moduleId: string; labId: string }>;
@@ -31,6 +32,8 @@ export default async function LabPage({ params }: PageProps) {
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
+      {/* Track when the student opens a lab for analytics */}
+      <LabAttemptTracker moduleId={moduleId} labId={labId} />
       <Breadcrumb
         items={[
           { label: "Modules", href: "/modules" },

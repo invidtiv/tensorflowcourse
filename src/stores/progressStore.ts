@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { ModuleProgress, OverallProgress } from "@/types/progress";
+import type { ModuleProgress, OverallProgress, LabAttempt, QuizQuestionAttempt } from "@/types/progress";
 
 interface UserPreferences {
   /** Preferred video playback speed. Persisted across modules/sessions. */
@@ -42,7 +42,10 @@ interface ProgressStore {
   markTheoryRead: (moduleId: string) => void;
   updateTheoryScroll: (moduleId: string, percent: number) => void;
   markLabCompleted: (moduleId: string, labId: string) => void;
+  startLabAttempt: (moduleId: string, labId: string) => void;
+  completeLabAttempt: (moduleId: string, labId: string) => void;
   setQuizScore: (moduleId: string, score: number, total: number, passingScore: number) => void;
+  recordQuizQuestionAttempt: (moduleId: string, attempt: QuizQuestionAttempt) => void;
   updateTimeSpent: (moduleId: string, minutes: number) => void;
   getModuleProgress: (moduleId: string) => ModuleProgress;
   getModuleCompletionPercent: (moduleId: string, totalLabs: number) => number;
@@ -58,8 +61,11 @@ const defaultModuleProgress: ModuleProgress = {
   theoryRead: false,
   theoryScrollPercent: 0,
   labsCompleted: [],
+  labAttempts: [],
   quizScore: null,
   quizPassed: false,
+  quizAttempts: 0,
+  quizQuestionAttempts: [],
   videoWatched: false,
   videoWatchedPercent: 0,
   videoFinishedAt: "",
@@ -225,30 +231,101 @@ export const useProgressStore = create<ProgressStore>()(
           const labs = current.labsCompleted.includes(labId)
             ? current.labsCompleted
             : [...current.labsCompleted, labId];
+          // Also complete the most recent open attempt for this lab
+          const now = new Date().toISOString();
+          const attempts = (current.labAttempts || []).map((a: LabAttempt) => {
+            if (a.labId === labId && !a.completedAt) {
+              return { ...a, completedAt: now };
+            }
+            return a;
+          });
           return {
             modules: {
               ...state.modules,
               [moduleId]: {
                 ...current,
                 labsCompleted: labs,
-                lastAccessed: new Date().toISOString(),
+                labAttempts: attempts,
+                lastAccessed: now,
+              },
+            },
+          };
+        }),
+
+      startLabAttempt: (moduleId, labId) =>
+        set((state) => {
+          const current = state.modules[moduleId] || { ...defaultModuleProgress };
+          const newAttempt: LabAttempt = {
+            labId,
+            startedAt: new Date().toISOString(),
+          };
+          return {
+            modules: {
+              ...state.modules,
+              [moduleId]: {
+                ...current,
+                labAttempts: [...(current.labAttempts || []), newAttempt],
+                lastAccessed: newAttempt.startedAt,
+              },
+            },
+          };
+        }),
+
+      completeLabAttempt: (moduleId, labId) =>
+        set((state) => {
+          const current = state.modules[moduleId] || { ...defaultModuleProgress };
+          const now = new Date().toISOString();
+          // Find the most recent attempt with this labId and no completedAt
+          let found = false;
+          const attempts = [...(current.labAttempts || [])].reverse().map((a: LabAttempt) => {
+            if (!found && a.labId === labId && !a.completedAt) {
+              found = true;
+              return { ...a, completedAt: now };
+            }
+            return a;
+          }).reverse();
+          return {
+            modules: {
+              ...state.modules,
+              [moduleId]: {
+                ...current,
+                labAttempts: attempts,
+                lastAccessed: now,
               },
             },
           };
         }),
 
       setQuizScore: (moduleId, score, total, passingScore) =>
-        set((state) => ({
-          modules: {
-            ...state.modules,
-            [moduleId]: {
-              ...(state.modules[moduleId] || { ...defaultModuleProgress }),
-              quizScore: score,
-              quizPassed: (score / total) * 100 >= passingScore,
-              lastAccessed: new Date().toISOString(),
+        set((state) => {
+          const current = state.modules[moduleId] || { ...defaultModuleProgress };
+          return {
+            modules: {
+              ...state.modules,
+              [moduleId]: {
+                ...current,
+                quizScore: score,
+                quizPassed: (score / total) * 100 >= passingScore,
+                quizAttempts: (current.quizAttempts || 0) + 1,
+                lastAccessed: new Date().toISOString(),
+              },
             },
-          },
-        })),
+          };
+        }),
+
+      recordQuizQuestionAttempt: (moduleId, attempt) =>
+        set((state) => {
+          const current = state.modules[moduleId] || { ...defaultModuleProgress };
+          return {
+            modules: {
+              ...state.modules,
+              [moduleId]: {
+                ...current,
+                quizQuestionAttempts: [...(current.quizQuestionAttempts || []), attempt],
+              },
+            },
+          };
+        }),
 
       updateTimeSpent: (moduleId, minutes) =>
         set((state) => {

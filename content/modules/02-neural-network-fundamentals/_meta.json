@@ -18,6 +18,13 @@
   ],
   "icon": "link",
   "color": "#8b5cf6",
+  "keyTakeaways": [
+    "Backpropagation = chain rule applied layer by layer to compute gradients of the loss w.r.t. every parameter",
+    "ReLU avoids vanishing gradients for deep nets; sigmoid/tanh saturate and slow training in early layers",
+    "All-zero weight init causes the symmetry problem — every neuron learns the same thing; use He or Xavier instead",
+    "Keras Sequential is fine for linear stacks; Functional API is required for branching, skip connections, or multi-IO",
+    "Batch normalization normalizes activations per mini-batch, stabilizing training and allowing higher learning rates"
+  ],
   "videoId": "VMj-3S1tku0",
   "transcriptUrl": "/videos/transcripts/02-neural-network-fundamentals-en.vtt",
   "videoCaptions": [

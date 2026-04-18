@@ -18,6 +18,13 @@
   ],
   "icon": "rocket",
   "color": "#f97316",
+  "keyTakeaways": [
+    "Post-training quantization converts float32 weights to int8, shrinking model size ~4x and speeding inference on CPU/edge",
+    "TFLite = flatbuffer model format optimized for mobile/edge; delegate to GPU or NNAPI for hardware acceleration",
+    "TF Serving exposes a model as a gRPC/REST API with zero-downtime model versioning via SavedModel",
+    "TFX pipeline stages (ExampleGen → Transform → Trainer → Evaluator → Pusher) automate the full ML lifecycle",
+    "Data and concept drift are production failure modes; monitor prediction distribution and label quality continuously"
+  ],
   "videoId": "WbARPbJXmg0",
   "transcriptUrl": "/videos/transcripts/10-production-deployment-en.vtt",
   "videoCaptions": [

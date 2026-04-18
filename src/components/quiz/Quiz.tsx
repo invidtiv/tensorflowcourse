@@ -43,6 +43,10 @@ export default function Quiz({ moduleId, questions, passingScore, accentColor = 
   } = useQuizStore();
 
   const setQuizScore = useProgressStore((s) => s.setQuizScore);
+  const recordQuizQuestionAttempt = useProgressStore((s) => s.recordQuizQuestionAttempt);
+  const quizAttemptNumber = useProgressStore(
+    (s) => (s.modules[moduleId]?.quizAttempts ?? 0) + 1
+  );
 
   // (Re)seed the store whenever the route or source data changes.
   useEffect(() => {
@@ -71,12 +75,29 @@ export default function Quiz({ moduleId, questions, passingScore, accentColor = 
     return { correct: c, answeredCount: a };
   }, [answers, questions]);
 
-  // Persist the score as soon as the result screen is shown, once per attempt.
+  // Persist the score + per-question detail as soon as the result screen is
+  // shown, once per attempt. quizAttemptNumber is read from the store BEFORE
+  // setQuizScore increments it, so we capture the right 1-indexed number.
   useEffect(() => {
     if (showResult && active) {
+      const now = new Date().toISOString();
+      for (const q of questions) {
+        const choiceIndex = answers[q.id];
+        if (choiceIndex === undefined) continue;
+        const correctIndex = q.options.findIndex((o) => o.correct);
+        recordQuizQuestionAttempt(moduleId, {
+          questionId: q.id,
+          answeredAt: now,
+          choiceIndex,
+          correctIndex: correctIndex === -1 ? 0 : correctIndex,
+          isCorrect: q.options[choiceIndex]?.correct ?? false,
+          attemptNumber: quizAttemptNumber,
+        });
+      }
       setQuizScore(moduleId, correct, total, passingScore);
     }
-  }, [showResult, active, moduleId, correct, total, passingScore, setQuizScore]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showResult, active]);
 
   // Seeding still in flight — render a small placeholder to avoid a flash of
   // stale store content from a previous module.

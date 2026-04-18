@@ -1,9 +1,27 @@
+export interface LabAttempt {
+  labId: string;
+  startedAt: string;   // ISO
+  completedAt?: string; // ISO, set when lab marked done
+}
+
+export interface QuizQuestionAttempt {
+  questionId: string;
+  answeredAt: string;       // ISO
+  choiceIndex: number;      // which choice the user picked
+  correctIndex: number;     // the right answer (0-based index)
+  isCorrect: boolean;
+  attemptNumber: number;    // 1-indexed quiz attempt
+}
+
 export interface ModuleProgress {
   theoryRead: boolean;
   theoryScrollPercent: number;
   labsCompleted: string[];
+  labAttempts: LabAttempt[];              // new — append-only log
   quizScore: number | null;
   quizPassed: boolean;
+  quizAttempts: number;                   // total quiz submission count
+  quizQuestionAttempts: QuizQuestionAttempt[]; // per-question log
   /** Whether the student has started watching the module video. */
   videoWatched: boolean;
   /** Percentage of the video the student has watched (0–100). Updated via onTimeUpdate. */

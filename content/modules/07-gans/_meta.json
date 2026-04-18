@@ -18,6 +18,13 @@
   ],
   "icon": "drama",
   "color": "#a855f7",
+  "keyTakeaways": [
+    "GAN minimax: generator minimizes log(1-D(G(z))), discriminator maximizes log(D(x)) + log(1-D(G(z))) — adversarial equilibrium",
+    "Mode collapse = generator produces only a few plausible outputs, ignoring most of the real data distribution",
+    "WGAN-GP replaces JS divergence with Wasserstein distance + gradient penalty — more stable training and meaningful loss curve",
+    "FID (Frechet Inception Distance) compares feature statistics of real vs generated images; lower = more realistic and diverse",
+    "Conditional GANs inject class labels into both G and D, enabling targeted generation (e.g. generate a cat, not a random image)"
+  ],
   "videoId": "8L11aMN5KY8",
   "transcriptUrl": "/videos/transcripts/07-gans-en.vtt",
   "videoCaptions": [

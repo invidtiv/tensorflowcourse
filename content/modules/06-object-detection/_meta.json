@@ -18,6 +18,13 @@
   ],
   "icon": "target",
   "color": "#ef4444",
+  "keyTakeaways": [
+    "IoU = intersection / union of predicted and ground-truth boxes; threshold (e.g. 0.5) defines a true positive",
+    "Anchors are pre-defined box shapes tiled across the image; the model predicts offsets from anchors rather than raw coordinates",
+    "NMS removes duplicate detections by suppressing lower-score boxes whose IoU with a higher-score box exceeds a threshold",
+    "YOLO predicts class + box + confidence in a single forward pass — real-time detection by design",
+    "mAP (mean Average Precision) = area under the precision-recall curve averaged across all classes and IoU thresholds"
+  ],
   "videoId": "9s_FpMpdBi8",
   "transcriptUrl": "/videos/transcripts/06-object-detection-en.vtt",
   "videoCaptions": [

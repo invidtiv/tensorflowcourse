@@ -18,6 +18,13 @@
   ],
   "icon": "eye",
   "color": "#ec4899",
+  "keyTakeaways": [
+    "Convolutions = shared-weight filters that detect spatial patterns; kernel size and stride control receptive field growth",
+    "Pooling (max/avg) downsamples feature maps and provides translation invariance at the cost of spatial resolution",
+    "ResNet skip connections let gradients flow directly through identity paths — solves vanishing gradients in very deep nets",
+    "Transfer learning: freeze early layers (generic features), fine-tune later layers on your task-specific data",
+    "Vision Transformers (ViT) replace convolutions with patch-level self-attention — competitive with CNNs at large scale"
+  ],
   "videoId": "KuXjwB4LzSA",
   "transcriptUrl": "/videos/transcripts/03-cnns-en.vtt",
   "videoCaptions": [

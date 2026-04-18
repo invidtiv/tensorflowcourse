@@ -96,9 +96,17 @@ export default function ModuleOverviewPage() {
 
         {/* Progress Breakdown */}
         <div className="mb-8 p-5 rounded-xl border border-white/[0.06] bg-surface-1/20">
-          <h2 className="text-sm font-heading font-semibold text-text-muted uppercase tracking-wider mb-4">
-            Your Progress
-          </h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-heading font-semibold text-text-muted uppercase tracking-wider">
+              Your Progress
+            </h2>
+            <Link
+              href={`/modules/${moduleId}/analytics`}
+              className="text-xs text-text-muted hover:text-neon-cyan transition-colors"
+            >
+              View analytics →
+            </Link>
+          </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {/* Theory */}
             <div className={`rounded-lg p-3 border ${theoryRead ? "border-emerald-500/30 bg-emerald-500/5" : "border-white/[0.06] bg-surface-1/30"}`}>

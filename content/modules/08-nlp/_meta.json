@@ -18,6 +18,13 @@
   ],
   "icon": "text",
   "color": "#06b6d4",
+  "keyTakeaways": [
+    "Word embeddings encode semantic similarity geometrically — king - man + woman ≈ queen is a real example",
+    "LSTM gates (input, forget, output) selectively update the cell state, allowing the network to remember long-range dependencies",
+    "Attention = learned weighted sum over all encoder states; gives the decoder access to any input position, not just the last hidden state",
+    "Transformer: self-attention + position-wise FFN + positional encoding — no recurrence, fully parallelizable during training",
+    "BERT (encoder) is pretrained with masked LM + NSP; fine-tune on downstream tasks by adding a task-specific head"
+  ],
   "videoId": "OxCpWwDCDFQ",
   "transcriptUrl": "/videos/transcripts/08-nlp-en.vtt",
   "videoCaptions": [

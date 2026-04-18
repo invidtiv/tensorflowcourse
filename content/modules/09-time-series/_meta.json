@@ -18,6 +18,13 @@
   ],
   "icon": "chart",
   "color": "#14b8a6",
+  "keyTakeaways": [
+    "Stationarity = constant mean/variance over time; difference or log-transform non-stationary series before modeling",
+    "Windowing: slide a fixed-length input window and predict the next N steps — the key data-prep step for all DL forecasting",
+    "1D CNNs capture local temporal patterns efficiently; stack with dilation for longer receptive fields without more parameters",
+    "LSTM encoder-decoder for multi-step forecasting: encoder summarizes the past, decoder auto-regressively generates future steps",
+    "Reconstruction error from an autoencoder trained on normal data is a principled anomaly score for time series"
+  ],
   "videoId": "VYpAodcdFfA",
   "transcriptUrl": "/videos/transcripts/09-time-series-en.vtt",
   "videoCaptions": [

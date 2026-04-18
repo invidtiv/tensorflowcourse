@@ -18,6 +18,13 @@
   ],
   "icon": "palette",
   "color": "#10b981",
+  "keyTakeaways": [
+    "Semantic segmentation = dense per-pixel classification; encoder extracts features, decoder restores spatial resolution",
+    "U-Net skip connections copy encoder feature maps to decoder, recovering fine spatial detail lost during downsampling",
+    "Atrous (dilated) convolution enlarges receptive field without extra parameters by inserting gaps in the kernel",
+    "Dice loss focuses on overlap between predicted and ground-truth masks; better than cross-entropy for class-imbalanced segmentation",
+    "IoU (Jaccard index) = intersection / union — the standard segmentation metric; mIoU averages across all classes"
+  ],
   "videoId": "nDPWywWRIRo",
   "transcriptUrl": "/videos/transcripts/05-semantic-segmentation-en.vtt",
   "videoCaptions": [
