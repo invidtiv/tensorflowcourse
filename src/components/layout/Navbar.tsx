@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 const navLinks = [
   { href: "/", label: "Home" },
@@ -13,7 +13,26 @@ const navLinks = [
 
 export default function Navbar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Global "/" shortcut — navigate to /search (unless already on /search or focused in an input)
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (
+        e.key === "/" &&
+        pathname !== "/search" &&
+        !(document.activeElement instanceof HTMLInputElement) &&
+        !(document.activeElement instanceof HTMLTextAreaElement) &&
+        !(document.activeElement instanceof HTMLSelectElement)
+      ) {
+        e.preventDefault();
+        router.push("/search");
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [pathname, router]);
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 glass border-b border-white/[0.06]">
@@ -47,6 +66,22 @@ export default function Navbar() {
                 </Link>
               );
             })}
+
+            {/* Search icon link */}
+            <Link
+              href="/search"
+              aria-label="Search"
+              title="Search (press /)"
+              className={`ml-1 p-2 rounded-lg transition-colors ${
+                pathname === "/search"
+                  ? "text-neon-cyan bg-neon-cyan/10"
+                  : "text-text-secondary hover:text-text-primary hover:bg-surface-1"
+              }`}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </Link>
           </div>
 
           {/* Mobile toggle */}
@@ -92,6 +127,22 @@ export default function Navbar() {
                 </Link>
               );
             })}
+
+            {/* Search link in mobile menu */}
+            <Link
+              href="/search"
+              onClick={() => setMobileOpen(false)}
+              className={`flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                pathname === "/search"
+                  ? "text-neon-cyan bg-neon-cyan/10"
+                  : "text-text-secondary hover:text-text-primary hover:bg-surface-1"
+              }`}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              Search
+            </Link>
           </div>
         </div>
       )}
