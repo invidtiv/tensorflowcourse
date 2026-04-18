@@ -22,3 +22,8 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+# Playwright
+/test-results/
+/playwright-report/
+/playwright/.cache/
