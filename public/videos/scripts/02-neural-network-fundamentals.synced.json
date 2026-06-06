@@ -1,0 +1,169 @@
+{
+  "title": "Module 02 \u2014 Neural Network Fundamentals",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "audio": {
+    "src": "module-02/narration.wav",
+    "durationSec": 116.64,
+    "source": "Gemini TTS (Cory N. profile), generated 2026-06-06",
+    "note": "Scene durations frame-aligned to VO pauses. Total 3499 frames."
+  },
+  "scenes": [
+    {
+      "kind": "title",
+      "durationFrames": 192,
+      "durationSec": 6.4,
+      "audioStart": 0.0,
+      "props": {
+        "title": "Neural Network Fundamentals",
+        "subtitle": "Module 02 \u00b7 From neuron to MLP"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 383,
+      "durationSec": 12.77,
+      "audioStart": 6.4,
+      "props": {
+        "items": [
+          "The artificial neuron: w\u00b7x + b",
+          "Activation functions and what they do",
+          "Forward pass, loss, and backpropagation",
+          "Training loop anatomy in Keras"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 149,
+      "durationSec": 4.97,
+      "audioStart": 19.17,
+      "props": {
+        "title": "The perceptron",
+        "subtitle": "A linear classifier with a threshold"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 385,
+      "durationSec": 12.83,
+      "audioStart": 24.13,
+      "props": {
+        "items": [
+          "Inputs weighted, summed, passed through activation",
+          "Linear boundary \u2014 cannot solve XOR on its own",
+          "Stack perceptrons \u2192 hidden layers \u2192 non-linearity",
+          "MLP = universal function approximator (given enough width)"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 108,
+      "durationSec": 3.6,
+      "audioStart": 36.97,
+      "props": {
+        "title": "Activations that matter",
+        "subtitle": "Sigmoid \u00b7 tanh \u00b7 ReLU \u00b7 GELU"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 434,
+      "durationSec": 14.47,
+      "audioStart": 40.57,
+      "props": {
+        "items": [
+          "Sigmoid: saturates and kills gradients",
+          "Tanh: zero-centered but still saturates",
+          "ReLU: the default workhorse \u2014 cheap and sparse",
+          "GELU: smoother ReLU, popular in Transformers",
+          "Pick activation + initializer together (He for ReLU)"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 124,
+      "durationSec": 4.13,
+      "audioStart": 55.03,
+      "props": {
+        "title": "Forward and backward pass",
+        "subtitle": "Gradient tape + chain rule"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 478,
+      "durationSec": 15.93,
+      "audioStart": 59.17,
+      "props": {
+        "items": [
+          "Forward: compute loss from inputs and current weights",
+          "Backward: \u2202loss/\u2202w_i via recursive chain rule",
+          "Each layer has a local Jacobian \u2014 just matmul and apply",
+          "Optimizer uses gradients to update weights in place",
+          "GradientTape makes the tape explicit for debugging"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 112,
+      "durationSec": 3.73,
+      "audioStart": 75.1,
+      "props": {
+        "title": "Sequential vs Functional API",
+        "subtitle": "Two Keras flavors \u2014 same training engine"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 395,
+      "durationSec": 13.17,
+      "audioStart": 78.83,
+      "props": {
+        "items": [
+          "Sequential \u2014 linear stacks, fastest to prototype",
+          "Functional \u2014 arbitrary DAGs, multi-input/multi-output",
+          "Subclass tf.keras.Model for full research flexibility",
+          "Model.summary() and plot_model() work on all three"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 112,
+      "durationSec": 3.73,
+      "audioStart": 92.0,
+      "props": {
+        "title": "Normalization & initialization",
+        "subtitle": "What makes deep networks trainable"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 435,
+      "durationSec": 14.5,
+      "audioStart": 95.73,
+      "props": {
+        "items": [
+          "Normalize inputs \u2192 mean 0, variance 1",
+          "Batch norm stabilizes intermediate activations",
+          "Glorot for tanh, He for ReLU \u2014 match init to activation",
+          "Bad init = vanishing or exploding gradients"
+        ]
+      }
+    },
+    {
+      "kind": "cta",
+      "durationFrames": 192,
+      "durationSec": 6.4,
+      "audioStart": 110.23,
+      "props": {
+        "text": "Build your first MLP in the labs \u2192"
+      }
+    }
+  ]
+}

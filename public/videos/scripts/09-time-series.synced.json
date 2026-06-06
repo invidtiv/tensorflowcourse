@@ -1,0 +1,173 @@
+{
+  "title": "Module 09 \u2014 Time Series and Sequence Prediction",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "audio": {
+    "src": "module-09/narration.wav",
+    "durationSec": 125.84,
+    "source": "Gemini TTS (Cory N. profile), generated 2026-06-06",
+    "note": "Scene durations frame-aligned to VO pauses. Total 3775 frames."
+  },
+  "scenes": [
+    {
+      "kind": "title",
+      "durationFrames": 210,
+      "durationSec": 7.0,
+      "audioStart": 0.0,
+      "props": {
+        "title": "Time Series Forecasting",
+        "subtitle": "Module 09 \u00b7 Sequential data done right"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 411,
+      "durationSec": 13.7,
+      "audioStart": 7.0,
+      "props": {
+        "items": [
+          "Stationarity, seasonality, trend",
+          "Windowing: univariate and multivariate",
+          "1D CNN, LSTM, and attention-based forecasters",
+          "Multi-step strategies and anomaly detection"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 117,
+      "durationSec": 3.9,
+      "audioStart": 20.7,
+      "props": {
+        "title": "Preprocessing",
+        "subtitle": "Stationarity and decomposition"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 455,
+      "durationSec": 15.17,
+      "audioStart": 24.6,
+      "props": {
+        "items": [
+          "Plot first \u2014 look for trend, seasonality, level shifts",
+          "Differencing removes trend",
+          "Seasonal decomposition \u2014 trend + seasonal + residual",
+          "Rolling mean/std to visualize stationarity",
+          "Never scale using the full series \u2014 avoid leakage"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 129,
+      "durationSec": 4.3,
+      "audioStart": 39.77,
+      "props": {
+        "title": "Windowing",
+        "subtitle": "Turn a series into supervised samples"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 462,
+      "durationSec": 15.4,
+      "audioStart": 44.07,
+      "props": {
+        "items": [
+          "Slide a window of length L over the series",
+          "Inputs: t\u2212L\u2026t\u22121, target: t (or t\u2026t+h)",
+          "Expanding vs rolling windows",
+          "Train/val/test split by time \u2014 never shuffle randomly",
+          "Match window size to the meaningful look-back"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 134,
+      "durationSec": 4.47,
+      "audioStart": 59.47,
+      "props": {
+        "title": "Model choices",
+        "subtitle": "1D CNN \u00b7 LSTM \u00b7 Bi-LSTM \u00b7 Transformer"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 428,
+      "durationSec": 14.27,
+      "audioStart": 63.93,
+      "props": {
+        "items": [
+          "1D CNN \u2014 fast, captures local patterns",
+          "LSTM \u2014 long-term memory, slower",
+          "Bidirectional LSTM \u2014 whole-window context",
+          "Attention / Transformer \u2014 scales to long sequences",
+          "Seq2seq encoder\u2013decoder for multi-step forecasting",
+          "Simple baselines (naive, SARIMA) must be beaten"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 245,
+      "durationSec": 8.17,
+      "audioStart": 78.2,
+      "props": {
+        "title": "Multi-step forecasting",
+        "subtitle": "Direct \u00b7 recursive \u00b7 seq2seq"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 406,
+      "durationSec": 13.53,
+      "audioStart": 86.37,
+      "props": {
+        "items": [
+          "Direct \u2014 one model per forecast horizon",
+          "Recursive \u2014 feed predictions back as inputs (error compounds)",
+          "Seq2seq \u2014 decoder emits full horizon in one pass",
+          "Teacher forcing vs scheduled sampling at training",
+          "Probabilistic outputs (DeepAR, TFT) quantify uncertainty"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 189,
+      "durationSec": 6.3,
+      "audioStart": 99.9,
+      "props": {
+        "title": "Anomaly detection",
+        "subtitle": "LSTM autoencoders and VAEs"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 396,
+      "durationSec": 13.2,
+      "audioStart": 106.2,
+      "props": {
+        "items": [
+          "Train model to reconstruct normal windows",
+          "High reconstruction error = anomaly",
+          "Threshold by validation-set quantile",
+          "VAE variants provide calibrated scores",
+          "Change-point detection complements deep models"
+        ]
+      }
+    },
+    {
+      "kind": "cta",
+      "durationFrames": 193,
+      "durationSec": 6.43,
+      "audioStart": 119.4,
+      "props": {
+        "text": "Build forecasters in the labs \u2192"
+      }
+    }
+  ]
+}

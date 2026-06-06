@@ -1,37 +1,199 @@
 WEBVTT
-Kind: captions
-Language: en
 
-NOTE
-=============================================================
-PLACEHOLDER CAPTION FILE — Module 09: Time Series & Sequential Models
-=============================================================
-This is a placeholder WebVTT file. Replace with real captions
-generated from the recorded lecture transcript.
+NOTE Module 09 captions — auto-aligned to narration.wav (125.8s). en.
 
-Recommended tooling:
-  - Whisper (OpenAI) for auto-transcription: whisper lecture.mp4 --language en
-  - Caption.Ed or Rev.com for human-verified captions
-  - ffmpeg for .srt -> .vtt conversion: ffmpeg -i captions.srt captions.vtt
+1
+00:00:00.000 --> 00:00:01.845
+Welcome to Module Nine — time-series
 
-Format reference: https://developer.mozilla.org/en-US/docs/Web/API/WebVTT_API
+2
+00:00:02.286 --> 00:00:03.900
+forecasting. Sequential data has rules
 
-YouTube video reference: https://www.youtube.com/watch?v=VYpAodcdFfA
-(For localhost/self-hosted: record own lecture and replace .mp4 source)
+3
+00:00:04.594 --> 00:00:06.774
+of its own, and breaking them quietly
 
-TODO (Phase 5b — Video Delivery):
-  - Record module 09 lecture (≥1080p / 30fps / 44.1kHz mono)
-  - Run Whisper to generate initial .srt
-  - Convert to .vtt and review for accuracy
-  - Add speaker identification cues (e.g., ">> Instructor:")
-  - Populate the real transcript below, replacing these placeholder cues
-=============================================================
+4
+00:00:07.234 --> 00:00:09.882
+ruins models. We'll cover preprocessing,
+windowing, model choices,
 
-00:00:00.000 --> 00:00:05.000
-[Placeholder] Welcome to Module 09: Time Series & Sequential Models.
+5
+00:00:10.544 --> 00:00:14.156
+multi-step forecasting, and anomaly
+detection. Always plot the series first —
 
-00:00:05.001 --> 00:00:12.000
-[Placeholder] In this module, we will cover the core concepts and hands-on implementation.
+6
+00:00:14.598 --> 00:00:17.533
+look for trend, seasonality, and sudden
+level shifts. Differencing
 
-00:00:12.001 --> 00:00:20.000
-[Placeholder] Replace this file with real captions once the lecture is recorded.
+7
+00:00:18.656 --> 00:00:20.468
+removes a trend; seasonal decomposition
+
+8
+00:00:20.909 --> 00:00:24.258
+splits the signal into trend, seasonal,
+and residual parts; rolling
+
+9
+00:00:24.939 --> 00:00:26.550
+mean and standard deviation let
+
+10
+00:00:27.132 --> 00:00:29.486
+you eyeball stationarity. And never scale
+using
+
+11
+00:00:29.486 --> 00:00:31.839
+statistics from the full series — that
+
+12
+00:00:32.480 --> 00:00:35.664
+leaks the future into your training set.
+To learn from
+
+13
+00:00:36.610 --> 00:00:39.565
+it, you reframe the series as supervised
+samples. Slide
+
+14
+00:00:39.982 --> 00:00:42.034
+a window of length L across
+
+15
+00:00:43.217 --> 00:00:43.858
+the data:
+
+16
+00:00:44.263 --> 00:00:46.804
+the past L steps are your inputs, the
+
+17
+00:00:47.410 --> 00:00:49.593
+next step or next few are the
+
+18
+00:00:50.141 --> 00:00:51.912
+target. Choose expanding or rolling
+
+19
+00:00:52.350 --> 00:00:54.410
+windows, split by time rather than
+
+20
+00:00:55.136 --> 00:00:57.087
+shuffling, and size the window to
+
+21
+00:00:57.474 --> 00:00:59.256
+a meaningful look-back. Now pick
+
+22
+00:00:59.664 --> 00:01:01.691
+a model. A one-D CNN is
+
+23
+00:01:02.848 --> 00:01:03.594
+fast and
+
+24
+00:01:04.263 --> 00:01:07.258
+catches local patterns. An LSTM remembers
+longer context but
+
+25
+00:01:07.820 --> 00:01:11.164
+costs you speed, and a bidirectional LSTM
+sees the whole
+
+26
+00:01:11.763 --> 00:01:14.350
+window. Attention and Transformers scale
+to long sequences,
+
+27
+00:01:15.164 --> 00:01:17.949
+and a sequence-to-sequence encoder–decoder
+handles multi-step output —
+
+28
+00:01:18.470 --> 00:01:21.892
+but a simple naive or SARIMA baseline
+still has to
+
+29
+00:01:22.445 --> 00:01:25.734
+be beaten. Forecasting several steps ahead
+has three flavors. Direct
+
+30
+00:01:27.017 --> 00:01:29.444
+trains one model per horizon. Recursive
+feeds
+
+31
+00:01:30.199 --> 00:01:32.203
+predictions back as inputs, so errors
+
+32
+00:01:32.975 --> 00:01:36.341
+compound. Seq2seq emits the whole horizon
+in one pass, and
+
+33
+00:01:37.144 --> 00:01:39.625
+probabilistic models like DeepAR and the
+Temporal Fusion
+
+34
+00:01:40.196 --> 00:01:43.613
+Transformer also give you calibrated
+uncertainty. Finally, anomaly detection.
+Train
+
+35
+00:01:43.965 --> 00:01:45.515
+a model — often an
+
+36
+00:01:46.871 --> 00:01:48.286
+LSTM autoencoder — to
+
+37
+00:01:49.009 --> 00:01:49.464
+reconstruct normal
+
+38
+00:01:49.839 --> 00:01:51.400
+windows. When reconstruction error spikes,
+
+39
+00:01:51.874 --> 00:01:53.281
+you've found an anomaly;
+
+40
+00:01:54.143 --> 00:01:56.556
+threshold it by a validation-set quantile,
+and
+
+41
+00:01:57.468 --> 00:01:59.112
+let VAE variants give you
+
+42
+00:01:59.678 --> 00:02:01.793
+calibrated scores. Let's build some
+forecasters
+
+43
+00:02:03.297 --> 00:02:03.889
+— open
+
+44
+00:02:04.824 --> 00:02:05.167
+the labs.

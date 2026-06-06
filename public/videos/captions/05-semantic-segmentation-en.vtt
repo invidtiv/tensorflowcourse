@@ -1,37 +1,163 @@
 WEBVTT
-Kind: captions
-Language: en
 
-NOTE
-=============================================================
-PLACEHOLDER CAPTION FILE — Module 05: Semantic Segmentation
-=============================================================
-This is a placeholder WebVTT file. Replace with real captions
-generated from the recorded lecture transcript.
+NOTE Module 05 captions — auto-aligned to narration.wav (128.0s). en.
 
-Recommended tooling:
-  - Whisper (OpenAI) for auto-transcription: whisper lecture.mp4 --language en
-  - Caption.Ed or Rev.com for human-verified captions
-  - ffmpeg for .srt -> .vtt conversion: ffmpeg -i captions.srt captions.vtt
+1
+00:00:00.000 --> 00:00:01.905
+Welcome to Module Five —
 
-Format reference: https://developer.mozilla.org/en-US/docs/Web/API/WebVTT_API
+2
+00:00:02.303 --> 00:00:03.823
+semantic segmentation. Here we go
 
-YouTube video reference: https://www.youtube.com/watch?v=nDPWywWRIRo
-(For localhost/self-hosted: record own lecture and replace .mp4 source)
+3
+00:00:04.452 --> 00:00:10.125
+from labeling a whole image to predicting
+a class for every single pixel. We'll
 
-TODO (Phase 5b — Video Delivery):
-  - Record module 05 lecture (≥1080p / 30fps / 44.1kHz mono)
-  - Run Whisper to generate initial .srt
-  - Convert to .vtt and review for accuracy
-  - Add speaker identification cues (e.g., ">> Instructor:")
-  - Populate the real transcript below, replacing these placeholder cues
-=============================================================
+4
+00:00:10.749 --> 00:00:13.535
+cover encoder–decoder architectures,
+losses for imbalance, and
 
-00:00:00.000 --> 00:00:05.000
-[Placeholder] Welcome to Module 05: Semantic Segmentation.
+5
+00:00:13.535 --> 00:00:16.321
+post-processing. The bridge from
+classification is the
 
-00:00:05.001 --> 00:00:12.000
-[Placeholder] In this module, we will cover the core concepts and hands-on implementation.
+6
+00:00:17.527 --> 00:00:21.256
+fully convolutional network. Take any CNN
+classifier, swap its
 
-00:00:12.001 --> 00:00:20.000
-[Placeholder] Replace this file with real captions once the lecture is recorded.
+7
+00:00:21.901 --> 00:00:26.273
+dense layers for one-by-one convolutions,
+and upsample the feature maps back
+
+8
+00:00:26.273 --> 00:00:30.646
+to the input resolution. FCN-32s, 16s, and
+8s just fuse skip
+
+9
+00:00:31.564 --> 00:00:37.693
+connections more and more finely, and the
+output is a tensor of height, width, and
+
+10
+00:00:38.222 --> 00:00:42.245
+number of classes. The workhorse is the
+U-Net — a
+
+11
+00:00:43.361 --> 00:00:45.142
+symmetric encoder and decoder joined
+
+12
+00:00:45.594 --> 00:00:49.336
+by skip connections. Those skips carry
+fine spatial detail
+
+13
+00:00:49.866 --> 00:00:53.797
+across the bottleneck, which is why U-Net
+trains well even
+
+14
+00:00:53.797 --> 00:00:57.728
+on very small medical datasets. Attention
+U-Net, TransUNet, and the
+
+15
+00:00:58.508 --> 00:01:01.449
+self-configuring nnU-Net are its modern
+descendants. For richer
+
+16
+00:01:01.449 --> 00:01:04.389
+context there's DeepLab. Atrous, or
+dilated, convolutions
+
+17
+00:01:05.746 --> 00:01:08.073
+expand the receptive field without
+throwing
+
+18
+00:01:08.764 --> 00:01:11.711
+away resolution to pooling. Stack several
+of them
+
+19
+00:01:11.711 --> 00:01:14.658
+in parallel at different rates and you
+
+20
+00:01:15.470 --> 00:01:19.524
+get ASPP, the heart of DeepLabv3+, which
+sits at the
+
+21
+00:01:19.974 --> 00:01:21.742
+state of the art
+
+22
+00:01:22.133 --> 00:01:25.719
+on Cityscapes and Pascal VOC. Your loss
+choice is
+
+23
+00:01:26.702 --> 00:01:30.043
+where imbalance is won or lost. Plain
+cross-entropy
+
+24
+00:01:30.675 --> 00:01:32.631
+is sensitive to it. Dice
+
+25
+00:01:33.278 --> 00:01:35.998
+loss optimizes overlap directly. Focal
+loss down-weights
+
+26
+00:01:36.752 --> 00:01:39.095
+the easy pixels, and Tversky lets
+
+27
+00:01:39.481 --> 00:01:43.122
+you trade false positives against false
+negatives. In practice,
+
+28
+00:01:43.860 --> 00:01:47.390
+combining cross-entropy with Dice often
+wins. And a little
+
+29
+00:01:48.263 --> 00:01:51.206
+post-processing goes a long way: a dense
+
+30
+00:01:51.749 --> 00:01:54.165
+CRF sharpens boundaries, morphological
+operations clear
+
+31
+00:01:54.165 --> 00:01:56.580
+small noise, test-time augmentation
+averages flips
+
+32
+00:01:56.946 --> 00:02:00.465
+and rotations, and ensembling backbones
+buys you another point
+
+33
+00:02:00.465 --> 00:02:03.985
+or two of mean IoU. Let's build a U-Net
+
+34
+00:02:05.044 --> 00:02:07.569
+from scratch — open the labs.

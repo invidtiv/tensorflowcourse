@@ -1,0 +1,172 @@
+{
+  "title": "Module 08 \u2014 Natural Language Processing",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "audio": {
+    "src": "module-08/narration.wav",
+    "durationSec": 133.8,
+    "source": "Gemini TTS (Cory N. profile), generated 2026-06-06",
+    "note": "Scene durations frame-aligned to VO pauses. Total 4014 frames."
+  },
+  "scenes": [
+    {
+      "kind": "title",
+      "durationFrames": 278,
+      "durationSec": 9.27,
+      "audioStart": 0.0,
+      "props": {
+        "title": "Natural Language Processing",
+        "subtitle": "Module 08 \u00b7 Text to tensors"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 415,
+      "durationSec": 13.83,
+      "audioStart": 9.27,
+      "props": {
+        "items": [
+          "Tokenization \u2014 word, character, and subword (BPE)",
+          "Word embeddings \u2014 Word2Vec, GloVe",
+          "RNNs: SimpleRNN, LSTM, GRU",
+          "Attention and Transformers"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 130,
+      "durationSec": 4.33,
+      "audioStart": 23.1,
+      "props": {
+        "title": "Tokenization",
+        "subtitle": "How we turn text into integer IDs"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 502,
+      "durationSec": 16.73,
+      "audioStart": 27.43,
+      "props": {
+        "items": [
+          "Word-level \u2014 simple but huge vocabulary",
+          "Character-level \u2014 small vocab, long sequences",
+          "BPE / WordPiece \u2014 subword, best of both",
+          "SentencePiece \u2014 language-agnostic, trained on raw bytes",
+          "Modern LLMs use ~30\u2013200k subword tokens"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 93,
+      "durationSec": 3.1,
+      "audioStart": 44.17,
+      "props": {
+        "title": "Word embeddings",
+        "subtitle": "Dense representations of meaning"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 509,
+      "durationSec": 16.97,
+      "audioStart": 47.27,
+      "props": {
+        "items": [
+          "One-hot is sparse and meaningless",
+          "Word2Vec \u2014 Skip-gram & CBOW, local co-occurrence",
+          "GloVe \u2014 global matrix factorization on counts",
+          "Semantic arithmetic: king \u2212 man + woman \u2248 queen",
+          "Pretrained embeddings accelerate downstream tasks"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 95,
+      "durationSec": 3.17,
+      "audioStart": 64.23,
+      "props": {
+        "title": "Recurrent networks",
+        "subtitle": "Process sequences one step at a time"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 541,
+      "durationSec": 18.03,
+      "audioStart": 67.4,
+      "props": {
+        "items": [
+          "SimpleRNN \u2014 vanishing gradient on long sequences",
+          "LSTM \u2014 gated cell preserves long-term state",
+          "GRU \u2014 fewer parameters, similar performance",
+          "Bidirectional wrapper reads forward and backward",
+          "Mask padded tokens with tf.keras.layers.Masking"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 142,
+      "durationSec": 4.73,
+      "audioStart": 85.43,
+      "props": {
+        "title": "Attention mechanism",
+        "subtitle": "Learn where to look"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 455,
+      "durationSec": 15.17,
+      "audioStart": 90.17,
+      "props": {
+        "items": [
+          "Query \u00b7 Key \u2192 similarity scores",
+          "Softmax over scores \u2192 attention weights",
+          "Weighted sum of Values \u2192 context vector",
+          "Scaled dot-product attention = \u221ad_k scaling",
+          "Multi-head attention learns multiple relationships"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 232,
+      "durationSec": 7.73,
+      "audioStart": 105.33,
+      "props": {
+        "title": "Common NLP tasks",
+        "subtitle": "Classification, NER, generation"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 343,
+      "durationSec": 11.43,
+      "audioStart": 113.07,
+      "props": {
+        "items": [
+          "Sentiment analysis \u2014 sequence \u2192 single class",
+          "Named entity recognition \u2014 token-level classification",
+          "Text generation \u2014 autoregressive language modeling",
+          "Machine translation \u2014 encoder\u2013decoder with attention",
+          "Modern stack: start from BERT / GPT / T5 weights"
+        ]
+      }
+    },
+    {
+      "kind": "cta",
+      "durationFrames": 279,
+      "durationSec": 9.3,
+      "audioStart": 124.5,
+      "props": {
+        "text": "Build an attention model from scratch \u2192"
+      }
+    }
+  ]
+}

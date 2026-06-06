@@ -1,0 +1,171 @@
+{
+  "title": "Module 04 \u2014 Advanced Training Methodologies",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "audio": {
+    "src": "module-04/narration.wav",
+    "durationSec": 123.08,
+    "source": "Gemini TTS (Cory N. profile), generated 2026-06-06",
+    "note": "Scene durations frame-aligned to VO pauses. Total 3692 frames."
+  },
+  "scenes": [
+    {
+      "kind": "title",
+      "durationFrames": 226,
+      "durationSec": 7.53,
+      "audioStart": 0.0,
+      "props": {
+        "title": "Advanced Training",
+        "subtitle": "Module 04 \u00b7 Optimize like the papers"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 357,
+      "durationSec": 11.9,
+      "audioStart": 7.53,
+      "props": {
+        "items": [
+          "Optimizers beyond vanilla SGD",
+          "Learning rate schedules and the LR finder",
+          "Regularization: dropout, weight decay, early stopping",
+          "Mixed precision and high-throughput data pipelines"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 83,
+      "durationSec": 2.77,
+      "audioStart": 19.43,
+      "props": {
+        "title": "Optimizer zoo",
+        "subtitle": "SGD \u00b7 Momentum \u00b7 Adam \u00b7 AdamW"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 567,
+      "durationSec": 18.9,
+      "audioStart": 22.2,
+      "props": {
+        "items": [
+          "SGD + momentum still beats Adam for vision",
+          "Adam adapts per-parameter learning rate automatically",
+          "AdamW decouples weight decay from gradient update",
+          "Nesterov, Adamax, Nadam \u2014 minor variants",
+          "Your LR schedule matters more than the optimizer choice"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 105,
+      "durationSec": 3.5,
+      "audioStart": 41.1,
+      "props": {
+        "title": "Learning rate schedules",
+        "subtitle": "Cosine, OneCycle, warmup"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 407,
+      "durationSec": 13.57,
+      "audioStart": 44.6,
+      "props": {
+        "items": [
+          "Constant LR = plateau early, waste epochs",
+          "Step decay and exponential decay \u2014 simple but dated",
+          "Cosine annealing + warmup \u2014 modern default",
+          "OneCycle policy \u2014 super-convergence at large LR",
+          "Use an LR range test to find the max stable LR"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 229,
+      "durationSec": 7.63,
+      "audioStart": 58.17,
+      "props": {
+        "title": "Regularization toolkit",
+        "subtitle": "Dropout \u00b7 L2 \u00b7 label smoothing"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 407,
+      "durationSec": 13.57,
+      "audioStart": 65.8,
+      "props": {
+        "items": [
+          "Dropout \u2014 randomly zero activations at train time only",
+          "L2 / weight decay \u2014 penalize large weights",
+          "L1 \u2014 penalize AND sparsify weights",
+          "Label smoothing \u2014 softens one-hot targets",
+          "Early stopping \u2014 remember best val loss, restore it"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 93,
+      "durationSec": 3.1,
+      "audioStart": 79.37,
+      "props": {
+        "title": "Normalization deep dive",
+        "subtitle": "Batch \u00b7 Layer \u00b7 Group \u00b7 Instance"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 456,
+      "durationSec": 15.2,
+      "audioStart": 82.47,
+      "props": {
+        "items": [
+          "BatchNorm: normalize across batch \u2014 small batch = unstable",
+          "LayerNorm: normalize per-sample \u2014 default in Transformers",
+          "GroupNorm: middle ground, batch-size-independent",
+          "InstanceNorm: per-sample per-channel \u2014 style transfer"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 77,
+      "durationSec": 2.57,
+      "audioStart": 97.67,
+      "props": {
+        "title": "Mixed precision & tf.data",
+        "subtitle": "Fast, scalable training pipelines"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 491,
+      "durationSec": 16.37,
+      "audioStart": 100.23,
+      "props": {
+        "items": [
+          "Mixed FP16 \u2014 1.5\u20132\u00d7 speedup on modern GPUs",
+          "LossScaleOptimizer prevents underflow",
+          "tf.data + prefetch + cache + AUTOTUNE = near-peak GPU use",
+          "Distribute across GPUs with tf.distribute.MirroredStrategy",
+          "Profile first \u2014 don't guess the bottleneck"
+        ]
+      }
+    },
+    {
+      "kind": "cta",
+      "durationFrames": 194,
+      "durationSec": 6.47,
+      "audioStart": 116.6,
+      "props": {
+        "text": "Benchmark optimizers and schedules in the labs \u2192"
+      }
+    }
+  ]
+}

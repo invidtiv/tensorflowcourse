@@ -33,5 +33,6 @@
       "default": true,
       "kind": "captions"
     }
-  ]
+  ],
+  "videoUrl": "/videos/module-01/intro.mp4"
 }

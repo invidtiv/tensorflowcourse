@@ -1,0 +1,172 @@
+{
+  "title": "Module 10 \u2014 Production Deployment & Optimization",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "audio": {
+    "src": "module-10/narration.wav",
+    "durationSec": 136.24,
+    "source": "Gemini TTS (Cory N. profile), generated 2026-06-06",
+    "note": "Scene durations frame-aligned to VO pauses. Total 4087 frames."
+  },
+  "scenes": [
+    {
+      "kind": "title",
+      "durationFrames": 183,
+      "durationSec": 6.1,
+      "audioStart": 0.0,
+      "props": {
+        "title": "Production Deployment",
+        "subtitle": "Module 10 \u00b7 From notebook to users"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 485,
+      "durationSec": 16.17,
+      "audioStart": 6.1,
+      "props": {
+        "items": [
+          "Quantization \u2014 shrink and speed up models",
+          "TFLite for mobile and edge",
+          "TensorFlow Serving for REST and gRPC",
+          "TFX pipelines, drift detection, monitoring"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 108,
+      "durationSec": 3.6,
+      "audioStart": 22.27,
+      "props": {
+        "title": "Quantization",
+        "subtitle": "FP32 \u2192 INT8 with minimal accuracy loss"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 537,
+      "durationSec": 17.9,
+      "audioStart": 25.87,
+      "props": {
+        "items": [
+          "Post-training dynamic \u2014 weights only, activations FP32",
+          "Post-training integer \u2014 full INT8 with calibration set",
+          "Float16 \u2014 halves size, no calibration needed",
+          "QAT \u2014 train with fake quantization for best accuracy",
+          "Expect 2\u20134\u00d7 inference speedup, ~4\u00d7 size reduction"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 154,
+      "durationSec": 5.13,
+      "audioStart": 43.77,
+      "props": {
+        "title": "TensorFlow Lite",
+        "subtitle": "Mobile, edge, and embedded"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 478,
+      "durationSec": 15.93,
+      "audioStart": 48.9,
+      "props": {
+        "items": [
+          "TFLiteConverter.from_keras_model(...)",
+          "Run via Interpreter on Android, iOS, and microcontrollers",
+          "Delegates \u2014 GPU, NNAPI, Hexagon accelerate inference",
+          "Verify accuracy on target \u2014 ops may be unsupported",
+          "Compress further with pruning + weight clustering"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 163,
+      "durationSec": 5.43,
+      "audioStart": 64.83,
+      "props": {
+        "title": "TensorFlow Serving",
+        "subtitle": "REST and gRPC for server inference"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 487,
+      "durationSec": 16.23,
+      "audioStart": 70.27,
+      "props": {
+        "items": [
+          "Save model in SavedModel format",
+          "Directory layout: model_name/version/",
+          "REST on 8501 \u00b7 gRPC on 8500 (gRPC is ~2\u00d7 faster)",
+          "Warmup requests prevent cold-start latency spikes",
+          "Deploy via Docker \u2014 official tensorflow/serving image"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 193,
+      "durationSec": 6.43,
+      "audioStart": 86.5,
+      "props": {
+        "title": "TFX pipelines",
+        "subtitle": "Production ML orchestration"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 446,
+      "durationSec": 14.87,
+      "audioStart": 92.93,
+      "props": {
+        "items": [
+          "ExampleGen \u2192 StatisticsGen \u2192 SchemaGen \u2192 Validators",
+          "Trainer \u2192 Evaluator \u2192 Pusher to Serving",
+          "Schema drift blocks bad data from hitting production",
+          "Orchestrate with Kubeflow, Airflow, or Vertex AI",
+          "Pipeline artifacts are versioned and reproducible"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 179,
+      "durationSec": 5.97,
+      "audioStart": 107.8,
+      "props": {
+        "title": "Monitoring & drift",
+        "subtitle": "Catch problems before users do"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 508,
+      "durationSec": 16.93,
+      "audioStart": 113.77,
+      "props": {
+        "items": [
+          "Data drift \u2014 input distribution shifts",
+          "Concept drift \u2014 input\u2192output relationship changes",
+          "KS test or PSI on features weekly",
+          "Shadow mode and canary deploys for safe rollouts",
+          "Log predictions + eventual ground truth for retraining"
+        ]
+      }
+    },
+    {
+      "kind": "cta",
+      "durationFrames": 166,
+      "durationSec": 5.53,
+      "audioStart": 130.7,
+      "props": {
+        "text": "Ship your model in the labs \u2192"
+      }
+    }
+  ]
+}

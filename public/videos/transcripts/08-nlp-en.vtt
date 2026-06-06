@@ -1,84 +1,87 @@
 WEBVTT
-Kind: captions
-Language: en
 
-NOTE
-Module 08 — Natural Language Processing
-Scaffold transcript (slot 55 — user-directed Video Delivery sweep,
-Apr 15 2026, 14:xx UTC). Eighth real .vtt in public/videos/transcripts/ —
-advances coverage to 8/10 modules. Targets a ~4.5 minute lecture arc
-covering tokenization (word / BPE / WordPiece / SentencePiece), word
-embeddings (Word2Vec, GloVe), the RNN/LSTM/GRU lineage, the attention
-bridge, Transformer architecture (multi-head self-attention, positional
-encoding, layer norm placement), pretraining objectives (causal LM,
-masked LM, span corruption), fine-tuning vs in-context learning, and
-production serving patterns. Replace with Whisper output once the
-recorded lecture is available.
+NOTE Module 08 transcript — auto-aligned to narration.wav (133.8s). en.
 
 1
-00:00:00.000 --> 00:00:14.000
-Welcome to Module 08. Text is the hardest data modality for neural networks because it carries no natural coordinate system — there is no pixel grid, no sampling rate, no fixed vocabulary. Before a neural network can touch a sentence we need three things: a way to chop text into units, a way to embed those units into vectors, and an architecture that respects the sequential nature of language. This module walks the full stack from tokenization to Transformers.
+00:00:00.176 --> 00:00:03.091
+Welcome to Module Eight — natural language processing.
 
 2
-00:00:14.000 --> 00:00:30.000
-Tokenization is the foundation. The simplest choice — split on whitespace — fails on punctuation, morphology, and out-of-vocabulary words. Character-level tokenization avoids OOV entirely but gives sequences five to ten times longer. The modern default is subword tokenization: Byte-Pair Encoding learns merge rules greedily from a corpus, WordPiece optimizes the likelihood of merges under a unigram model, and SentencePiece treats the raw byte stream so it works on any language without pre-segmentation. GPT uses BPE, BERT uses WordPiece, T5 and LLaMA use SentencePiece.
+00:00:03.476 --> 00:00:09.722
+The journey here is from raw text to tensors a network can learn from.
 
 3
-00:00:30.000 --> 00:00:46.000
-Once you have tokens you need vectors. A naive one-hot encoding wastes dimensionality and captures no semantics. Word2Vec — Mikolov et al., 2013 — showed that a shallow network trained to predict context words produces embeddings where vector arithmetic reflects analogy: king minus man plus woman lands near queen. GloVe reformulated the objective as factorizing a log co-occurrence matrix. Both give static embeddings — one vector per token regardless of context. That limit is exactly what contextual models like ELMo and BERT were built to remove.
+00:00:10.098 --> 00:00:12.731
+We'll cover tokenization, embeddings, recurrent networks, and attention.
 
 4
-00:00:46.000 --> 00:01:02.000
-Recurrent networks were the first sequential architecture that worked. A vanilla RNN applies the same update cell step by step, carrying a hidden state forward. In theory that state can encode arbitrary history; in practice the gradient vanishes or explodes as you back-propagate through long sequences. The fix was gating. LSTM — Hochreiter and Schmidhuber, 1997 — added a cell state and three gates: input, forget, output. GRU simplified to two gates and often matches LSTM on smaller datasets with fewer parameters.
+00:00:13.107 --> 00:00:16.408
+First you have to turn text into numbers.
 
 5
-00:01:02.000 --> 00:01:18.000
-Even with gating, RNNs have two structural problems. First, they are inherently sequential — you cannot parallelize the forward pass across time, so training a 1024-token sequence is a thousand serial steps. Second, information from the start of the sequence has to survive every intermediate update to reach the end. Bidirectional RNNs and encoder-decoder stacks with attention patched this, but the fundamental bottleneck stayed until the field abandoned recurrence entirely.
+00:00:16.791 --> 00:00:19.976
+Word-level tokens are simple but explode your vocabulary.
 
 6
-00:01:18.000 --> 00:01:34.000
-Attention is the mechanism that made that abandonment possible. The original formulation — Bahdanau et al., 2014 — let a decoder compute a weighted sum over all encoder states rather than relying on a single context vector. Each decoder step asks: which source positions matter right now? The answer is a soft distribution over positions, computed by comparing a query against keys. The weighted sum of values is the context. Three tensors, one softmax — that is the entire primitive.
+00:00:20.363 --> 00:00:23.898
+Character-level keeps the vocabulary tiny but the sequences long.
 
 7
-00:01:34.000 --> 00:01:50.000
-The 2017 paper Attention Is All You Need took this primitive and built a model with nothing else — no recurrence, no convolution. Self-attention lets every token attend to every other token in parallel, producing contextual representations in a single matrix multiply pair. The scaling factor is one over square root of d_k, without which softmax saturates as dimensionality grows. Multi-head attention runs h of these in parallel with different projections so the model can attend to different relational patterns simultaneously.
+00:00:24.271 --> 00:00:34.428
+Subword schemes — BPE, WordPiece, SentencePiece — are the sweet spot, and modern language models live on roughly thirty to two-hundred thousand of them.
 
 8
-00:01:50.000 --> 00:02:06.000
-Because self-attention is permutation-equivariant on its inputs, you have to inject position information explicitly. The original Transformer used fixed sinusoidal positional encodings added to the token embeddings. Later models experimented with learned absolute positions, relative positional biases — T5 and ALiBi — and rotary embeddings — RoPE — which rotate the query-key pairs by a position-dependent angle. Rotary is now the default in most large language models because it extrapolates to longer sequences without retraining.
+00:00:34.829 --> 00:00:38.840
+But an integer ID carries no meaning, so we embed it.
 
 9
-00:02:06.000 --> 00:02:22.000
-A full Transformer block is straightforward once you know the pieces: multi-head self-attention, a residual connection and layer norm, a two-layer feed-forward network with GELU or SwiGLU activation, another residual and layer norm. Modern models use pre-norm — layer norm before attention and FFN — because it makes deep stacks trainable without learning-rate warmup tricks. Stack N of these blocks, scale the width and depth together, and you have the backbone of every modern LLM.
+00:00:40.217 --> 00:00:42.118
+One-hot vectors are sparse and blind.
 
 10
-00:02:22.000 --> 00:02:38.000
-Pretraining objectives separate the architectures. Causal language modeling — predict the next token given the prefix — gives you a decoder-only model like GPT. Masked language modeling — mask 15 percent of tokens and reconstruct them — gives you an encoder-only model like BERT, strong at classification and extractive QA but not natively generative. Span corruption — mask contiguous spans and predict them as denoising — powers T5, which uses an encoder-decoder stack. Each objective shapes what the model is good at downstream.
+00:00:42.498 --> 00:00:49.237
+Word2Vec learns from local co-occurrence with Skip-gram and CBOW; GloVe factorizes a global count matrix.
 
 11
-00:02:38.000 --> 00:02:54.000
-Fine-tuning adapts a pretrained model to a specific task by continuing training on labeled examples. Full fine-tuning updates every parameter and works well but is expensive. Parameter-efficient fine-tuning freezes the base model and trains small add-ons: LoRA inserts low-rank matrices into the attention projections, prefix-tuning learns a soft prompt prepended to every layer, and adapters add tiny MLPs between Transformer blocks. LoRA has become the community default because it matches full fine-tuning on most tasks with one to two percent of the trainable parameters.
+00:00:49.613 --> 00:01:01.822
+The famous result — king minus man plus woman lands near queen — shows the geometry actually captures meaning, and pretrained embeddings give your downstream tasks a head start.
 
 12
-00:02:54.000 --> 00:03:10.000
-Once models cross a certain scale, in-context learning emerges: you can steer the model with examples in the prompt rather than updating weights. Zero-shot, one-shot, and few-shot prompting let a single base model cover many tasks without per-task training. Chain-of-thought prompting — asking the model to show reasoning steps — further improves arithmetic, multi-step logic, and code tasks. This capability is why the serving pattern for large models is "one model, many prompts" rather than "one model per task".
+00:01:02.214 --> 00:01:08.079
+To handle order, recurrent networks read a sequence one step at a time.
 
 13
-00:03:10.000 --> 00:03:26.000
-Evaluation in NLP is messy. Classification tasks use accuracy and F1. Translation and summarization use BLEU and ROUGE, which correlate imperfectly with human judgment. Open-ended generation needs LLM-as-judge setups or human ratings. Benchmarks like GLUE, SuperGLUE, MMLU, HellaSwag, and BIG-Bench became standard, then promptly saturated. The healthiest modern practice is to pair benchmark scores with task-specific evaluation on data that was certainly not in the pretraining set.
+00:01:08.470 --> 00:01:11.601
+A SimpleRNN forgets, its gradient vanishing over long spans.
 
 14
-00:03:26.000 --> 00:03:42.000
-Common pitfalls in this module's labs. First, tokenization leakage — if you fit your tokenizer on train plus test, your test score is inflated; always fit on train only. Second, padding and masking mismatches — attention masks must zero out pad positions or the softmax leaks probability mass to padding. Third, position-encoding drift — if you train on 512 tokens and infer on 2048, fixed sinusoidal and learned absolute encodings degrade sharply; rotary handles this natively.
+00:01:11.992 --> 00:01:20.115
+The LSTM adds a gated cell that protects long-term state; the GRU does nearly as well with fewer parameters.
 
 15
-00:03:42.000 --> 00:03:58.000
-The labs walk this stack deliberately. You will train Word2Vec on a small corpus and verify analogy arithmetic. Build a character-level LSTM that generates Shakespeare. Implement scaled dot-product attention and multi-head attention from scratch in TensorFlow, then assemble them into a small Transformer encoder. Fine-tune a pretrained BERT on SST-2 sentiment. Apply LoRA to the same base model and compare accuracy, training time, and memory footprint against full fine-tuning.
+00:01:20.496 --> 00:01:24.914
+Wrap either to read bidirectionally, and remember to mask your padding.
 
 16
-00:03:58.000 --> 00:04:14.000
-Production serving has its own constraints. Latency is dominated by the autoregressive loop for decoder models — every new token requires a forward pass. Key-value caching removes most of that redundancy by memoizing the per-layer K and V projections of the prefix. Quantization to int8 or int4 cuts memory roughly four to eight times with a small quality hit. Speculative decoding runs a small draft model to propose tokens that a larger verifier accepts in batches. These are Module 10 topics, but they are what makes a Transformer actually deployable.
+00:01:25.926 --> 00:01:28.703
+Then comes the idea that changed everything: attention.
 
 17
-00:04:14.000 --> 00:04:28.000
-That is the NLP stack. Subword tokenization, contextual embeddings through self-attention, Transformer blocks with pre-norm and rotary positions, pretraining objectives that shape capability, and PEFT methods like LoRA for cheap adaptation. Module 09 changes subject to time series — different data, same lesson that sequence structure shapes the architecture. Onward.
+00:01:29.100 --> 00:01:42.844
+Compare a query against keys to get similarity scores, softmax them into weights, and take a weighted sum of the values — a context vector that decides where to look.
+
+18
+00:01:43.239 --> 00:01:52.004
+Scale by the square root of d-k for stability, and run several heads in parallel to capture different relationships at once.
+
+19
+00:01:52.413 --> 00:02:02.887
+Put it to work on real tasks — sentiment as sequence-to-class, named entity recognition at the token level, autoregressive text generation, and encoder–decoder translation.
+
+20
+00:02:03.263 --> 00:02:07.991
+And in practice today, you'd start from BERT, GPT, or T5 weights.
+
+21
+00:02:08.364 --> 00:02:13.236
+Let's build an attention model from scratch — open the labs.

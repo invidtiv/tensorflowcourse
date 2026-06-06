@@ -1,80 +1,79 @@
 WEBVTT
-Kind: captions
-Language: en
 
-NOTE
-Module 05 — Semantic Segmentation
-Scaffold transcript (slot 48 / cycle 8 — Video Delivery focus run, Apr 15 2026).
-Fifth real .vtt in public/videos/transcripts/ — brings coverage to 5/10
-modules. Targets a ~9 minute lecture covering the encoder-decoder shift
-→ FCN → U-Net skip connections → DeepLab / atrous convolution → loss
-functions (CE, Dice, Focal, boundary) → post-processing (CRF). Replace
-with Whisper output once the recorded lecture is available.
+NOTE Module 05 transcript — auto-aligned to narration.wav (128.0s). en.
 
 1
-00:00:00.000 --> 00:00:13.000
-Welcome to Module 05. Classification asks "what is in this image?" Segmentation asks "which pixels belong to what?" The output is no longer a single label — it's a label map the same spatial size as the input. That one change reshapes the entire architecture.
+00:00:00.191 --> 00:00:02.759
+Welcome to Module Five — semantic segmentation.
 
 2
-00:00:13.000 --> 00:00:28.000
-The first working idea was Fully Convolutional Networks — FCN, Long et al. 2015. Take a classification backbone like VGG, strip the dense head, replace it with a 1x1 convolution that emits C channels per pixel, and upsample back to the input resolution with transposed convolutions. Every layer is now convolutional.
+00:00:03.063 --> 00:00:09.517
+Here we go from labeling a whole image to predicting a class for every single pixel.
 
 3
-00:00:28.000 --> 00:00:43.000
-FCN works, but the naive version is blurry. Downsampling by a factor of 32 then upsampling loses boundary detail. FCN-8s fixes this by adding skip connections from pool3 and pool4 into the decoder, fusing coarse semantic features with finer spatial features. That skip-fusion idea is the seed of everything that follows.
+00:00:09.922 --> 00:00:13.734
+We'll cover encoder–decoder architectures, losses for imbalance, and post-processing.
 
 4
-00:00:43.000 --> 00:00:58.000
-U-Net takes the skip idea to its logical conclusion. Every encoder resolution has a matching decoder resolution, and the full feature map — not just a 1x1 projection — is concatenated across. Designed originally for biomedical images where you have maybe 30 training examples, U-Net's strong inductive bias around locality is exactly what you need when data is scarce.
+00:00:14.132 --> 00:00:18.563
+The bridge from classification is the fully convolutional network.
 
 5
-00:00:58.000 --> 00:01:14.000
-The practical U-Net checklist: mirror the encoder depth in the decoder, concatenate (don't add) the skip tensors, use a 1x1 conv at the output with `num_classes` channels and no activation (logits), and run softmax inside the loss. Batch-norm or group-norm in both halves. That's 90% of the segmentation code you'll write all year.
+00:00:18.977 --> 00:00:27.665
+Take any CNN classifier, swap its dense layers for one-by-one convolutions, and upsample the feature maps back to the input resolution.
 
 6
-00:01:14.000 --> 00:01:30.000
-DeepLab attacks the same problem from a different angle: atrous, or dilated, convolution. Instead of stacking downsamples, you widen the receptive field by inserting holes in the kernel. A 3x3 conv with dilation rate 6 covers the same receptive field as a 13x13 dense kernel but with nine weights and no extra FLOPs. You keep spatial resolution and still see context.
+00:00:28.062 --> 00:00:39.227
+FCN-32s, 16s, and 8s just fuse skip connections more and more finely, and the output is a tensor of height, width, and number of classes.
 
 7
-00:01:30.000 --> 00:01:45.000
-Atrous Spatial Pyramid Pooling — ASPP — runs four parallel dilated convs at different rates plus a global-pool branch, concatenates, then 1x1 projects. It captures multi-scale context in one shot. DeepLab v3+ combines ASPP with a lightweight U-Net-style decoder — the current default for high-accuracy segmentation on natural images.
+00:00:39.630 --> 00:00:46.633
+The workhorse is the U-Net — a symmetric encoder and decoder joined by skip connections.
 
 8
-00:01:45.000 --> 00:02:02.000
-Loss functions matter more in segmentation than in classification. Per-pixel cross-entropy is the baseline, but class imbalance destroys it — if 95% of pixels are "background", the model learns to predict background everywhere and still hits 95% accuracy. You need a loss that rewards recall on the minority classes.
+00:00:47.049 --> 00:00:55.566
+Those skips carry fine spatial detail across the bottleneck, which is why U-Net trains well even on very small medical datasets.
 
 9
-00:02:02.000 --> 00:02:18.000
-Dice loss, derived from the Dice coefficient, measures overlap and is naturally balanced — it ignores the overwhelming true negatives and focuses on the intersection. Pair it with cross-entropy in a weighted sum (classic split is 0.5 CE + 0.5 Dice) and you get stable optimization plus good boundary recall.
+00:00:55.959 --> 00:01:00.665
+Attention U-Net, TransUNet, and the self-configuring nnU-Net are its modern descendants.
 
 10
-00:02:18.000 --> 00:02:33.000
-Focal loss adds a down-weighting factor `(1 - p_t)^γ` to cross-entropy so easy pixels contribute less gradient. With γ=2 it's the go-to for heavily imbalanced medical segmentation. Boundary loss — distance-transform-weighted — is the right tool when thin structures like vessels or cracks matter more than interior area.
+00:01:01.057 --> 00:01:02.625
+For richer context there's DeepLab.
 
 11
-00:02:33.000 --> 00:02:48.000
-Post-processing: conditional random fields, especially DenseCRF, used to be standard after FCN. With modern networks and enough data, CRFs buy you less than 1 mIoU and double your inference time, so most production pipelines drop them. The exception is medical imaging with tiny datasets — there CRF post-processing still pays off.
+00:01:03.017 --> 00:01:10.139
+Atrous, or dilated, convolutions expand the receptive field without throwing away resolution to pooling.
 
 12
-00:02:48.000 --> 00:03:04.000
-Evaluation: mean IoU, not accuracy. Per-class IoU first, then macro-averaged across classes. Report per-class numbers always — a model with 90 mIoU that scores 10 on "pedestrian" is a liability. Pixel accuracy is misleading on imbalanced datasets and should never be the primary metric.
+00:01:10.532 --> 00:01:23.926
+Stack several of them in parallel at different rates and you get ASPP, the heart of DeepLabv3+, which sits at the state of the art on Cityscapes and Pascal VOC.
 
 13
-00:03:04.000 --> 00:03:20.000
-Data pipeline notes. Augmentations must be applied consistently to both image and mask — same random crop, same horizontal flip, same rotation angle. Use nearest-neighbor interpolation on masks (never bilinear) to preserve class IDs. tf.data pipelines should do augmentation in `map()` with `num_parallel_calls=tf.data.AUTOTUNE`.
+00:01:24.325 --> 00:01:28.999
+Your loss choice is where imbalance is won or lost.
 
 14
-00:03:20.000 --> 00:03:36.000
-Class weighting vs loss reweighting vs sampling: three levers that achieve similar ends. Sampling (oversample minority crops) is the most sample-efficient; class weighting is simplest to implement in the loss; Dice/Focal are the most robust across datasets. Mix-and-match — don't expect a single lever to fix severe imbalance.
+00:01:29.416 --> 00:01:32.044
+Plain cross-entropy is sensitive to it.
 
 15
-00:03:36.000 --> 00:03:52.000
-The labs in this module build up in sequence. Start with a tiny FCN on the Oxford-IIIT Pet dataset. Move to U-Net on the same data — you'll see immediate boundary-quality gains. Then add atrous convolution and ASPP, and finally a DeepLab v3+ recipe. Final lab: segmentation metrics and error analysis — per-class IoU, confusion matrix, qualitative failure-case review.
+00:01:32.435 --> 00:01:34.638
+Dice loss optimizes overlap directly.
 
 16
-00:03:52.000 --> 00:04:08.000
-One recurring pitfall: mask dtypes. TensorFlow expects integer class masks for sparse cross-entropy (`tf.int32` or `tf.int64`), but many datasets ship 8-bit PNGs whose pixel values happen to be class indices in 0–N. Cast explicitly on ingest — silent dtype mismatches show up as "NaN loss after 3 steps" and eat a day of debugging.
+00:01:35.026 --> 00:01:42.111
+Focal loss down-weights the easy pixels, and Tversky lets you trade false positives against false negatives.
 
 17
-00:04:08.000 --> 00:04:22.000
-That's the core of segmentation. The encoder-decoder pattern with skip connections dominates; atrous convolutions extend receptive field without losing resolution; the loss function is where you buy class balance; and pixel-consistent augmentation is the data-pipeline rule you cannot break. Head to the first lab — FCN on Oxford-Pets — and we'll see the encoder-decoder idea in code.
+00:01:42.515 --> 00:01:46.017
+In practice, combining cross-entropy with Dice often wins.
+
+18
+00:01:46.409 --> 00:02:02.225
+And a little post-processing goes a long way: a dense CRF sharpens boundaries, morphological operations clear small noise, test-time augmentation averages flips and rotations, and ensembling backbones buys you another point or two of mean IoU.
+
+19
+00:02:02.616 --> 00:02:07.359
+Let's build a U-Net from scratch — open the labs.

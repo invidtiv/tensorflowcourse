@@ -1,0 +1,169 @@
+{
+  "title": "Module 05 \u2014 Semantic Segmentation",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "audio": {
+    "src": "module-05/narration.wav",
+    "durationSec": 127.96,
+    "source": "Gemini TTS (Cory N. profile), generated 2026-06-06",
+    "note": "Scene durations frame-aligned to VO pauses. Total 3839 frames."
+  },
+  "scenes": [
+    {
+      "kind": "title",
+      "durationFrames": 208,
+      "durationSec": 6.93,
+      "audioStart": 0.0,
+      "props": {
+        "title": "Semantic Segmentation",
+        "subtitle": "Module 05 \u00b7 Pixel-level prediction"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 439,
+      "durationSec": 14.63,
+      "audioStart": 6.93,
+      "props": {
+        "items": [
+          "From image classification to dense prediction",
+          "Encoder\u2013decoder architectures",
+          "Losses that handle class imbalance",
+          "Post-processing and ensembling"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 131,
+      "durationSec": 4.37,
+      "audioStart": 21.57,
+      "props": {
+        "title": "FCN: fully convolutional networks",
+        "subtitle": "Replace dense layers with 1\u00d71 convs"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 506,
+      "durationSec": 16.87,
+      "audioStart": 25.93,
+      "props": {
+        "items": [
+          "Any CNN classifier \u2192 segmentation via 1\u00d71 conv",
+          "Upsample feature maps to input resolution",
+          "FCN-32s / 16s / 8s \u2014 progressively better skip fusion",
+          "Output shape: (H, W, num_classes)"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 77,
+      "durationSec": 2.57,
+      "audioStart": 42.8,
+      "props": {
+        "title": "U-Net",
+        "subtitle": "The medical imaging workhorse"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 507,
+      "durationSec": 16.9,
+      "audioStart": 45.37,
+      "props": {
+        "items": [
+          "Symmetric encoder\u2013decoder with skip connections",
+          "Skip links preserve fine spatial detail",
+          "Works with very small training sets",
+          "Attention U-Net, TransUNet \u2014 modern variants",
+          "nnU-Net \u2014 auto-configured for medical tasks"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 185,
+      "durationSec": 6.17,
+      "audioStart": 62.27,
+      "props": {
+        "title": "DeepLab & ASPP",
+        "subtitle": "Atrous convolutions for multi-scale context"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 339,
+      "durationSec": 11.3,
+      "audioStart": 68.43,
+      "props": {
+        "items": [
+          "Dilated convs expand receptive field without pooling",
+          "ASPP \u2014 parallel atrous convs at multiple rates",
+          "DeepLabv3+ \u2014 encoder\u2013decoder with ASPP bottleneck",
+          "State-of-the-art on Cityscapes and Pascal VOC"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 194,
+      "durationSec": 6.47,
+      "audioStart": 79.73,
+      "props": {
+        "title": "Loss functions",
+        "subtitle": "Cross-entropy \u00b7 Dice \u00b7 Focal \u00b7 Tversky"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 519,
+      "durationSec": 17.3,
+      "audioStart": 86.2,
+      "props": {
+        "items": [
+          "Cross-entropy \u2014 default but imbalance-sensitive",
+          "Dice loss \u2014 directly optimize overlap (F1)",
+          "Focal loss \u2014 down-weights easy pixels",
+          "Tversky \u2014 tune false-positive vs false-negative",
+          "Combined CE + Dice often wins in practice"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 130,
+      "durationSec": 4.33,
+      "audioStart": 103.5,
+      "props": {
+        "title": "Post-processing",
+        "subtitle": "CRF \u00b7 morphology \u00b7 ensembling"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 396,
+      "durationSec": 13.2,
+      "audioStart": 107.83,
+      "props": {
+        "items": [
+          "DenseCRF \u2014 sharpens object boundaries",
+          "Morphological open/close \u2014 remove small noise",
+          "Test-time augmentation \u2014 flip/rotate and average",
+          "Ensemble different backbones for 1\u20132 mIoU lift"
+        ]
+      }
+    },
+    {
+      "kind": "cta",
+      "durationFrames": 208,
+      "durationSec": 6.93,
+      "audioStart": 121.03,
+      "props": {
+        "text": "Build a U-Net from scratch in the labs \u2192"
+      }
+    }
+  ]
+}

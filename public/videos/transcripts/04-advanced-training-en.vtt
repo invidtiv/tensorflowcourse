@@ -1,83 +1,95 @@
 WEBVTT
-Kind: captions
-Language: en
 
-NOTE
-Module 04 — Advanced Training Methodologies
-Scaffold transcript (slot 45 / cycle 8 — Video Delivery focus run, Apr 15 2026).
-Fourth real .vtt in public/videos/transcripts/ — brings coverage to 4/10
-modules. Targets a ~9 minute lecture covering optimizers → LR schedules →
-regularization → data pipelines → mixed precision. Replace with Whisper
-output once the recorded lecture is available.
+NOTE Module 04 transcript — auto-aligned to narration.wav (123.1s). en.
 
 1
-00:00:00.000 --> 00:00:12.000
-Welcome to Module 04. Once your model compiles and overfits a single batch, the next question is: how do you train it efficiently at scale? This module covers the machinery around the loss function — optimizers, schedules, regularization, and pipelines.
+00:00:00.188 --> 00:00:03.008
+Welcome to Module Four — advanced training.
 
 2
-00:00:12.000 --> 00:00:26.000
-Start with optimizers. SGD with momentum 0.9 and Nesterov lookahead is still the benchmark for image classification. Adam is the default for almost everything else, especially transformers and RNNs. AdamW decouples weight decay from the gradient — it's what you want when you care about generalization.
+00:00:03.417 --> 00:00:11.910
+This is where you learn to optimize the way the papers do: better optimizers, learning-rate schedules, regularization, and fast data pipelines.
 
 3
-00:00:26.000 --> 00:00:40.000
-The rule of thumb: if you're not sure, start with AdamW at learning rate 3e-4 and weight decay 1e-4. SGD with a cosine schedule still wins on ImageNet-scale CNNs, but it needs more hyperparameter tuning.
+00:00:12.264 --> 00:00:14.586
+Start with the optimizer zoo.
 
 4
-00:00:40.000 --> 00:00:55.000
-Learning rate scheduling is the single highest-leverage thing you'll do. A constant learning rate converges to a worse minimum than almost any schedule. Cosine annealing, step decay, and exponential decay all beat constant. Cosine is what most modern papers use.
+00:00:14.937 --> 00:00:19.196
+For vision, plain SGD with momentum still beats Adam surprisingly often.
 
 5
-00:00:55.000 --> 00:01:12.000
-Warmup is critical when you train with large batches or low-precision arithmetic. The first 5 percent of training uses a linearly-increasing LR from zero to peak, which prevents the second-moment estimates in Adam from being dominated by early noise.
+00:00:19.555 --> 00:00:27.075
+Adam adapts a per-parameter learning rate for you, and AdamW fixes it by decoupling weight decay from the gradient step.
 
 6
-00:01:12.000 --> 00:01:28.000
-Mixed precision training. The insight is that most activations and gradients fit into float16 dynamic range, but the master weights and loss scale need float32 stability. Keras handles this with one line: set_global_policy('mixed_float16'). Expect a 1.5 to 3x speedup on Volta and newer GPUs.
+00:00:27.439 --> 00:00:34.052
+But here's the thing — your learning-rate schedule usually matters more than which optimizer you pick.
 
 7
-00:01:28.000 --> 00:01:44.000
-The gotcha: your final Dense layer producing logits must stay in float32 to keep numerical headroom in the softmax. Tag it with dtype='float32' explicitly. Loss scaling is automatic in Keras — it multiplies the loss by a large factor before backprop to keep tiny gradients from underflowing to zero.
+00:00:34.418 --> 00:00:38.546
+A constant learning rate plateaus early and wastes epochs.
 
 8
-00:01:44.000 --> 00:02:02.000
-Regularization. L2 weight decay is the baseline. Dropout works beautifully on dense layers, less well on conv layers — for conv, prefer spatial dropout or batch normalization. Label smoothing with epsilon 0.1 gives you a free 0.5 to 1 percent on classification accuracy and is almost always worth enabling.
+00:00:38.902 --> 00:00:41.859
+Step and exponential decay are simple but dated.
 
 9
-00:02:02.000 --> 00:02:20.000
-Batch normalization. It normalizes each feature channel across the batch, then learns a scale and shift. In practice this lets you use learning rates 10x larger and removes the sensitivity to initialization. The catch: at inference time, it uses running statistics collected during training, and those stats can be wrong if your test distribution drifts.
+00:00:42.220 --> 00:00:51.516
+The modern default is cosine annealing with a short warmup, and the OneCycle policy can give you super-convergence at a surprisingly large rate.
 
 10
-00:02:20.000 --> 00:02:38.000
-Layer norm and group norm are the batch-free alternatives. Layer norm is the transformer default. Group norm handles batch size 1 — critical for high-resolution segmentation where memory forces small batches. If your batch is below 16, BN is unstable; switch to GN.
+00:00:51.888 --> 00:00:56.516
+Run an LR range test to find the highest stable value first.
 
 11
-00:02:38.000 --> 00:02:56.000
-Data pipelines are where half of training time disappears. tf.data is the canonical API. The pattern is: dataset.map(preprocess, num_parallel_calls=AUTOTUNE).batch().cache().prefetch(AUTOTUNE). Profile your GPU utilization — if it's under 80 percent, your pipeline is the bottleneck.
+00:00:56.880 --> 00:01:00.856
+To fight overfitting, reach into the regularization toolkit.
 
 12
-00:02:56.000 --> 00:03:14.000
-Cache before augmentation, prefetch after batching. If your augmentation is stochastic, cache the deterministic preprocessing first, then apply augmentation after. This gives you reproducibility plus throughput.
+00:01:01.217 --> 00:01:04.095
+Dropout zeroes activations at training time only.
 
 13
-00:03:14.000 --> 00:03:32.000
-Gradient accumulation. When you want an effective batch size of 512 but only 64 fits in memory, accumulate gradients over 8 micro-batches before stepping the optimizer. This keeps you numerically equivalent to the large batch, at the cost of 8x wall-clock per step.
+00:01:04.465 --> 00:01:08.459
+Weight decay penalizes large weights, while L1 also sparsifies them.
 
 14
-00:03:32.000 --> 00:03:50.000
-Gradient clipping. Essential for RNNs and helpful elsewhere. Keras supports clipnorm and clipvalue on the optimizer. A common default is clipnorm 1.0 — it caps the global gradient L2 norm, which prevents loss spikes from blowing up your weights.
+00:01:08.808 --> 00:01:11.846
+Label smoothing softens those hard one-hot targets.
 
 15
-00:03:50.000 --> 00:04:08.000
-Checkpointing. Save not just the weights but also the optimizer state — Adam's moments, the epoch counter, and the scheduler position. tf.train.Checkpoint captures all of that. Without optimizer state, resuming mid-training is equivalent to restarting.
+00:01:12.203 --> 00:01:16.661
+And early stopping simply remembers your best validation loss and restores it.
 
 16
-00:04:08.000 --> 00:04:26.000
-Early stopping. Monitor validation loss, patience 10 epochs, restore_best_weights True. Combine with ReduceLROnPlateau — halve the LR whenever validation loss plateaus for 5 epochs. These two callbacks together replace a lot of manual schedule tuning.
+00:01:17.016 --> 00:01:18.433
+Normalization deserves its own moment.
 
 17
-00:04:26.000 --> 00:04:44.000
-Distributed training preview. tf.distribute.MirroredStrategy for single-machine multi-GPU — it replicates the model and all-reduces gradients synchronously. For multi-machine, MultiWorkerMirroredStrategy. For extreme scale, look at TPU strategy or mesh-tensorflow. Module 10 covers deployment; this is just the training-side view.
+00:01:20.274 --> 00:01:25.569
+Batch norm normalizes across the batch — great until your batch is tiny.
 
 18
-00:04:44.000 --> 00:05:00.000
-Summary. Pick AdamW with cosine annealing and warmup. Enable mixed precision. Use batch norm when batch size is at least 16, group norm otherwise. Build a prefetched, cached tf.data pipeline and profile it. Ship checkpoints with optimizer state. Next module covers semantic segmentation, where all of these choices get exercised on dense prediction problems.
+00:01:25.929 --> 00:01:30.208
+Layer norm works per sample and is the default inside Transformers.
+
+19
+00:01:30.559 --> 00:01:36.405
+Group norm is the batch-size-independent middle ground, and instance norm shows up in style transfer.
+
+20
+00:01:36.759 --> 00:01:39.340
+Finally, make it fast.
+
+21
+00:01:39.724 --> 00:01:47.749
+Mixed-precision FP16 buys roughly a one-and-a-half to two times speedup on modern GPUs, with a loss-scale optimizer guarding against underflow.
+
+22
+00:01:48.138 --> 00:01:58.618
+Build the input side with tf.data — prefetch, cache, and AUTOTUNE — scale out with MirroredStrategy, and always profile before you guess where the bottleneck is.
+
+23
+00:01:59.993 --> 00:02:02.898
+Let's benchmark optimizers and schedules — open the labs.

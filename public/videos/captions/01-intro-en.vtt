@@ -1,55 +1,200 @@
 WEBVTT
-Kind: captions
-Language: en
 
-NOTE
-=============================================================
-PLACEHOLDER CAPTION FILE — Module 01: Introduction to Deep Learning
-=============================================================
-This is a placeholder WebVTT file. Replace with real captions
-generated from the recorded lecture transcript.
+NOTE Module 01 captions — auto-aligned to narration.wav (128.4s). en.
 
-Recommended tooling:
-  - Whisper (OpenAI) for auto-transcription: whisper lecture.mp4 --language en
-  - Caption.Ed or Rev.com for human-verified captions
-  - ffmpeg for .srt → .vtt conversion: ffmpeg -i captions.srt captions.vtt
+1
+00:00:00.000 --> 00:00:04.605
+Welcome to Module One — an introduction to
+deep learning and TensorFlow.
 
-Format reference: https://developer.mozilla.org/en-US/docs/Web/API/WebVTT_API
+2
+00:00:05.463 --> 00:00:06.741
+In the next minute:
 
-TODO (Phase 5b — Video Delivery):
-  - Record module 01 lecture (≥1080p / 30fps / 44.1kHz mono)
-  - Run Whisper to generate initial .srt
-  - Convert to .vtt and review for accuracy
-  - Add speaker identification cues (e.g., ">> Instructor:")
-  - Populate the real transcript below, replacing these placeholder cues
-=============================================================
+3
+00:00:07.374 --> 00:00:09.324
+what deep learning actually is,
 
-00:00:00.000 --> 00:00:05.000
-[Placeholder] Welcome to Module 1: Introduction to Deep Learning and TensorFlow.
+4
+00:00:09.725 --> 00:00:12.643
+why it took over machine learning this
+decade,
 
-00:00:05.001 --> 00:00:12.000
-[Placeholder] In this module we will trace the history of AI from the 1950s perceptron to modern deep learning.
+5
+00:00:13.042 --> 00:00:15.270
+and the three ideas it all
 
-00:00:12.001 --> 00:00:20.000
-[Placeholder] We will master NumPy for numerical computing and install TensorFlow in our development environment.
+6
+00:00:15.984 --> 00:00:18.141
+rests on — representations, the chain
 
-00:00:20.001 --> 00:00:30.000
-[Placeholder] By the end of this module you will implement gradient descent from scratch using TensorFlow's GradientTape API.
+7
+00:00:18.667 --> 00:00:19.997
+rule, and gradient descent.
 
-00:00:30.001 --> 00:00:40.000
-[Placeholder] Let's start with the question: what is deep learning and why has it revolutionized AI since 2012?
+8
+00:00:21.590 --> 00:00:23.319
+The big shift that started
 
-00:00:40.001 --> 00:00:50.000
-[Placeholder] Deep learning is a subset of machine learning that uses multi-layer neural networks to learn hierarchical representations from data.
+9
+00:00:23.773 --> 00:00:26.887
+it all: moving from hand-crafted features
+to learned ones.
 
-00:00:50.001 --> 00:01:00.000
-[Placeholder] The 2012 ImageNet breakthrough by Krizhevsky, Sutskever, and Hinton — AlexNet — demonstrated that deep CNNs could outperform hand-crafted features by a large margin.
+10
+00:00:27.385 --> 00:00:31.284
+A deep network is just a stack of
+differentiable functions. Its
 
-00:01:00.001 --> 00:01:10.000
-[Placeholder] Three ingredients drove this success: large datasets, GPU compute, and algorithmic advances like ReLU and dropout.
+11
+00:00:31.973 --> 00:00:34.138
+power comes from composition — not
 
-00:01:10.001 --> 00:01:20.000
-[Placeholder] TensorFlow, released by Google Brain in 2015, made distributed deep learning accessible to practitioners worldwide.
+12
+00:00:34.701 --> 00:00:36.236
+one clever layer. Training
 
-00:01:20.001 --> 00:01:30.000
-[Placeholder] End of placeholder captions. Replace this file with the real transcript before launch.
+13
+00:00:36.864 --> 00:00:36.895
+means
+
+14
+00:00:37.362 --> 00:00:40.815
+minimizing a single loss with gradient
+descent, and gradients flow
+
+15
+00:00:41.320 --> 00:00:44.041
+backward through the chain rule. So why
+did
+
+16
+00:00:45.610 --> 00:00:45.829
+all
+
+17
+00:00:46.191 --> 00:00:47.844
+of this happen now? Three
+
+18
+00:00:48.788 --> 00:00:49.907
+things converged: AlexNet
+
+19
+00:00:50.659 --> 00:00:54.484
+on ImageNet in twenty-twelve halved error
+rates, GPUs unlocked massive training,
+
+20
+00:00:55.198 --> 00:00:57.425
+and tricks like ReLU and batch
+
+21
+00:00:58.145 --> 00:01:01.536
+norm made depth stable — all wrapped in
+open-source frameworks.
+
+22
+00:01:02.170 --> 00:01:04.225
+The stack you'll use for that
+
+23
+00:01:05.012 --> 00:01:05.078
+is
+
+24
+00:01:05.751 --> 00:01:08.652
+TensorFlow and Keras. Tensors are arrays
+that live
+
+25
+00:01:09.400 --> 00:01:12.401
+on CPU or GPU. T-F-dot-function compiles
+your Python
+
+26
+00:01:13.245 --> 00:01:16.522
+into a graph. Keras is the high-level API
+most
+
+27
+00:01:17.380 --> 00:01:20.324
+courses teach. And GradientTape handles
+differentiation when you
+
+28
+00:01:20.990 --> 00:01:25.249
+write your own custom loops. Here's
+gradient descent in thirty seconds. Pick
+
+29
+00:01:26.771 --> 00:01:28.891
+a loss that measures how wrong
+
+30
+00:01:29.559 --> 00:01:31.525
+you are. Compute its gradient with
+
+31
+00:01:32.312 --> 00:01:34.719
+respect to the parameters. Step against
+that
+
+32
+00:01:35.342 --> 00:01:36.803
+gradient. Repeat on mini-batches
+
+33
+00:01:37.395 --> 00:01:40.254
+until the loss plateaus — and everything
+else
+
+34
+00:01:40.902 --> 00:01:44.779
+in this course is variance reduction on
+that one loop. Here's
+
+35
+00:01:46.462 --> 00:01:47.392
+the road ahead.
+
+36
+00:01:48.042 --> 00:01:48.856
+Ten modules
+
+37
+00:01:49.482 --> 00:01:51.985
+— fundamentals, CNNs, advanced training,
+segmentation, detection,
+
+38
+00:01:51.985 --> 00:01:54.488
+GANs, NLP, time series, and production.
+
+39
+00:01:54.845 --> 00:01:56.265
+Each has theory, hands-on
+
+40
+00:01:56.667 --> 00:01:58.198
+labs, and a quiz.
+
+41
+00:01:58.991 --> 00:01:59.856
+And your
+
+42
+00:02:00.295 --> 00:02:01.765
+progress stays on your
+
+43
+00:02:02.387 --> 00:02:04.241
+device. Let's get started —
+
+44
+00:02:05.763 --> 00:02:06.485
+open the
+
+45
+00:02:07.060 --> 00:02:07.824
+first lab.

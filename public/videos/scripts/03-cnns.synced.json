@@ -1,0 +1,170 @@
+{
+  "title": "Module 03 \u2014 Convolutional Neural Networks",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "audio": {
+    "src": "module-03/narration.wav",
+    "durationSec": 127.68,
+    "source": "Gemini TTS (Cory N. profile), generated 2026-06-06",
+    "note": "Scene durations frame-aligned to VO pauses. Total 3830 frames."
+  },
+  "scenes": [
+    {
+      "kind": "title",
+      "durationFrames": 246,
+      "durationSec": 8.2,
+      "audioStart": 0.0,
+      "props": {
+        "title": "Convolutional Neural Networks",
+        "subtitle": "Module 03 \u00b7 Vision architectures"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 342,
+      "durationSec": 11.4,
+      "audioStart": 8.2,
+      "props": {
+        "items": [
+          "Why convolutions beat dense layers on images",
+          "Filters, feature maps, pooling, stride, padding",
+          "Classic architectures: LeNet \u2192 VGG \u2192 ResNet",
+          "Transfer learning and data augmentation"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 177,
+      "durationSec": 5.9,
+      "audioStart": 19.6,
+      "props": {
+        "title": "The convolution operation",
+        "subtitle": "Weight sharing across spatial positions"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 474,
+      "durationSec": 15.8,
+      "audioStart": 25.5,
+      "props": {
+        "items": [
+          "Small kernel slides over the image",
+          "Same weights applied everywhere \u2014 translation equivariance",
+          "Output channels = number of filters learned",
+          "Far fewer params than fully-connected on images",
+          "Receptive field grows with depth"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 99,
+      "durationSec": 3.3,
+      "audioStart": 41.3,
+      "props": {
+        "title": "Pooling and stride",
+        "subtitle": "Downsampling spatial resolution"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 470,
+      "durationSec": 15.67,
+      "audioStart": 44.6,
+      "props": {
+        "items": [
+          "MaxPool: keep the strongest response in a window",
+          "AvgPool: smoother, often used pre-classifier",
+          "Strided conv: same effect, learnable",
+          "GlobalAveragePooling replaces dense heads in modern nets"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 162,
+      "durationSec": 5.4,
+      "audioStart": 60.27,
+      "props": {
+        "title": "Architecture evolution",
+        "subtitle": "LeNet \u2192 AlexNet \u2192 VGG \u2192 ResNet"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 476,
+      "durationSec": 15.87,
+      "audioStart": 65.67,
+      "props": {
+        "items": [
+          "LeNet-5 (1998): convs, pooling, MNIST digits",
+          "AlexNet (2012): ReLU + GPUs + dropout on ImageNet",
+          "VGG (2014): stack 3\u00d73 convs, go deeper",
+          "ResNet (2015): skip connections, 100+ layers",
+          "EfficientNet, ConvNeXt: compound scaling and modern tweaks"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 126,
+      "durationSec": 4.2,
+      "audioStart": 81.53,
+      "props": {
+        "title": "Transfer learning",
+        "subtitle": "Reuse pretrained features"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 490,
+      "durationSec": 16.33,
+      "audioStart": 85.73,
+      "props": {
+        "items": [
+          "Start from ImageNet weights \u2014 features generalize well",
+          "Freeze the base, train a small head on your dataset",
+          "Unfreeze and fine-tune with a much smaller learning rate",
+          "Match preprocessing to the pretrained model",
+          "Mind BatchNorm layers \u2014 keep them in inference mode initially"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 112,
+      "durationSec": 3.73,
+      "audioStart": 102.07,
+      "props": {
+        "title": "Data augmentation",
+        "subtitle": "Free regularization on images"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 423,
+      "durationSec": 14.1,
+      "audioStart": 105.8,
+      "props": {
+        "items": [
+          "RandomFlip, RandomCrop, RandomRotation \u2014 built into Keras",
+          "MixUp / CutMix / RandAugment \u2014 newer, stronger",
+          "Apply only during training (training=True)",
+          "Stronger augmentation for small datasets"
+        ]
+      }
+    },
+    {
+      "kind": "cta",
+      "durationFrames": 233,
+      "durationSec": 7.77,
+      "audioStart": 119.9,
+      "props": {
+        "text": "Build and visualize a CNN in the labs \u2192"
+      }
+    }
+  ]
+}

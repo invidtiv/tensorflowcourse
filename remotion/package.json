@@ -1,0 +1,34 @@
+{
+  "name": "tensorflow-course-videos",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Remotion project that renders the TensorFlow Course module intro videos from synced storyboard JSON + Gemini TTS narration.",
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "render": "node render.mjs",
+    "render:all": "node render.mjs",
+    "render:01": "node render.mjs 1",
+    "render:02": "node render.mjs 2",
+    "render:03": "node render.mjs 3",
+    "render:04": "node render.mjs 4",
+    "render:05": "node render.mjs 5",
+    "render:06": "node render.mjs 6",
+    "render:07": "node render.mjs 7",
+    "render:08": "node render.mjs 8",
+    "render:09": "node render.mjs 9",
+    "render:10": "node render.mjs 10"
+  },
+  "dependencies": {
+    "@remotion/bundler": "4.0.473",
+    "@remotion/cli": "4.0.473",
+    "@remotion/renderer": "4.0.473",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "remotion": "4.0.473"
+  },
+  "devDependencies": {
+    "@types/react": "19.0.0",
+    "typescript": "5.6.3"
+  }
+}

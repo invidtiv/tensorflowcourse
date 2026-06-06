@@ -1,0 +1,171 @@
+{
+  "title": "Module 06 \u2014 Object Detection Systems",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "audio": {
+    "src": "module-06/narration.wav",
+    "durationSec": 133.32,
+    "source": "Gemini TTS (Cory N. profile), generated 2026-06-06",
+    "note": "Scene durations frame-aligned to VO pauses. Total 4000 frames."
+  },
+  "scenes": [
+    {
+      "kind": "title",
+      "durationFrames": 198,
+      "durationSec": 6.6,
+      "audioStart": 0.0,
+      "props": {
+        "title": "Object Detection",
+        "subtitle": "Module 06 \u00b7 Bounding boxes & classes"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 470,
+      "durationSec": 15.67,
+      "audioStart": 6.6,
+      "props": {
+        "items": [
+          "Detection = classification + localization per object",
+          "IoU and mAP \u2014 the core metrics",
+          "Anchor boxes and feature pyramids",
+          "YOLO, two-stage detectors, and DETR"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 213,
+      "durationSec": 7.1,
+      "audioStart": 22.27,
+      "props": {
+        "title": "IoU and advanced variants",
+        "subtitle": "How well do two boxes overlap?"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 468,
+      "durationSec": 15.6,
+      "audioStart": 29.37,
+      "props": {
+        "items": [
+          "IoU = intersection / union (0 to 1)",
+          "GIoU \u2014 rewards closer non-overlapping boxes",
+          "DIoU \u2014 adds center-distance penalty",
+          "CIoU \u2014 also accounts for aspect ratio",
+          "DIoU/CIoU loss converges faster than L2 on boxes"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 96,
+      "durationSec": 3.2,
+      "audioStart": 44.97,
+      "props": {
+        "title": "Anchor boxes",
+        "subtitle": "Prior shapes to regress from"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 531,
+      "durationSec": 17.7,
+      "audioStart": 48.17,
+      "props": {
+        "items": [
+          "Tile the image with boxes of varied scales and ratios",
+          "Each anchor predicts offset + objectness + class",
+          "K-means on ground truth boxes finds good priors",
+          "Multi-scale anchors = feature pyramid network (FPN)",
+          "Anchor-free detectors (FCOS, CenterNet) skip this step"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 171,
+      "durationSec": 5.7,
+      "audioStart": 65.87,
+      "props": {
+        "title": "Non-Maximum Suppression",
+        "subtitle": "Deduplicate overlapping predictions"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 381,
+      "durationSec": 12.7,
+      "audioStart": 71.57,
+      "props": {
+        "items": [
+          "Sort predictions by confidence",
+          "Keep top box, remove others with IoU > threshold",
+          "Soft-NMS decays instead of removing",
+          "Matrix-NMS / DIoU-NMS \u2014 modern differentiable variants",
+          "Tune threshold per dataset (0.3\u20130.7 typical)"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 198,
+      "durationSec": 6.6,
+      "audioStart": 84.27,
+      "props": {
+        "title": "YOLO family",
+        "subtitle": "Real-time single-stage detection"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 463,
+      "durationSec": 15.43,
+      "audioStart": 90.87,
+      "props": {
+        "items": [
+          "Grid-based predictions \u2014 one pass per image",
+          "Detection head: objectness + class + box offsets",
+          "Loss weights balance classification and regression",
+          "YOLOv3/v5/v8 \u2014 incremental accuracy & speed gains",
+          "Export to TFLite/ONNX for mobile and edge"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 184,
+      "durationSec": 6.13,
+      "audioStart": 106.3,
+      "props": {
+        "title": "Evaluation with mAP",
+        "subtitle": "Precision\u2013recall over IoU thresholds"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 438,
+      "durationSec": 14.6,
+      "audioStart": 112.43,
+      "props": {
+        "items": [
+          "Compute AP per class \u2014 area under PR curve",
+          "mAP = average across classes",
+          "mAP@0.5 (VOC) vs mAP@[0.5:0.95] (COCO)",
+          "Always report mAP alongside per-class F1"
+        ]
+      }
+    },
+    {
+      "kind": "cta",
+      "durationFrames": 189,
+      "durationSec": 6.3,
+      "audioStart": 127.03,
+      "props": {
+        "text": "Train a YOLO detector in the labs \u2192"
+      }
+    }
+  ]
+}

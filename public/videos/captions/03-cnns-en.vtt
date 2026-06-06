@@ -1,37 +1,173 @@
 WEBVTT
-Kind: captions
-Language: en
 
-NOTE
-=============================================================
-PLACEHOLDER CAPTION FILE — Module 03: Convolutional Neural Networks
-=============================================================
-This is a placeholder WebVTT file. Replace with real captions
-generated from the recorded lecture transcript.
+NOTE Module 03 captions — auto-aligned to narration.wav (127.7s). en.
 
-Recommended tooling:
-  - Whisper (OpenAI) for auto-transcription: whisper lecture.mp4 --language en
-  - Caption.Ed or Rev.com for human-verified captions
-  - ffmpeg for .srt -> .vtt conversion: ffmpeg -i captions.srt captions.vtt
+1
+00:00:00.000 --> 00:00:01.971
+Welcome to Module Three — convolutional
 
-Format reference: https://developer.mozilla.org/en-US/docs/Web/API/WebVTT_API
+2
+00:00:02.440 --> 00:00:04.161
+neural networks, the architecture that
 
-YouTube video reference: https://www.youtube.com/watch?v=KuXjwB4LzSA
-(For localhost/self-hosted: record own lecture and replace .mp4 source)
+3
+00:00:04.611 --> 00:00:07.858
+made deep learning practical for images.
+We'll cover why
 
-TODO (Phase 5b — Video Delivery):
-  - Record module 03 lecture (≥1080p / 30fps / 44.1kHz mono)
-  - Run Whisper to generate initial .srt
-  - Convert to .vtt and review for accuracy
-  - Add speaker identification cues (e.g., ">> Instructor:")
-  - Populate the real transcript below, replacing these placeholder cues
-=============================================================
+4
+00:00:08.544 --> 00:00:12.084
+convolutions beat dense layers, the
+building blocks, the classic
+architectures,
 
-00:00:00.000 --> 00:00:05.000
-[Placeholder] Welcome to Module 03: Convolutional Neural Networks.
+5
+00:00:12.084 --> 00:00:15.624
+and transfer learning. The convolution
+itself is simple: a small
 
-00:00:05.001 --> 00:00:12.000
-[Placeholder] In this module, we will cover the core concepts and hands-on implementation.
+6
+00:00:17.432 --> 00:00:19.313
+kernel slides across the image,
 
-00:00:12.001 --> 00:00:20.000
-[Placeholder] Replace this file with real captions once the lecture is recorded.
+7
+00:00:19.878 --> 00:00:25.051
+applying the same weights at every
+position. That weight sharing is the whole
+trick
+
+8
+00:00:25.928 --> 00:00:29.890
+— it gives you translation equivariance
+and a tiny fraction of
+
+9
+00:00:29.890 --> 00:00:33.853
+the parameters a dense layer would need.
+The number of filters
+
+10
+00:00:34.709 --> 00:00:36.863
+sets your output channels, and the
+
+11
+00:00:37.261 --> 00:00:40.366
+receptive field grows as you stack layers
+deeper. Between
+
+12
+00:00:42.261 --> 00:00:44.257
+convolutions you downsample. Max pooling
+keeps
+
+13
+00:00:44.955 --> 00:00:49.177
+the strongest response in a window,
+average pooling smooths, and a strided
+
+14
+00:00:49.177 --> 00:00:53.399
+convolution does the same thing but learns
+how. In modern nets,
+
+15
+00:00:54.226 --> 00:00:56.797
+global average pooling quietly replaces
+the old
+
+16
+00:00:56.797 --> 00:00:59.368
+dense classifier head. The architecture
+story is
+
+17
+00:01:01.196 --> 00:01:03.196
+a quick tour. LeNet-5 in 'ninety-eight.
+
+18
+00:01:03.850 --> 00:01:05.368
+AlexNet in twenty-twelve, which
+
+19
+00:01:05.960 --> 00:01:07.297
+added ReLU, GPUs, and
+
+20
+00:01:07.653 --> 00:01:11.292
+dropout to win ImageNet. VGG went deeper
+with stacked three-by-three
+
+21
+00:01:12.139 --> 00:01:15.402
+convolutions. ResNet added skip
+connections and suddenly a hundred-plus
+
+22
+00:01:16.137 --> 00:01:18.562
+layers trained cleanly. EfficientNet and
+ConvNeXt are
+
+23
+00:01:18.562 --> 00:01:20.986
+the modern refinements. Here's the move
+you'll
+
+24
+00:01:22.064 --> 00:01:24.803
+use most: transfer learning. Start from
+ImageNet weights,
+
+25
+00:01:26.669 --> 00:01:29.367
+freeze the base, and train a small head
+
+26
+00:01:30.067 --> 00:01:35.002
+on your own data. Then unfreeze and
+fine-tune with a much smaller learning
+rate
+
+27
+00:01:35.763 --> 00:01:38.778
+— and match your preprocessing to the
+pretrained model,
+
+28
+00:01:38.778 --> 00:01:41.792
+keeping batch-norm layers in inference
+mode at first.
+
+29
+00:01:42.317 --> 00:01:44.876
+And almost for free, data augmentation
+regularizes
+
+30
+00:01:46.757 --> 00:01:50.102
+you. Random flips, crops, and rotations
+are built into
+
+31
+00:01:50.777 --> 00:01:54.123
+Keras; MixUp, CutMix, and RandAugment go
+further. Just apply
+
+32
+00:01:54.735 --> 00:01:57.352
+it during training only, and lean on
+
+33
+00:01:58.079 --> 00:01:59.668
+it harder when your
+
+34
+00:02:00.138 --> 00:02:02.161
+dataset is small. Let's build and
+
+35
+00:02:04.189 --> 00:02:06.028
+visualize a CNN — open
+
+36
+00:02:06.656 --> 00:02:07.276
+the labs.

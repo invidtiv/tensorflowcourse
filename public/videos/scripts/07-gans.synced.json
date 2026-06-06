@@ -1,0 +1,195 @@
+{
+  "title": "Module 07 \u2014 Generative Adversarial Networks",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "audio": {
+    "src": "module-07/narration.wav",
+    "durationSec": 129.24,
+    "source": "Gemini TTS (Cory N. profile), generated 2026-06-06",
+    "note": "Scene durations frame-aligned to VO pauses. Total 3877 frames."
+  },
+  "scenes": [
+    {
+      "kind": "title",
+      "durationFrames": 135,
+      "durationSec": 4.5,
+      "audioStart": 0.0,
+      "props": {
+        "title": "Generative Adversarial Networks",
+        "subtitle": "Module 07 \u00b7 Two networks play a game"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 419,
+      "durationSec": 13.97,
+      "audioStart": 4.5,
+      "props": {
+        "items": [
+          "Generator vs Discriminator \u2014 adversarial training",
+          "DCGAN, Conditional GAN, WGAN, SNGAN",
+          "Mode collapse and how to detect it",
+          "Evaluation with IS and FID"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 100,
+      "durationSec": 3.33,
+      "audioStart": 18.47,
+      "props": {
+        "title": "The adversarial game",
+        "subtitle": "Generator tries to fool the discriminator"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 460,
+      "durationSec": 15.33,
+      "audioStart": 21.8,
+      "props": {
+        "items": [
+          "G maps noise z \u2192 fake image",
+          "D classifies real vs fake",
+          "Train D to distinguish, G to fool",
+          "At equilibrium, D outputs 0.5 everywhere",
+          "In practice \u2014 balance is fragile"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 118,
+      "durationSec": 3.93,
+      "audioStart": 37.13,
+      "props": {
+        "title": "DCGAN \u2014 first stable recipe",
+        "subtitle": "Convs + batch norm + specific tricks"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 360,
+      "durationSec": 12.0,
+      "audioStart": 41.07,
+      "props": {
+        "items": [
+          "Transposed convs in G, strided convs in D",
+          "BatchNorm in both, LeakyReLU in D",
+          "No fully-connected layers, tanh output",
+          "Adam with \u03b2\u2081=0.5 \u2014 unstable at default 0.9"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 141,
+      "durationSec": 4.7,
+      "audioStart": 53.07,
+      "props": {
+        "title": "Mode collapse",
+        "subtitle": "When G settles for a subset of the distribution"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 411,
+      "durationSec": 13.7,
+      "audioStart": 57.77,
+      "props": {
+        "items": [
+          "Symptom: repetitive samples, low diversity",
+          "Track per-class sample distribution during training",
+          "Mini-batch discrimination \u2014 D sees sample variance",
+          "Feature matching loss \u2014 match G to real statistics",
+          "Unrolled GAN \u2014 D lookahead prevents G gaming"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 138,
+      "durationSec": 4.6,
+      "audioStart": 71.47,
+      "props": {
+        "title": "WGAN and WGAN-GP",
+        "subtitle": "Wasserstein distance for stability"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 424,
+      "durationSec": 14.13,
+      "audioStart": 76.07,
+      "props": {
+        "items": [
+          "Replace JS divergence with Earth-Mover distance",
+          "Critic (not discriminator) \u2014 linear output, no sigmoid",
+          "1-Lipschitz constraint: clip weights or use GP",
+          "Gradient penalty is the modern default",
+          "Loss actually correlates with sample quality"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 150,
+      "durationSec": 5.0,
+      "audioStart": 90.2,
+      "props": {
+        "title": "Conditional and controllable GANs",
+        "subtitle": "Class labels, attributes, images"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 402,
+      "durationSec": 13.4,
+      "audioStart": 95.2,
+      "props": {
+        "items": [
+          "Concatenate class embedding to noise input",
+          "AC-GAN \u2014 auxiliary classifier head on D",
+          "Projection discriminator \u2014 cleaner conditioning",
+          "pix2pix / CycleGAN \u2014 image-to-image translation"
+        ]
+      }
+    },
+    {
+      "kind": "title",
+      "durationFrames": 66,
+      "durationSec": 2.2,
+      "audioStart": 108.6,
+      "props": {
+        "title": "Evaluation: IS and FID",
+        "subtitle": "How 'good' is a generator?"
+      }
+    },
+    {
+      "kind": "bullets",
+      "durationFrames": 344,
+      "durationSec": 11.47,
+      "audioStart": 110.8,
+      "props": {
+        "items": [
+          "Inception Score \u2014 rewards confidence and diversity",
+          "IS is domain-limited and gameable",
+          "FID \u2014 Fr\u00e9chet distance between feature distributions",
+          "Lower FID = closer to real data \u2014 now the standard",
+          "Always report both IS and FID with sample size"
+        ]
+      }
+    },
+    {
+      "kind": "cta",
+      "durationFrames": 209,
+      "durationSec": 6.97,
+      "audioStart": 122.27,
+      "props": {
+        "text": "Train a DCGAN on MNIST in the labs \u2192"
+      }
+    }
+  ]
+}

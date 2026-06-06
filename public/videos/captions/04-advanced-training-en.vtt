@@ -1,37 +1,170 @@
 WEBVTT
-Kind: captions
-Language: en
 
-NOTE
-=============================================================
-PLACEHOLDER CAPTION FILE — Module 04: Advanced Training Techniques
-=============================================================
-This is a placeholder WebVTT file. Replace with real captions
-generated from the recorded lecture transcript.
+NOTE Module 04 captions — auto-aligned to narration.wav (123.1s). en.
 
-Recommended tooling:
-  - Whisper (OpenAI) for auto-transcription: whisper lecture.mp4 --language en
-  - Caption.Ed or Rev.com for human-verified captions
-  - ffmpeg for .srt -> .vtt conversion: ffmpeg -i captions.srt captions.vtt
+1
+00:00:00.000 --> 00:00:01.881
+Welcome to Module Four —
 
-Format reference: https://developer.mozilla.org/en-US/docs/Web/API/WebVTT_API
+2
+00:00:02.394 --> 00:00:03.621
+advanced training. This
 
-YouTube video reference: https://www.youtube.com/watch?v=IHZwWFHWa-w
-(For localhost/self-hosted: record own lecture and replace .mp4 source)
+3
+00:00:04.301 --> 00:00:07.211
+is where you learn to optimize the way
 
-TODO (Phase 5b — Video Delivery):
-  - Record module 04 lecture (≥1080p / 30fps / 44.1kHz mono)
-  - Run Whisper to generate initial .srt
-  - Convert to .vtt and review for accuracy
-  - Add speaker identification cues (e.g., ">> Instructor:")
-  - Populate the real transcript below, replacing these placeholder cues
-=============================================================
+4
+00:00:07.832 --> 00:00:10.669
+the papers do: better optimizers,
+learning-rate schedules, regularization,
 
-00:00:00.000 --> 00:00:05.000
-[Placeholder] Welcome to Module 04: Advanced Training Techniques.
+5
+00:00:10.669 --> 00:00:13.505
+and fast data pipelines. Start with the
+optimizer
 
-00:00:05.001 --> 00:00:12.000
-[Placeholder] In this module, we will cover the core concepts and hands-on implementation.
+6
+00:00:14.411 --> 00:00:16.163
+zoo. For vision, plain SGD
 
-00:00:12.001 --> 00:00:20.000
-[Placeholder] Replace this file with real captions once the lecture is recorded.
+7
+00:00:16.859 --> 00:00:19.375
+with momentum still beats Adam
+surprisingly often.
+
+8
+00:00:19.375 --> 00:00:21.892
+Adam adapts a per-parameter learning rate
+for
+
+9
+00:00:22.526 --> 00:00:26.165
+you, and AdamW fixes it by decoupling
+weight decay from
+
+10
+00:00:26.165 --> 00:00:29.805
+the gradient step. But here's the thing —
+your learning-rate
+
+11
+00:00:30.537 --> 00:00:31.449
+schedule usually matters
+
+12
+00:00:32.035 --> 00:00:36.068
+more than which optimizer you pick. A
+constant learning rate plateaus
+
+13
+00:00:37.302 --> 00:00:40.857
+early and wastes epochs. Step and
+exponential decay are simple
+
+14
+00:00:41.317 --> 00:00:44.206
+but dated. The modern default is cosine
+annealing
+
+15
+00:00:44.983 --> 00:00:48.353
+with a short warmup, and the OneCycle
+policy can
+
+16
+00:00:48.733 --> 00:00:53.187
+give you super-convergence at a
+surprisingly large rate. Run an LR range
+
+17
+00:00:53.787 --> 00:00:57.426
+test to find the highest stable value
+first. To fight
+
+18
+00:00:58.875 --> 00:01:02.117
+overfitting, reach into the regularization
+toolkit. Dropout zeroes activations
+
+19
+00:01:02.797 --> 00:01:05.392
+at training time only. Weight decay
+penalizes
+
+20
+00:01:06.188 --> 00:01:10.380
+large weights, while L1 also sparsifies
+them. Label smoothing softens those hard
+
+21
+00:01:11.310 --> 00:01:14.166
+one-hot targets. And early stopping simply
+remembers your
+
+22
+00:01:14.713 --> 00:01:18.610
+best validation loss and restores it.
+Normalization deserves its own moment.
+
+23
+00:01:20.102 --> 00:01:22.163
+Batch norm normalizes across the batch
+
+24
+00:01:22.796 --> 00:01:25.038
+— great until your batch is
+
+25
+00:01:25.389 --> 00:01:26.829
+tiny. Layer norm works
+
+26
+00:01:27.569 --> 00:01:31.087
+per sample and is the default inside
+Transformers. Group norm
+
+27
+00:01:31.977 --> 00:01:34.456
+is the batch-size-independent middle
+ground, and instance
+
+28
+00:01:34.456 --> 00:01:36.936
+norm shows up in style transfer. Finally,
+
+29
+00:01:38.382 --> 00:01:39.915
+make it fast. Mixed-precision
+
+30
+00:01:40.548 --> 00:01:44.635
+FP16 buys roughly a one-and-a-half to two
+times speedup on modern
+
+31
+00:01:44.635 --> 00:01:48.722
+GPUs, with a loss-scale optimizer guarding
+against underflow. Build the
+
+32
+00:01:49.432 --> 00:01:51.478
+input side with tf.data — prefetch,
+
+33
+00:01:51.866 --> 00:01:53.763
+cache, and AUTOTUNE — scale
+
+34
+00:01:54.149 --> 00:01:56.473
+out with MirroredStrategy, and always
+profile before
+
+35
+00:01:56.473 --> 00:01:58.797
+you guess where the bottleneck is.
+
+36
+00:01:59.811 --> 00:02:03.080
+Let's benchmark optimizers and schedules —
+open the labs.

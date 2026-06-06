@@ -1,37 +1,168 @@
 WEBVTT
-Kind: captions
-Language: en
 
-NOTE
-=============================================================
-PLACEHOLDER CAPTION FILE — Module 08: Natural Language Processing
-=============================================================
-This is a placeholder WebVTT file. Replace with real captions
-generated from the recorded lecture transcript.
+NOTE Module 08 captions — auto-aligned to narration.wav (133.8s). en.
 
-Recommended tooling:
-  - Whisper (OpenAI) for auto-transcription: whisper lecture.mp4 --language en
-  - Caption.Ed or Rev.com for human-verified captions
-  - ffmpeg for .srt -> .vtt conversion: ffmpeg -i captions.srt captions.vtt
+1
+00:00:00.000 --> 00:00:01.761
+Welcome to Module Eight —
 
-Format reference: https://developer.mozilla.org/en-US/docs/Web/API/WebVTT_API
+2
+00:00:02.130 --> 00:00:03.668
+natural language processing. The
 
-YouTube video reference: https://www.youtube.com/watch?v=OxCpWwDCDFQ
-(For localhost/self-hosted: record own lecture and replace .mp4 source)
+3
+00:00:04.242 --> 00:00:08.969
+journey here is from raw text to tensors a
+network can learn
 
-TODO (Phase 5b — Video Delivery):
-  - Record module 08 lecture (≥1080p / 30fps / 44.1kHz mono)
-  - Run Whisper to generate initial .srt
-  - Convert to .vtt and review for accuracy
-  - Add speaker identification cues (e.g., ">> Instructor:")
-  - Populate the real transcript below, replacing these placeholder cues
-=============================================================
+4
+00:00:09.534 --> 00:00:12.167
+from. We'll cover tokenization,
+embeddings, recurrent networks,
 
-00:00:00.000 --> 00:00:05.000
-[Placeholder] Welcome to Module 08: Natural Language Processing.
+5
+00:00:12.167 --> 00:00:14.799
+and attention. First you have to turn
 
-00:00:05.001 --> 00:00:12.000
-[Placeholder] In this module, we will cover the core concepts and hands-on implementation.
+6
+00:00:15.449 --> 00:00:18.517
+text into numbers. Word-level tokens are
+simple but
 
-00:00:12.001 --> 00:00:20.000
-[Placeholder] Replace this file with real captions once the lecture is recorded.
+7
+00:00:19.009 --> 00:00:22.880
+explode your vocabulary. Character-level
+keeps the vocabulary tiny but the
+
+8
+00:00:23.338 --> 00:00:27.070
+sequences long. Subword schemes — BPE,
+WordPiece, SentencePiece — are
+
+9
+00:00:27.784 --> 00:00:28.932
+the sweet spot,
+
+10
+00:00:29.304 --> 00:00:33.798
+and modern language models live on roughly
+thirty to two-hundred thousand of
+
+11
+00:00:34.228 --> 00:00:39.041
+them. But an integer ID carries no
+meaning, so we embed it.
+
+12
+00:00:40.026 --> 00:00:43.829
+One-hot vectors are sparse and blind.
+Word2Vec learns from local
+
+13
+00:00:44.474 --> 00:00:46.974
+co-occurrence with Skip-gram and CBOW;
+GloVe
+
+14
+00:00:47.546 --> 00:00:51.679
+factorizes a global count matrix. The
+famous result — king minus
+
+15
+00:00:52.161 --> 00:00:54.876
+man plus woman lands near queen —
+
+16
+00:00:55.524 --> 00:00:57.781
+shows the geometry actually captures
+meaning,
+
+17
+00:00:57.781 --> 00:01:00.039
+and pretrained embeddings give your
+downstream
+
+18
+00:01:00.449 --> 00:01:03.195
+tasks a head start. To handle order,
+
+19
+00:01:03.579 --> 00:01:06.906
+recurrent networks read a sequence one
+step at a
+
+20
+00:01:07.883 --> 00:01:12.188
+time. A SimpleRNN forgets, its gradient
+vanishing over long spans. The
+
+21
+00:01:12.732 --> 00:01:17.034
+LSTM adds a gated cell that protects
+long-term state; the GRU
+
+22
+00:01:17.637 --> 00:01:21.449
+does nearly as well with fewer parameters.
+Wrap either to
+
+23
+00:01:21.921 --> 00:01:25.114
+read bidirectionally, and remember to mask
+your padding.
+
+24
+00:01:25.727 --> 00:01:29.695
+Then comes the idea that changed
+everything: attention. Compare a
+
+25
+00:01:30.668 --> 00:01:34.341
+query against keys to get similarity
+scores, softmax them
+
+26
+00:01:35.045 --> 00:01:38.280
+into weights, and take a weighted sum of
+
+27
+00:01:38.695 --> 00:01:45.017
+the values — a context vector that decides
+where to look. Scale by the square root
+
+28
+00:01:45.667 --> 00:01:49.142
+of d-k for stability, and run several
+heads in
+
+29
+00:01:49.142 --> 00:01:52.617
+parallel to capture different
+relationships at once. Put
+
+30
+00:01:53.510 --> 00:01:55.275
+it to work on real
+
+31
+00:01:55.653 --> 00:02:00.037
+tasks — sentiment as sequence-to-class,
+named entity recognition at the token
+
+32
+00:02:00.439 --> 00:02:02.322
+level, autoregressive text generation, and
+
+33
+00:02:02.322 --> 00:02:04.205
+encoder–decoder translation. And in
+practice
+
+34
+00:02:04.821 --> 00:02:09.670
+today, you'd start from BERT, GPT, or T5
+weights. Let's build an attention
+
+35
+00:02:10.538 --> 00:02:13.443
+model from scratch — open the labs.
