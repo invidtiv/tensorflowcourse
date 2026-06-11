@@ -27,3 +27,6 @@ Thumbs.db
 /test-results/
 /playwright-report/
 /playwright/.cache/
+
+# stray scratch files (sandbox-locked)
+_katexcheck.cjs

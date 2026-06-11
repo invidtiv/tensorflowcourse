@@ -1,0 +1,578 @@
+{
+  "01-intro-deep-learning": [
+    {
+      "title": "Chapter 1: Foundations of Artificial Intelligence and Deep Learning",
+      "slug": "chapter-1-foundations-of-artificial-intelligence-and-deep-learning"
+    },
+    {
+      "title": "Chapter 2: Mathematical Foundations of Gradient Descent",
+      "slug": "chapter-2-mathematical-foundations-of-gradient-descent"
+    },
+    {
+      "title": "Chapter 3: NumPy Internals and Memory Layout",
+      "slug": "chapter-3-numpy-internals-and-memory-layout"
+    },
+    {
+      "title": "Chapter 4: TensorFlow Architecture and Execution",
+      "slug": "chapter-4-tensorflow-architecture-and-execution"
+    },
+    {
+      "title": "Chapter 5: Automatic Differentiation",
+      "slug": "chapter-5-automatic-differentiation"
+    },
+    {
+      "title": "Chapter 6: Weight Initialization",
+      "slug": "chapter-6-weight-initialization"
+    },
+    {
+      "title": "Chapter 7: The Machine Learning Pipeline",
+      "slug": "chapter-7-the-machine-learning-pipeline"
+    },
+    {
+      "title": "Key Insights Summary",
+      "slug": "key-insights-summary"
+    },
+    {
+      "title": "Common Pitfalls and Solutions",
+      "slug": "common-pitfalls-and-solutions"
+    },
+    {
+      "title": "References and Further Reading",
+      "slug": "references-and-further-reading"
+    }
+  ],
+  "02-neural-network-fundamentals": [
+    {
+      "title": "Module Overview",
+      "slug": "module-overview"
+    },
+    {
+      "title": "2.1 From Biological Neurons to Artificial Neural Networks",
+      "slug": "21-from-biological-neurons-to-artificial-neural-networks"
+    },
+    {
+      "title": "2.2 Feature Representation and Data Preprocessing",
+      "slug": "22-feature-representation-and-data-preprocessing"
+    },
+    {
+      "title": "2.3 Neural Network Architecture Fundamentals",
+      "slug": "23-neural-network-architecture-fundamentals"
+    },
+    {
+      "title": "2.4 Universal Approximation Theorem",
+      "slug": "24-universal-approximation-theorem"
+    },
+    {
+      "title": "2.5 Activation Functions: Theory and Analysis",
+      "slug": "25-activation-functions-theory-and-analysis"
+    },
+    {
+      "title": "2.6 Loss Functions: Theory and Properties",
+      "slug": "26-loss-functions-theory-and-properties"
+    },
+    {
+      "title": "2.7 Backpropagation: The Core Learning Algorithm",
+      "slug": "27-backpropagation-the-core-learning-algorithm"
+    },
+    {
+      "title": "2.8 Gradient Flow Analysis",
+      "slug": "28-gradient-flow-analysis"
+    },
+    {
+      "title": "2.9 Weight Initialization Strategies",
+      "slug": "29-weight-initialization-strategies"
+    },
+    {
+      "title": "2.10 Feature Engineering vs. Representation Learning",
+      "slug": "210-feature-engineering-vs-representation-learning"
+    },
+    {
+      "title": "2.11 Bias-Variance Tradeoff in Neural Networks",
+      "slug": "211-bias-variance-tradeoff-in-neural-networks"
+    },
+    {
+      "title": "2.12 Introduction to Regularization Theory",
+      "slug": "212-introduction-to-regularization-theory"
+    },
+    {
+      "title": "2.13 Multi-Class Classification Theory",
+      "slug": "213-multi-class-classification-theory"
+    },
+    {
+      "title": "2.14 Keras API: Sequential vs. Functional",
+      "slug": "214-keras-api-sequential-vs-functional"
+    },
+    {
+      "title": "Key Insights Summary",
+      "slug": "key-insights-summary"
+    },
+    {
+      "title": "References",
+      "slug": "references"
+    }
+  ],
+  "03-cnns": [
+    {
+      "title": "Part 1: Mathematical Foundations of Convolution",
+      "slug": "part-1-mathematical-foundations-of-convolution"
+    },
+    {
+      "title": "Part 2: Receptive Field Theory",
+      "slug": "part-2-receptive-field-theory"
+    },
+    {
+      "title": "Part 3: Translation Equivariance and Invariance",
+      "slug": "part-3-translation-equivariance-and-invariance"
+    },
+    {
+      "title": "Part 4: Feature Hierarchy in CNNs",
+      "slug": "part-4-feature-hierarchy-in-cnns"
+    },
+    {
+      "title": "Part 5: Architecture Evolution Analysis",
+      "slug": "part-5-architecture-evolution-analysis"
+    },
+    {
+      "title": "Part 6: Transfer Learning Theory",
+      "slug": "part-6-transfer-learning-theory"
+    },
+    {
+      "title": "Part 7: Data Augmentation Theory",
+      "slug": "part-7-data-augmentation-theory"
+    },
+    {
+      "title": "Part 8: Modern Architectures",
+      "slug": "part-8-modern-architectures"
+    },
+    {
+      "title": "Part 9: Key Insights and Common Pitfalls",
+      "slug": "part-9-key-insights-and-common-pitfalls"
+    },
+    {
+      "title": "Part 10: Mathematical Appendix",
+      "slug": "part-10-mathematical-appendix"
+    },
+    {
+      "title": "References and Further Reading",
+      "slug": "references-and-further-reading"
+    }
+  ],
+  "04-advanced-training": [
+    {
+      "title": "1. Introduction to Optimization in Deep Learning",
+      "slug": "1-introduction-to-optimization-in-deep-learning"
+    },
+    {
+      "title": "2. First-Order Optimization Methods",
+      "slug": "2-first-order-optimization-methods"
+    },
+    {
+      "title": "3. Adaptive Learning Rate Algorithms",
+      "slug": "3-adaptive-learning-rate-algorithms"
+    },
+    {
+      "title": "4. Learning Rate Scheduling Theory",
+      "slug": "4-learning-rate-scheduling-theory"
+    },
+    {
+      "title": "5. Second-Order Optimization Methods",
+      "slug": "5-second-order-optimization-methods"
+    },
+    {
+      "title": "6. Normalization Techniques: Theory and Comparison",
+      "slug": "6-normalization-techniques-theory-and-comparison"
+    },
+    {
+      "title": "7. Regularization: Theory and Bayesian Interpretation",
+      "slug": "7-regularization-theory-and-bayesian-interpretation"
+    },
+    {
+      "title": "8. Dropout as Approximate Model Averaging",
+      "slug": "8-dropout-as-approximate-model-averaging"
+    },
+    {
+      "title": "9. Data Pipeline Optimization Theory",
+      "slug": "9-data-pipeline-optimization-theory"
+    },
+    {
+      "title": "10. Mixed Precision Training",
+      "slug": "10-mixed-precision-training"
+    },
+    {
+      "title": "11. Distributed Training Strategies",
+      "slug": "11-distributed-training-strategies"
+    },
+    {
+      "title": "12. Practical Considerations and Best Practices",
+      "slug": "12-practical-considerations-and-best-practices"
+    },
+    {
+      "title": "Common Misconceptions",
+      "slug": "common-misconceptions"
+    },
+    {
+      "title": "Summary",
+      "slug": "summary"
+    },
+    {
+      "title": "References",
+      "slug": "references"
+    }
+  ],
+  "05-semantic-segmentation": [
+    {
+      "title": "1. Introduction to Semantic Segmentation",
+      "slug": "1-introduction-to-semantic-segmentation"
+    },
+    {
+      "title": "2. Encoder-Decoder Architecture Theory",
+      "slug": "2-encoder-decoder-architecture-theory"
+    },
+    {
+      "title": "3. Skip Connections and Multi-Scale Features",
+      "slug": "3-skip-connections-and-multi-scale-features"
+    },
+    {
+      "title": "4. Atrous Convolution Mathematical Basis",
+      "slug": "4-atrous-convolution-mathematical-basis"
+    },
+    {
+      "title": "5. Receptive Field Expansion Strategies",
+      "slug": "5-receptive-field-expansion-strategies"
+    },
+    {
+      "title": "6. Loss Functions for Segmentation",
+      "slug": "6-loss-functions-for-segmentation"
+    },
+    {
+      "title": "7. Class Imbalance Handling Theory",
+      "slug": "7-class-imbalance-handling-theory"
+    },
+    {
+      "title": "8. Segmentation Paradigms: Instance, Semantic, and Panoptic",
+      "slug": "8-segmentation-paradigms-instance-semantic-and-panoptic"
+    },
+    {
+      "title": "9. Post-Processing Techniques",
+      "slug": "9-post-processing-techniques"
+    },
+    {
+      "title": "10. Medical Image Segmentation Considerations",
+      "slug": "10-medical-image-segmentation-considerations"
+    },
+    {
+      "title": "11. Real-Time Segmentation Architectures",
+      "slug": "11-real-time-segmentation-architectures"
+    },
+    {
+      "title": "12. Key Insights and Common Pitfalls",
+      "slug": "12-key-insights-and-common-pitfalls"
+    },
+    {
+      "title": "References and Further Reading",
+      "slug": "references-and-further-reading"
+    }
+  ],
+  "06-object-detection": [
+    {
+      "title": "1. Introduction to Object Detection",
+      "slug": "1-introduction-to-object-detection"
+    },
+    {
+      "title": "2. Sliding Window Approach and Limitations",
+      "slug": "2-sliding-window-approach-and-limitations"
+    },
+    {
+      "title": "3. Region Proposal Theory",
+      "slug": "3-region-proposal-theory"
+    },
+    {
+      "title": "4. Anchor Box Design Principles",
+      "slug": "4-anchor-box-design-principles"
+    },
+    {
+      "title": "5. IoU and Its Variants",
+      "slug": "5-iou-and-its-variants"
+    },
+    {
+      "title": "6. Feature Pyramid Networks",
+      "slug": "6-feature-pyramid-networks"
+    },
+    {
+      "title": "7. Focal Loss and Class Imbalance",
+      "slug": "7-focal-loss-and-class-imbalance"
+    },
+    {
+      "title": "8. Non-Maximum Suppression Variants",
+      "slug": "8-non-maximum-suppression-variants"
+    },
+    {
+      "title": "9. YOLO Architecture Evolution",
+      "slug": "9-yolo-architecture-evolution"
+    },
+    {
+      "title": "10. Transformer-Based Detectors",
+      "slug": "10-transformer-based-detectors"
+    },
+    {
+      "title": "11. Evaluation Metrics",
+      "slug": "11-evaluation-metrics"
+    },
+    {
+      "title": "12. TensorFlow Object Detection API",
+      "slug": "12-tensorflow-object-detection-api"
+    },
+    {
+      "title": "Key Insights Summary",
+      "slug": "key-insights-summary"
+    },
+    {
+      "title": "Common Pitfalls",
+      "slug": "common-pitfalls"
+    },
+    {
+      "title": "Common Misconceptions",
+      "slug": "common-misconceptions"
+    },
+    {
+      "title": "Key Takeaways",
+      "slug": "key-takeaways"
+    },
+    {
+      "title": "References",
+      "slug": "references"
+    }
+  ],
+  "07-gans": [
+    {
+      "title": "1. Foundations of Adversarial Learning",
+      "slug": "1-foundations-of-adversarial-learning"
+    },
+    {
+      "title": "2. Minimax Game Theory and Nash Equilibrium",
+      "slug": "2-minimax-game-theory-and-nash-equilibrium"
+    },
+    {
+      "title": "3. Jensen-Shannon Divergence and Optimal Discriminator",
+      "slug": "3-jensen-shannon-divergence-and-optimal-discriminator"
+    },
+    {
+      "title": "4. Training Instability and Mode Collapse",
+      "slug": "4-training-instability-and-mode-collapse"
+    },
+    {
+      "title": "5. Wasserstein GAN Theory",
+      "slug": "5-wasserstein-gan-theory"
+    },
+    {
+      "title": "6. Spectral Normalization Theory",
+      "slug": "6-spectral-normalization-theory"
+    },
+    {
+      "title": "7. Progressive Growing Theory",
+      "slug": "7-progressive-growing-theory"
+    },
+    {
+      "title": "8. StyleGAN Architecture Innovations",
+      "slug": "8-stylegan-architecture-innovations"
+    },
+    {
+      "title": "9. Conditional Generation Techniques",
+      "slug": "9-conditional-generation-techniques"
+    },
+    {
+      "title": "10. GAN Evaluation Theory",
+      "slug": "10-gan-evaluation-theory"
+    },
+    {
+      "title": "11. Introduction to Diffusion Models",
+      "slug": "11-introduction-to-diffusion-models"
+    },
+    {
+      "title": "Common Misconceptions",
+      "slug": "common-misconceptions"
+    },
+    {
+      "title": "Key Insights Summary",
+      "slug": "key-insights-summary"
+    },
+    {
+      "title": "Common Pitfalls and Solutions",
+      "slug": "common-pitfalls-and-solutions"
+    },
+    {
+      "title": "References",
+      "slug": "references"
+    }
+  ],
+  "08-nlp": [
+    {
+      "title": "Chapter 1: Foundations of Text Representation",
+      "slug": "chapter-1-foundations-of-text-representation"
+    },
+    {
+      "title": "Chapter 2: Word Embeddings: Static Representations",
+      "slug": "chapter-2-word-embeddings-static-representations"
+    },
+    {
+      "title": "Chapter 3: Sequential Models for NLP",
+      "slug": "chapter-3-sequential-models-for-nlp"
+    },
+    {
+      "title": "Chapter 4: Attention Mechanisms",
+      "slug": "chapter-4-attention-mechanisms"
+    },
+    {
+      "title": "Chapter 5: The Transformer Architecture",
+      "slug": "chapter-5-the-transformer-architecture"
+    },
+    {
+      "title": "Chapter 6: Pretrained Language Models",
+      "slug": "chapter-6-pretrained-language-models"
+    },
+    {
+      "title": "Chapter 7: Modern NLP Architectures",
+      "slug": "chapter-7-modern-nlp-architectures"
+    },
+    {
+      "title": "Summary and Key Takeaways",
+      "slug": "summary-and-key-takeaways"
+    },
+    {
+      "title": "References",
+      "slug": "references"
+    }
+  ],
+  "09-time-series": [
+    {
+      "title": "1. Introduction to Temporal Data",
+      "slug": "1-introduction-to-temporal-data"
+    },
+    {
+      "title": "2. Stationarity: Theory and Tests",
+      "slug": "2-stationarity-theory-and-tests"
+    },
+    {
+      "title": "3. Autocorrelation and Partial Autocorrelation",
+      "slug": "3-autocorrelation-and-partial-autocorrelation"
+    },
+    {
+      "title": "4. ARIMA Models: The Statistical Baseline",
+      "slug": "4-arima-models-the-statistical-baseline"
+    },
+    {
+      "title": "5. Seasonal Decomposition",
+      "slug": "5-seasonal-decomposition"
+    },
+    {
+      "title": "6. Windowing Strategies: Mathematical Foundations",
+      "slug": "6-windowing-strategies-mathematical-foundations"
+    },
+    {
+      "title": "7. Forecasting Strategies: Direct, Recursive, and Multi-Output",
+      "slug": "7-forecasting-strategies-direct-recursive-and-multi-output"
+    },
+    {
+      "title": "8. Deep Learning Architectures for Time Series",
+      "slug": "8-deep-learning-architectures-for-time-series"
+    },
+    {
+      "title": "9. Probabilistic Forecasting",
+      "slug": "9-probabilistic-forecasting"
+    },
+    {
+      "title": "10. Anomaly Detection in Time Series",
+      "slug": "10-anomaly-detection-in-time-series"
+    },
+    {
+      "title": "11. Multivariate Time Series",
+      "slug": "11-multivariate-time-series"
+    },
+    {
+      "title": "12. Temporal Convolutional Networks (TCN)",
+      "slug": "12-temporal-convolutional-networks-tcn"
+    },
+    {
+      "title": "13. Advanced Topics and Research Frontiers",
+      "slug": "13-advanced-topics-and-research-frontiers"
+    },
+    {
+      "title": "Common Misconceptions",
+      "slug": "common-misconceptions"
+    },
+    {
+      "title": "Key Takeaways",
+      "slug": "key-takeaways"
+    },
+    {
+      "title": "Key Insights Summary",
+      "slug": "key-insights-summary"
+    },
+    {
+      "title": "Common Pitfalls Summary",
+      "slug": "common-pitfalls-summary"
+    },
+    {
+      "title": "References",
+      "slug": "references"
+    },
+    {
+      "title": "Mathematical Notation Reference",
+      "slug": "mathematical-notation-reference"
+    }
+  ],
+  "10-production-deployment": [
+    {
+      "title": "Chapter 1: Introduction to Production Machine Learning",
+      "slug": "chapter-1-introduction-to-production-machine-learning"
+    },
+    {
+      "title": "Chapter 2: Model Optimization Theory",
+      "slug": "chapter-2-model-optimization-theory"
+    },
+    {
+      "title": "Chapter 3: TensorFlow Lite for Edge Deployment",
+      "slug": "chapter-3-tensorflow-lite-for-edge-deployment"
+    },
+    {
+      "title": "Chapter 4: TensorFlow Serving for Production Serving",
+      "slug": "chapter-4-tensorflow-serving-for-production-serving"
+    },
+    {
+      "title": "Chapter 5: TensorFlow Extended (TFX) Pipelines",
+      "slug": "chapter-5-tensorflow-extended-tfx-pipelines"
+    },
+    {
+      "title": "Chapter 6: Containerization and Orchestration for ML",
+      "slug": "chapter-6-containerization-and-orchestration-for-ml"
+    },
+    {
+      "title": "Chapter 7: Model Versioning and A/B Testing",
+      "slug": "chapter-7-model-versioning-and-ab-testing"
+    },
+    {
+      "title": "Chapter 8: Model Monitoring in Production",
+      "slug": "chapter-8-model-monitoring-in-production"
+    },
+    {
+      "title": "Chapter 9: MLOps Best Practices and CI/CD",
+      "slug": "chapter-9-mlops-best-practices-and-cicd"
+    },
+    {
+      "title": "Chapter 10: Advanced Topics and Future Directions",
+      "slug": "chapter-10-advanced-topics-and-future-directions"
+    },
+    {
+      "title": "Common Misconceptions",
+      "slug": "common-misconceptions"
+    },
+    {
+      "title": "Summary",
+      "slug": "summary"
+    },
+    {
+      "title": "References",
+      "slug": "references"
+    }
+  ]
+}

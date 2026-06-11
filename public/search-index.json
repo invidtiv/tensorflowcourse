@@ -448,7 +448,7 @@
     "title": "Neural Network Fundamentals",
     "description": "Master perceptrons, activation functions, loss functions, backpropagation, and build networks with Keras Sequential and Functional APIs.",
     "tags": [],
-    "body": "Heads up: the embed above is a placeholder intro video. The final course will replace it with a module-specific recorded lecture. It will not fetch anything from YouTube until you click it. Module Overview This module provides the foundational theoretical understanding of neural networks, bridging the gap between biological inspiration and modern computational implementations. We explore the mathe…"
+    "body": "Module Overview This module provides the foundational theoretical understanding of neural networks, bridging the gap between biological inspiration and modern computational implementations. We explore the mathematical foundations, architectural principles, and optimization mechanisms that enable neural networks to learn from data. Prerequisites: Linear algebra, calculus, probability theory, Python…"
   },
   {
     "id": "m02-quiz",
@@ -679,7 +679,7 @@
     "title": "Convolutional Neural Networks",
     "description": "Learn convolution mathematics, receptive fields, classic architectures (LeNet to Vision Transformers), and transfer learning.",
     "tags": [],
-    "body": "Heads up: the embed above is a placeholder intro video. The final course will replace it with a module-specific recorded lecture. It will not fetch anything from YouTube until you click it. Module Overview Convolutional Neural Networks (CNNs) represent one of the most significant breakthroughs in deep learning, enabling machines to achieve superhuman performance in visual perception tasks. This mo…"
+    "body": "Module Overview Convolutional Neural Networks (CNNs) represent one of the most significant breakthroughs in deep learning, enabling machines to achieve superhuman performance in visual perception tasks. This module provides a comprehensive theoretical foundation spanning mathematical principles, architectural evolution, and modern advances in computer vision. Learning Objectives: - Master the math…"
   },
   {
     "id": "m03-quiz",
@@ -966,7 +966,7 @@
     "title": "Advanced Training Methodologies",
     "description": "Master optimizers, learning rate scheduling, normalization, regularization, data pipelines, mixed precision, and distributed training.",
     "tags": [],
-    "body": "Heads up: the embed above is a placeholder intro video. The final course will replace it with a module-specific recorded lecture. It will not fetch anything from YouTube until you click it. Table of Contents 1. Introduction to Optimization in Deep Learning 2. First-Order Optimization Methods 3. Adaptive Learning Rate Algorithms 4. Learning Rate Scheduling Theory 5. Second-Order Optimization Method…"
+    "body": "Table of Contents 1. Introduction to Optimization in Deep Learning 2. First-Order Optimization Methods 3. Adaptive Learning Rate Algorithms 4. Learning Rate Scheduling Theory 5. Second-Order Optimization Methods 6. Normalization Techniques: Theory and Comparison 7. Regularization: Theory and Bayesian Interpretation 8. Dropout as Approximate Model Averaging 9. Data Pipeline Optimization Theory 10. …"
   },
   {
     "id": "m04-quiz",
@@ -1169,7 +1169,7 @@
     "title": "Semantic Segmentation",
     "description": "Pixel-level prediction with FCN, U-Net, DeepLab architectures. Atrous convolution, loss functions, and post-processing.",
     "tags": [],
-    "body": "Heads up: the embed above is a placeholder intro video. The final course will replace it with a module-specific recorded lecture. It will not fetch anything from YouTube until you click it. Table of Contents 1. Introduction to Semantic Segmentation 2. Encoder-Decoder Architecture Theory 3. Skip Connections and Multi-Scale Features 4. Atrous Convolution Mathematical Basis 5. Receptive Field Expansi…"
+    "body": "Table of Contents 1. Introduction to Semantic Segmentation 2. Encoder-Decoder Architecture Theory 3. Skip Connections and Multi-Scale Features 4. Atrous Convolution Mathematical Basis 5. Receptive Field Expansion Strategies 6. Loss Functions for Segmentation 7. Class Imbalance Handling Theory 8. Segmentation Paradigms: Instance, Semantic, and Panoptic 9. Post-Processing Techniques 10. Medical Imag…"
   },
   {
     "id": "m05-quiz",
@@ -1372,7 +1372,7 @@
     "title": "Object Detection Systems",
     "description": "Anchors, IoU, Feature Pyramid Networks, YOLO evolution, and Transformer-based detection with the TF Object Detection API.",
     "tags": [],
-    "body": "Heads up: the embed above is a placeholder intro video. The final course will replace it with a module-specific recorded lecture. It will not fetch anything from YouTube until you click it. Table of Contents 1. Introduction to Object Detection 2. Sliding Window Approach and Limitations 3. Region Proposal Theory 4. Anchor Box Design Principles 5. IoU and Its Variants 6. Feature Pyramid Networks 7. …"
+    "body": "Table of Contents 1. Introduction to Object Detection 2. Sliding Window Approach and Limitations 3. Region Proposal Theory 4. Anchor Box Design Principles 5. IoU and Its Variants 6. Feature Pyramid Networks 7. Focal Loss and Class Imbalance 8. Non-Maximum Suppression Variants 9. YOLO Architecture Evolution 10. Transformer-Based Detectors 11. Evaluation Metrics 12. TensorFlow Object Detection API 1…"
   },
   {
     "id": "m06-quiz",
@@ -1603,7 +1603,7 @@
     "title": "Generative Adversarial Networks",
     "description": "Minimax theory, mode collapse, DCGAN, conditional GAN, WGAN-GP, StyleGAN concepts, and evaluation metrics (IS/FID).",
     "tags": [],
-    "body": "Heads up: the embed above is a placeholder intro video. The final course will replace it with a module-specific recorded lecture. It will not fetch anything from YouTube until you click it. Table of Contents 1. Foundations of Adversarial Learning 2. Minimax Game Theory and Nash Equilibrium 3. Jensen-Shannon Divergence and Optimal Discriminator 4. Training Instability and Mode Collapse 5. Wasserste…"
+    "body": "Table of Contents 1. Foundations of Adversarial Learning 2. Minimax Game Theory and Nash Equilibrium 3. Jensen-Shannon Divergence and Optimal Discriminator 4. Training Instability and Mode Collapse 5. Wasserstein GAN Theory 6. Spectral Normalization Theory 7. Progressive Growing Theory 8. StyleGAN Architecture Innovations 9. Conditional Generation Techniques 10. GAN Evaluation Theory 11. Introduct…"
   },
   {
     "id": "m07-quiz",
@@ -1848,7 +1848,7 @@
     "title": "Natural Language Processing",
     "description": "Embeddings, RNN/LSTM/GRU, attention mechanisms, Transformer architecture, and BERT/GPT concepts with TensorFlow.",
     "tags": [],
-    "body": "Heads up: the embed above is a placeholder intro video. The final course will replace it with a module-specific recorded lecture. It will not fetch anything from YouTube until you click it. Course Overview This module provides a comprehensive exploration of Natural Language Processing (NLP) from foundational concepts to state-of-the-art architectures. Students will develop deep theoretical underst…"
+    "body": "Course Overview This module provides a comprehensive exploration of Natural Language Processing (NLP) from foundational concepts to state-of-the-art architectures. Students will develop deep theoretical understanding of how machines process, represent, and generate human language, culminating in modern transformer-based models that have revolutionized the field. Learning Objectives: - Master text …"
   },
   {
     "id": "m08-quiz",
@@ -2107,7 +2107,7 @@
     "title": "Time Series and Sequence Prediction",
     "description": "Stationarity, ARIMA, windowing techniques, 1D CNNs, LSTMs for forecasting, multi-step prediction, and anomaly detection.",
     "tags": [],
-    "body": "Heads up: the embed above is a placeholder intro video. The final course will replace it with a module-specific recorded lecture. It will not fetch anything from YouTube until you click it. Table of Contents 1. Introduction to Temporal Data 2. Stationarity: Theory and Tests 3. Autocorrelation and Partial Autocorrelation 4. ARIMA Models: The Statistical Baseline 5. Seasonal Decomposition 6. Windowi…"
+    "body": "Table of Contents 1. Introduction to Temporal Data 2. Stationarity: Theory and Tests 3. Autocorrelation and Partial Autocorrelation 4. ARIMA Models: The Statistical Baseline 5. Seasonal Decomposition 6. Windowing Strategies: Mathematical Foundations 7. Forecasting Strategies: Direct, Recursive, and Multi-Output 8. Deep Learning Architectures for Time Series 9. Probabilistic Forecasting 10. Anomaly…"
   },
   {
     "id": "m09-quiz",
@@ -2324,7 +2324,7 @@
     "title": "Production Deployment and Optimization",
     "description": "Model quantization, TFLite, TF Serving, TFX pipelines, MLOps practices, monitoring, and edge deployment.",
     "tags": [],
-    "body": "Heads up: the embed above is a placeholder intro video. The final course will replace it with a module-specific recorded lecture. It will not fetch anything from YouTube until you click it. Chapter 1: Introduction to Production Machine Learning 1.1 The Production ML Gap The transition from research to production represents one of the most challenging phases in the machine learning lifecycle. Resea…"
+    "body": "Chapter 1: Introduction to Production Machine Learning 1.1 The Production ML Gap The transition from research to production represents one of the most challenging phases in the machine learning lifecycle. Research environments prioritize model accuracy and innovation, while production systems demand reliability, efficiency, scalability, and maintainability. Key Differences Between Research and Pro…"
   },
   {
     "id": "m10-quiz",

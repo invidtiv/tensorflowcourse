@@ -304,3 +304,9 @@ code {
   }
   html { scroll-behavior: auto; }
 }
+
+/* Offset anchored theory headings so sidebar chapter links don't land under the
+   fixed top navbar (h-16). */
+.theory-prose :is(h1, h2, h3, h4)[id] {
+  scroll-margin-top: 5rem;
+}

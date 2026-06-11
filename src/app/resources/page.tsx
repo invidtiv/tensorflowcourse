@@ -2,41 +2,21 @@
 
 import { motion } from "framer-motion";
 import Breadcrumb from "@/components/layout/Breadcrumb";
+import resourcesData from "../../../content/resources/resources.json";
 
-const resources = [
-  {
-    category: "Official Documentation",
-    items: [
-      { name: "TensorFlow API Docs", url: "https://www.tensorflow.org/api_docs", desc: "Complete API reference for TensorFlow 2.x" },
-      { name: "Keras Documentation", url: "https://keras.io", desc: "High-level neural networks API" },
-      { name: "TensorFlow Tutorials", url: "https://www.tensorflow.org/tutorials", desc: "Official step-by-step tutorials" },
-    ],
-  },
-  {
-    category: "Development Tools",
-    items: [
-      { name: "Google Colab", url: "https://colab.research.google.com", desc: "Free Jupyter notebooks with GPU access" },
-      { name: "TensorBoard", url: "https://www.tensorflow.org/tensorboard", desc: "Visualization toolkit for TensorFlow" },
-      { name: "TF Hub", url: "https://tfhub.dev", desc: "Repository of pretrained models" },
-    ],
-  },
-  {
-    category: "Datasets",
-    items: [
-      { name: "TF Datasets", url: "https://www.tensorflow.org/datasets", desc: "Ready-to-use datasets for TensorFlow" },
-      { name: "Kaggle Datasets", url: "https://www.kaggle.com/datasets", desc: "Community-shared datasets for ML" },
-      { name: "UCI ML Repository", url: "https://archive.ics.uci.edu/ml", desc: "Classic machine learning datasets" },
-    ],
-  },
-  {
-    category: "Further Learning",
-    items: [
-      { name: "arXiv (cs.LG)", url: "https://arxiv.org/list/cs.LG/recent", desc: "Latest machine learning research papers" },
-      { name: "Papers With Code", url: "https://paperswithcode.com", desc: "ML papers with implementation code" },
-      { name: "Distill.pub", url: "https://distill.pub", desc: "Interactive visual explanations of ML concepts" },
-    ],
-  },
-];
+interface ResourceItem {
+  name: string;
+  url: string;
+  desc: string;
+}
+interface ResourceGroup {
+  category: string;
+  items: ResourceItem[];
+}
+
+// Link data is content-driven: edit content/resources/resources.json to add,
+// remove, or re-order resources — no code change required.
+const resources = resourcesData as ResourceGroup[];
 
 export default function ResourcesPage() {
   return (

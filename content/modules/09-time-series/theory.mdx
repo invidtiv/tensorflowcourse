@@ -21,23 +21,6 @@ generatedBy: "scripts/convert-theory.mjs"
 lastConverted: "2026-04-10T19:38:38.558Z"
 ---
 
-## Table of Contents
-1. [Introduction to Temporal Data](#1-introduction-to-temporal-data)
-2. [Stationarity: Theory and Tests](#2-stationarity-theory-and-tests)
-3. [Autocorrelation and Partial Autocorrelation](#3-autocorrelation-and-partial-autocorrelation)
-4. [ARIMA Models: The Statistical Baseline](#4-arima-models-the-statistical-baseline)
-5. [Seasonal Decomposition](#5-seasonal-decomposition)
-6. [Windowing Strategies: Mathematical Foundations](#6-windowing-strategies-mathematical-foundations)
-7. [Forecasting Strategies: Direct, Recursive, and Multi-Output](#7-forecasting-strategies-direct-recursive-and-multi-output)
-8. [Deep Learning Architectures for Time Series](#8-deep-learning-architectures-for-time-series)
-9. [Probabilistic Forecasting](#9-probabilistic-forecasting)
-10. [Anomaly Detection in Time Series](#10-anomaly-detection-in-time-series)
-11. [Multivariate Time Series](#11-multivariate-time-series)
-12. [Temporal Convolutional Networks (TCN)](#12-temporal-convolutional-networks-tcn)
-13. [Advanced Topics and Research Frontiers](#13-advanced-topics-and-research-frontiers)
-
----
-
 ## 1. Introduction to Temporal Data
 
 ### 1.1 The Nature of Time Series Data
@@ -225,10 +208,10 @@ Properties:
 
 General power transformation:
 
-$$y_t^&#123;(\lambda)&#125; = \begin&#123;cases&#125;
-\frac&#123;x_t^\lambda - 1&#125;&#123;\lambda&#125; & \lambda \neq 0 \\
+$$y_t^{(\lambda)} = \begin{cases}
+\frac{x_t^\lambda - 1}{\lambda} & \lambda \neq 0 \\
 \log(x_t) & \lambda = 0
-\end&#123;cases&#125;$$
+\end{cases}$$
 
 The parameter $\lambda$ is estimated to maximize normality or stabilize variance.
 
@@ -288,24 +271,24 @@ $$\phi_{kk} = \text{Corr}(x_t, x_{t-k} | x_{t-1}, ..., x_{t-k+1})$$
 
 **Computation via Yule-Walker Equations:**
 
-$$\begin&#123;pmatrix&#125;
+$$\begin{pmatrix}
 \rho(0) & \rho(1) & \cdots & \rho(k-1) \\
 \rho(1) & \rho(0) & \cdots & \rho(k-2) \\
 \vdots & \vdots & \ddots & \vdots \\
 \rho(k-1) & \rho(k-2) & \cdots & \rho(0)
-\end&#123;pmatrix&#125;
-\begin&#123;pmatrix&#125;
-\phi_&#123;k1&#125; \\
-\phi_&#123;k2&#125; \\
+\end{pmatrix}
+\begin{pmatrix}
+\phi_{k1} \\
+\phi_{k2} \\
 \vdots \\
-\phi_&#123;kk&#125;
-\end&#123;pmatrix&#125; =
-\begin&#123;pmatrix&#125;
+\phi_{kk}
+\end{pmatrix} =
+\begin{pmatrix}
 \rho(1) \\
 \rho(2) \\
 \vdots \\
 \rho(k)
-\end&#123;pmatrix&#125;$$
+\end{pmatrix}$$
 
 ### 3.4 ACF/PACF Patterns for Common Models
 
@@ -1039,10 +1022,10 @@ Point forecasts provide single values; probabilistic forecasts provide full dist
 ### 9.3 Quantile Regression
 
 **Loss Function (Pinball Loss):**
-$$\rho_\tau(y, \hat&#123;y&#125;) = \begin&#123;cases&#125;
-\tau(y - \hat&#123;y&#125;) & \text&#123;if &#125; y \geq \hat&#123;y&#125; \\
-(1-\tau)(\hat&#123;y&#125; - y) & \text&#123;if &#125; y &lt; \hat&#123;y&#125;
-\end&#123;cases&#125;$$
+$$\rho_\tau(y, \hat{y}) = \begin{cases}
+\tau(y - \hat{y}) & \text{if } y \geq \hat{y} \\
+(1-\tau)(\hat{y} - y) & \text{if } y < \hat{y}
+\end{cases}$$
 
 **Properties:**
 - Minimizing pinball loss yields $\tau$-th quantile
@@ -1266,12 +1249,12 @@ Where $d$ is the number of variables.
 $$\rho_{xy}(k) = \frac{\text{Cov}(x_t, y_{t-k})}{\sigma_x \sigma_y}$$
 
 **Cross-Correlation Matrix:**
-$$\mathbf&#123;R&#125;(k) = \begin&#123;pmatrix&#125;
-\rho_&#123;11&#125;(k) & \rho_&#123;12&#125;(k) & \cdots & \rho_&#123;1d&#125;(k) \\
-\rho_&#123;21&#125;(k) & \rho_&#123;22&#125;(k) & \cdots & \rho_&#123;2d&#125;(k) \\
+$$\mathbf{R}(k) = \begin{pmatrix}
+\rho_{11}(k) & \rho_{12}(k) & \cdots & \rho_{1d}(k) \\
+\rho_{21}(k) & \rho_{22}(k) & \cdots & \rho_{2d}(k) \\
 \vdots & \vdots & \ddots & \vdots \\
-\rho_&#123;d1&#125;(k) & \rho_&#123;d2&#125;(k) & \cdots & \rho_&#123;dd&#125;(k)
-\end&#123;pmatrix&#125;$$
+\rho_{d1}(k) & \rho_{d2}(k) & \cdots & \rho_{dd}(k)
+\end{pmatrix}$$
 
 ### 11.3 Vector Autoregression (VAR)
 
@@ -1284,36 +1267,36 @@ Where:
 - $\boldsymbol{\epsilon}_t \sim \mathcal{N}(0, \boldsymbol{\Sigma})$
 
 **VAR(1) in Matrix Form:**
-$$\begin&#123;pmatrix&#125;
-x_&#123;t,1&#125; \\
-x_&#123;t,2&#125; \\
+$$\begin{pmatrix}
+x_{t,1} \\
+x_{t,2} \\
 \vdots \\
-x_&#123;t,d&#125;
-\end&#123;pmatrix&#125; =
-\begin&#123;pmatrix&#125;
+x_{t,d}
+\end{pmatrix} =
+\begin{pmatrix}
 c_1 \\
 c_2 \\
 \vdots \\
 c_d
-\end&#123;pmatrix&#125; +
-\begin&#123;pmatrix&#125;
-a_&#123;11&#125; & a_&#123;12&#125; & \cdots & a_&#123;1d&#125; \\
-a_&#123;21&#125; & a_&#123;22&#125; & \cdots & a_&#123;2d&#125; \\
+\end{pmatrix} +
+\begin{pmatrix}
+a_{11} & a_{12} & \cdots & a_{1d} \\
+a_{21} & a_{22} & \cdots & a_{2d} \\
 \vdots & \vdots & \ddots & \vdots \\
-a_&#123;d1&#125; & a_&#123;d2&#125; & \cdots & a_&#123;dd&#125;
-\end&#123;pmatrix&#125;
-\begin&#123;pmatrix&#125;
-x_&#123;t-1,1&#125; \\
-x_&#123;t-1,2&#125; \\
+a_{d1} & a_{d2} & \cdots & a_{dd}
+\end{pmatrix}
+\begin{pmatrix}
+x_{t-1,1} \\
+x_{t-1,2} \\
 \vdots \\
-x_&#123;t-1,d&#125;
-\end&#123;pmatrix&#125; +
-\begin&#123;pmatrix&#125;
-\epsilon_&#123;t,1&#125; \\
-\epsilon_&#123;t,2&#125; \\
+x_{t-1,d}
+\end{pmatrix} +
+\begin{pmatrix}
+\epsilon_{t,1} \\
+\epsilon_{t,2} \\
 \vdots \\
-\epsilon_&#123;t,d&#125;
-\end&#123;pmatrix&#125;$$
+\epsilon_{t,d}
+\end{pmatrix}$$
 
 ### 11.4 Granger Causality
 

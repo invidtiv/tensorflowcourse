@@ -134,3 +134,60 @@ export function getAllModuleIds(): string[] {
     .filter((name) => fs.statSync(path.join(CONTENT_DIR, name)).isDirectory())
     .sort();
 }
+
+export interface TheoryChapter {
+  /** Heading text of the first section in this chapter group. */
+  title: string;
+  /** MDX source for this chapter (one or more consecutive top-level sections). */
+  content: string;
+}
+
+/**
+ * Split a theory MDX body into ~`target` chapter groups for tabbed display.
+ *
+ * Heading structure isn't uniform across modules: some use H1 (`# Part`/`# Chapter`),
+ * others only H2 (`## ...`). We detect the top level present (H1 when there are
+ * several, otherwise H2 — always ignoring `#` lines inside ``` code fences), split
+ * on it, producing one tab per top-level section (exact heading labels). Any
+ * preamble before the first heading is folded into the first chapter.
+ */
+export function splitTheoryIntoChapters(content: string): TheoryChapter[] {
+  const lines = content.split("\n");
+
+  // Pass 1: count H1s that are real headings (not inside code fences).
+  let inCode = false;
+  let h1Count = 0;
+  for (const ln of lines) {
+    if (ln.trimStart().startsWith("```")) { inCode = !inCode; continue; }
+    if (inCode) continue;
+    if (/^# .+/.test(ln)) h1Count += 1;
+  }
+  const level = h1Count >= 3 ? 1 : 2;
+  const headingRe = level === 1 ? /^# (.+)/ : /^## (.+)/;
+
+  // Pass 2: collect section start lines (ignoring code fences).
+  inCode = false;
+  const starts: { title: string; line: number }[] = [];
+  lines.forEach((ln, i) => {
+    if (ln.trimStart().startsWith("```")) { inCode = !inCode; return; }
+    if (inCode) return;
+    const m = ln.match(headingRe);
+    if (m) starts.push({ title: m[1].trim(), line: i });
+  });
+
+  if (starts.length === 0) {
+    return [{ title: "Overview", content: content.trim() }];
+  }
+
+  const preamble = lines.slice(0, starts[0].line).join("\n").trim();
+  const sections = starts.map((s, idx) => {
+    const end = idx + 1 < starts.length ? starts[idx + 1].line : lines.length;
+    return { title: s.title, text: lines.slice(s.line, end).join("\n").trim() };
+  });
+
+  // One tab per top-level section, with its exact heading as the label.
+  return sections.map((s, i) => ({
+    title: s.title,
+    content: i === 0 && preamble ? `${preamble}\n\n${s.text}` : s.text,
+  }));
+}

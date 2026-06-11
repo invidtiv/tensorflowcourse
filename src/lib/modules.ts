@@ -21,6 +21,12 @@ export const modules: ModuleMeta[] = [
     icon: "🧠",
     color: "#00d4ff",
     labCount: 8,
+    videoUrl: "/videos/module-01/intro.mp4",
+    videoId: "aircAruvnKk",
+    transcriptUrl: "/videos/transcripts/01-intro-deep-learning-en.vtt",
+    videoCaptions: [
+      { src: "/videos/captions/01-intro-en.vtt", srclang: "en", label: "English", default: true, kind: "captions" },
+    ],
   },
   {
     id: "02-neural-network-fundamentals",
@@ -42,6 +48,12 @@ export const modules: ModuleMeta[] = [
     icon: "🔗",
     color: "#8b5cf6",
     labCount: 16,
+    videoUrl: "/videos/module-02/intro.mp4",
+    videoId: "VMj-3S1tku0",
+    transcriptUrl: "/videos/transcripts/02-neural-network-fundamentals-en.vtt",
+    videoCaptions: [
+      { src: "/videos/captions/02-neural-network-fundamentals-en.vtt", srclang: "en", label: "English", default: true, kind: "captions" },
+    ],
   },
   {
     id: "03-cnns",
@@ -63,6 +75,12 @@ export const modules: ModuleMeta[] = [
     icon: "👁️",
     color: "#ec4899",
     labCount: 14,
+    videoUrl: "/videos/module-03/intro.mp4",
+    videoId: "KuXjwB4LzSA",
+    transcriptUrl: "/videos/transcripts/03-cnns-en.vtt",
+    videoCaptions: [
+      { src: "/videos/captions/03-cnns-en.vtt", srclang: "en", label: "English", default: true, kind: "captions" },
+    ],
   },
   {
     id: "04-advanced-training",
@@ -84,6 +102,12 @@ export const modules: ModuleMeta[] = [
     icon: "⚡",
     color: "#f59e0b",
     labCount: 19,
+    videoUrl: "/videos/module-04/intro.mp4",
+    videoId: "IHZwWFHWa-w",
+    transcriptUrl: "/videos/transcripts/04-advanced-training-en.vtt",
+    videoCaptions: [
+      { src: "/videos/captions/04-advanced-training-en.vtt", srclang: "en", label: "English", default: true, kind: "captions" },
+    ],
   },
   {
     id: "05-semantic-segmentation",
@@ -105,6 +129,12 @@ export const modules: ModuleMeta[] = [
     icon: "🎨",
     color: "#10b981",
     labCount: 12,
+    videoUrl: "/videos/module-05/intro.mp4",
+    videoId: "nDPWywWRIRo",
+    transcriptUrl: "/videos/transcripts/05-semantic-segmentation-en.vtt",
+    videoCaptions: [
+      { src: "/videos/captions/05-semantic-segmentation-en.vtt", srclang: "en", label: "English", default: true, kind: "captions" },
+    ],
   },
   {
     id: "06-object-detection",
@@ -126,6 +156,12 @@ export const modules: ModuleMeta[] = [
     icon: "🎯",
     color: "#ef4444",
     labCount: 12,
+    videoUrl: "/videos/module-06/intro.mp4",
+    videoId: "9s_FpMpdBi8",
+    transcriptUrl: "/videos/transcripts/06-object-detection-en.vtt",
+    videoCaptions: [
+      { src: "/videos/captions/06-object-detection-en.vtt", srclang: "en", label: "English", default: true, kind: "captions" },
+    ],
   },
   {
     id: "07-gans",
@@ -147,6 +183,12 @@ export const modules: ModuleMeta[] = [
     icon: "🎭",
     color: "#a855f7",
     labCount: 14,
+    videoUrl: "/videos/module-07/intro.mp4",
+    videoId: "8L11aMN5KY8",
+    transcriptUrl: "/videos/transcripts/07-gans-en.vtt",
+    videoCaptions: [
+      { src: "/videos/captions/07-gans-en.vtt", srclang: "en", label: "English", default: true, kind: "captions" },
+    ],
   },
   {
     id: "08-nlp",
@@ -168,6 +210,12 @@ export const modules: ModuleMeta[] = [
     icon: "📝",
     color: "#06b6d4",
     labCount: 15,
+    videoUrl: "/videos/module-08/intro.mp4",
+    videoId: "OxCpWwDCDFQ",
+    transcriptUrl: "/videos/transcripts/08-nlp-en.vtt",
+    videoCaptions: [
+      { src: "/videos/captions/08-nlp-en.vtt", srclang: "en", label: "English", default: true, kind: "captions" },
+    ],
   },
   {
     id: "09-time-series",
@@ -189,6 +237,12 @@ export const modules: ModuleMeta[] = [
     icon: "📈",
     color: "#14b8a6",
     labCount: 16,
+    videoUrl: "/videos/module-09/intro.mp4",
+    videoId: "VYpAodcdFfA",
+    transcriptUrl: "/videos/transcripts/09-time-series-en.vtt",
+    videoCaptions: [
+      { src: "/videos/captions/09-time-series-en.vtt", srclang: "en", label: "English", default: true, kind: "captions" },
+    ],
   },
   {
     id: "10-production-deployment",
@@ -210,6 +264,12 @@ export const modules: ModuleMeta[] = [
     icon: "🚀",
     color: "#f97316",
     labCount: 13,
+    videoUrl: "/videos/module-10/intro.mp4",
+    videoId: "WbARPbJXmg0",
+    transcriptUrl: "/videos/transcripts/10-production-deployment-en.vtt",
+    videoCaptions: [
+      { src: "/videos/captions/10-production-deployment-en.vtt", srclang: "en", label: "English", default: true, kind: "captions" },
+    ],
   },
 ];
 

@@ -457,7 +457,7 @@ Skip-gram creates better representations for rare words because each occurrence 
 - Path from root to leaf defines probability
 
 **Mathematical Formulation:**
-$$P(w | w_I) = \prod_{j=1}^{L(w)} \sigma(\llbracket n(w, j+1) = \text{left}(n(w, j)) \rrbracket \cdot \mathbf{v}'_{n(w,j)}^T \mathbf{v}_{w_I})$$
+$$P(w | w_I) = \prod_{j=1}^{L(w)} \sigma(\llbracket n(w, j+1) = \text{left}(n(w, j)) \rrbracket \cdot \mathbf{v}^{\prime T}_{n(w,j)} \mathbf{v}_{w_I})$$
 
 Where:
 - $L(w)$ is path length to word $w$
@@ -1528,7 +1528,7 @@ $$\mathcal{L}_{MLM} = -\sum_{t \in \mathcal{M}} \log P(w_t | \mathbf{w}_{\backsl
 Where $\mathcal{M}$ is the set of masked positions.
 
 **3. Next Sentence Prediction:**
-$$\mathcal{L}_{NSP} = -\log P(\text{is_next} | \mathbf{s}_1, \mathbf{s}_2)$$
+$$\mathcal{L}_{NSP} = -\log P(\text{is\_next} | \mathbf{s}_1, \mathbf{s}_2)$$
 
 ---
 

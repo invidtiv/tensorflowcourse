@@ -21,22 +21,6 @@ generatedBy: "scripts/convert-theory.mjs"
 lastConverted: "2026-04-10T19:38:38.496Z"
 ---
 
-## Table of Contents
-1. [Introduction to Semantic Segmentation](#1-introduction-to-semantic-segmentation)
-2. [Encoder-Decoder Architecture Theory](#2-encoder-decoder-architecture-theory)
-3. [Skip Connections and Multi-Scale Features](#3-skip-connections-and-multi-scale-features)
-4. [Atrous Convolution Mathematical Basis](#4-atrous-convolution-mathematical-basis)
-5. [Receptive Field Expansion Strategies](#5-receptive-field-expansion-strategies)
-6. [Loss Functions for Segmentation](#6-loss-functions-for-segmentation)
-7. [Class Imbalance Handling Theory](#7-class-imbalance-handling-theory)
-8. [Segmentation Paradigms: Instance, Semantic, and Panoptic](#8-segmentation-paradigms-instance-semantic-and-panoptic)
-9. [Post-Processing Techniques](#9-post-processing-techniques)
-10. [Medical Image Segmentation Considerations](#10-medical-image-segmentation-considerations)
-11. [Real-Time Segmentation Architectures](#11-real-time-segmentation-architectures)
-12. [Key Insights and Common Pitfalls](#12-key-insights-and-common-pitfalls)
-
----
-
 ## 1. Introduction to Semantic Segmentation
 
 ### 1.1 The Segmentation Problem Definition
@@ -355,10 +339,10 @@ C2 ──→ lateral ──→ add ─────────→ P2
 
 **3.4.2 Mathematical Formulation**
 
-$$P_l = \begin&#123;cases&#125;
-\text&#123;Conv&#125;_&#123;1\times 1&#125;(C_5) & l = 5 \\
-\text&#123;Conv&#125;_&#123;3\times 3&#125;(\text&#123;Upsample&#125;(P_&#123;l+1&#125;) + \text&#123;Conv&#125;_&#123;1\times 1&#125;(C_l)) & l &lt; 5
-\end&#123;cases&#125;$$
+$$P_l = \begin{cases}
+\text{Conv}_{1\times 1}(C_5) & l = 5 \\
+\text{Conv}_{3\times 3}(\text{Upsample}(P_{l+1}) + \text{Conv}_{1\times 1}(C_l)) & l < 5
+\end{cases}$$
 
 ### 3.5 Advanced Skip Connection Strategies
 

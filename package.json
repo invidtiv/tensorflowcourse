@@ -9,9 +9,10 @@
     "check:transcripts": "node scripts/check-transcripts.mjs",
     "check:transcripts:strict": "node scripts/check-transcripts.mjs --strict",
     "build-search": "node scripts/build-search-index.mjs",
-    "prebuild": "node scripts/check-transcripts.mjs && node scripts/build-search-index.mjs",
+    "prebuild": "node scripts/check-transcripts.mjs && node scripts/build-search-index.mjs && node scripts/build-chapters-index.mjs",
     "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui"
+    "test:e2e:ui": "playwright test --ui",
+    "build-chapters": "node scripts/build-chapters-index.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",

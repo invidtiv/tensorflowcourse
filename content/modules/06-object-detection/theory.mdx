@@ -21,22 +21,6 @@ generatedBy: "scripts/convert-theory.mjs"
 lastConverted: "2026-04-10T19:38:38.512Z"
 ---
 
-## Table of Contents
-1. [Introduction to Object Detection](#1-introduction-to-object-detection)
-2. [Sliding Window Approach and Limitations](#2-sliding-window-approach-and-limitations)
-3. [Region Proposal Theory](#3-region-proposal-theory)
-4. [Anchor Box Design Principles](#4-anchor-box-design-principles)
-5. [IoU and Its Variants](#5-iou-and-its-variants)
-6. [Feature Pyramid Networks](#6-feature-pyramid-networks)
-7. [Focal Loss and Class Imbalance](#7-focal-loss-and-class-imbalance)
-8. [Non-Maximum Suppression Variants](#8-non-maximum-suppression-variants)
-9. [YOLO Architecture Evolution](#9-yolo-architecture-evolution)
-10. [Transformer-Based Detectors](#10-transformer-based-detectors)
-11. [Evaluation Metrics](#11-evaluation-metrics)
-12. [TensorFlow Object Detection API](#12-tensorflow-object-detection-api)
-
----
-
 ## 1. Introduction to Object Detection
 
 ### 1.1 The Object Detection Problem
@@ -176,12 +160,12 @@ The cascade classifier addresses computational cost by:
 3. Most windows rejected in early stages
 
 Cascade structure:
-$$F(x) = \begin&#123;cases&#125;
-f_1(x) & \text&#123;if &#125; f_1(x) &lt; \theta_1 \\
-f_2(x) & \text&#123;else if &#125; f_2(x) &lt; \theta_2 \\
+$$F(x) = \begin{cases}
+f_1(x) & \text{if } f_1(x) < \theta_1 \\
+f_2(x) & \text{else if } f_2(x) < \theta_2 \\
 ... \\
-f_K(x) & \text&#123;final decision&#125;
-\end&#123;cases&#125;$$
+f_K(x) & \text{final decision}
+\end{cases}$$
 
 **Key Insight**: 90% of windows are negative; reject them quickly with cheap classifiers.
 

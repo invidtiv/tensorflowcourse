@@ -380,11 +380,11 @@ CNN → [Translate] → Output     CNN → [Same Output]
 Let $T_{\Delta}$ be a translation operator: $(T_{\Delta}I)[i,j] = I[i-\Delta_i, j-\Delta_j]$
 
 Then:
-$$\begin&#123;aligned&#125;
-(\text&#123;Conv&#125;(T_&#123;\Delta&#125;I))[i,j] &= \sum_&#123;m,n&#125; (T_&#123;\Delta&#125;I)[i+m, j+n] \cdot K[m,n] \\
-&= \sum_&#123;m,n&#125; I[i+m-\Delta_i, j+n-\Delta_j] \cdot K[m,n] \\
-&= (T_&#123;\Delta&#125;(\text&#123;Conv&#125;(I)))[i,j]
-\end&#123;aligned&#125;$$
+$$\begin{aligned}
+(\text{Conv}(T_{\Delta}I))[i,j] &= \sum_{m,n} (T_{\Delta}I)[i+m, j+n] \cdot K[m,n] \\
+&= \sum_{m,n} I[i+m-\Delta_i, j+n-\Delta_j] \cdot K[m,n] \\
+&= (T_{\Delta}(\text{Conv}(I)))[i,j]
+\end{aligned}$$
 
 **Q.E.D.**
 
